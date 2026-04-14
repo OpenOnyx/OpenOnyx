@@ -93,6 +93,9 @@ const MD_PREVIEW_RESUME_DELAY_MS = 160;
 const MD_PREVIEW_REFRESH_INTERVAL_MS = 1200;
 const CANVAS_SCRIBBLES_KEY = "noteworkScribblesV1";
 const DEFAULT_SCRIBBLE_WIDTH = 2.4;
+const MIN_SCRIBBLE_WIDTH = 1;
+const MAX_SCRIBBLE_WIDTH = 10;
+const SCRIBBLE_WIDTH_STEP = 0.2;
 const MIN_SCRIBBLE_POINT_DIST = 0.8;
 const MIN_LASSO_POINT_DIST = 1.2;
 const ERASER_RADIUS_PX = 14;
@@ -440,6 +443,7 @@ export function CanvasView({
   const linkRef = useRef<HTMLInputElement>(null);
   const recentMenuRef = useRef<HTMLDivElement>(null);
   const drawPanelRef = useRef<HTMLDivElement>(null);
+  const drawSizeTrackRef = useRef<HTMLDivElement>(null);
   const nodesRef = useRef(nodes); // always-latest snapshot for move handler
   const scribblesRef = useRef(scribbles);
   const activeScribbleRef = useRef<CanvasScribbleStroke | null>(null);
@@ -518,11 +522,74 @@ export function CanvasView({
     !drawPanelCollapsed ||
     drawPanelPinnedOpen ||
     drawPanelHoverOpen;
+  const scribbleWidthRatio =
+    (scribbleWidth - MIN_SCRIBBLE_WIDTH) /
+    (MAX_SCRIBBLE_WIDTH - MIN_SCRIBBLE_WIDTH);
+  const scribbleWidthPercent = Math.min(
+    100,
+    Math.max(0, scribbleWidthRatio * 100),
+  );
 
   const revealDrawControls = useCallback(() => {
     setDrawPanelCollapsed(false);
     setDrawPanelPinnedOpen(true);
   }, []);
+
+  const clampScribbleWidth = useCallback((rawValue: number) => {
+    const snapped =
+      Math.round(rawValue / SCRIBBLE_WIDTH_STEP) * SCRIBBLE_WIDTH_STEP;
+    const clamped = Math.min(
+      MAX_SCRIBBLE_WIDTH,
+      Math.max(MIN_SCRIBBLE_WIDTH, snapped),
+    );
+    return Number(clamped.toFixed(2));
+  }, []);
+
+  const setScribbleWidthFromClientX = useCallback(
+    (clientX: number) => {
+      const track = drawSizeTrackRef.current;
+      if (!track) return;
+
+      const rect = track.getBoundingClientRect();
+      if (rect.width <= 0) return;
+
+      const relativeX = clientX - rect.left;
+      const ratio = Math.min(1, Math.max(0, relativeX / rect.width));
+      const raw =
+        MIN_SCRIBBLE_WIDTH +
+        ratio * (MAX_SCRIBBLE_WIDTH - MIN_SCRIBBLE_WIDTH);
+      setScribbleWidth(clampScribbleWidth(raw));
+    },
+    [clampScribbleWidth],
+  );
+
+  const onDrawSizePointerDown = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => {
+      e.preventDefault();
+      e.stopPropagation();
+      e.currentTarget.setPointerCapture?.(e.pointerId);
+      setScribbleWidthFromClientX(e.clientX);
+    },
+    [setScribbleWidthFromClientX],
+  );
+
+  const onDrawSizePointerMove = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => {
+      if (!e.currentTarget.hasPointerCapture?.(e.pointerId)) return;
+      e.preventDefault();
+      setScribbleWidthFromClientX(e.clientX);
+    },
+    [setScribbleWidthFromClientX],
+  );
+
+  const onDrawSizePointerUp = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => {
+      if (e.currentTarget.hasPointerCapture?.(e.pointerId)) {
+        e.currentTarget.releasePointerCapture(e.pointerId);
+      }
+    },
+    [],
+  );
 
   const collapseDrawControls = useCallback(() => {
     if (!autoHideDrawingControls) return;
@@ -3028,14 +3095,44 @@ export function CanvasView({
               </div>
               <label className="cv-draw-size">
                 <span>{scribbleWidth.toFixed(1)}px</span>
-                <input
-                  type="range"
-                  min={1}
-                  max={10}
-                  step={0.2}
-                  value={scribbleWidth}
-                  onChange={(e) => setScribbleWidth(Number(e.target.value))}
-                />
+                <div
+                  ref={drawSizeTrackRef}
+                  className="cv-draw-size-slider"
+                  role="slider"
+                  aria-label="Stroke width"
+                  aria-valuemin={MIN_SCRIBBLE_WIDTH}
+                  aria-valuemax={MAX_SCRIBBLE_WIDTH}
+                  aria-valuenow={scribbleWidth}
+                  tabIndex={0}
+                  onPointerDown={onDrawSizePointerDown}
+                  onPointerMove={onDrawSizePointerMove}
+                  onPointerUp={onDrawSizePointerUp}
+                  onPointerCancel={onDrawSizePointerUp}
+                  onLostPointerCapture={onDrawSizePointerUp}
+                  onKeyDown={(e) => {
+                    if (e.key === "ArrowLeft" || e.key === "ArrowDown") {
+                      e.preventDefault();
+                      setScribbleWidth((v) =>
+                        clampScribbleWidth(v - SCRIBBLE_WIDTH_STEP),
+                      );
+                    } else if (e.key === "ArrowRight" || e.key === "ArrowUp") {
+                      e.preventDefault();
+                      setScribbleWidth((v) =>
+                        clampScribbleWidth(v + SCRIBBLE_WIDTH_STEP),
+                      );
+                    }
+                  }}
+                >
+                  <div className="cv-draw-size-track" />
+                  <div
+                    className="cv-draw-size-fill"
+                    style={{ width: `${scribbleWidthPercent}%` }}
+                  />
+                  <div
+                    className="cv-draw-size-thumb"
+                    style={{ left: `${scribbleWidthPercent}%` }}
+                  />
+                </div>
               </label>
               {selectedScribbleIds.size > 0 ? (
                 <button

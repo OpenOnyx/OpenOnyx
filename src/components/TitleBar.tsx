@@ -183,7 +183,7 @@ export function TitleBar({
             onClick={() => api.maximizeWindow()}
             aria-label="Maximize"
           >
-            <Square size={13} strokeWidth={2.1} />
+            <Square size={12} strokeWidth={1.9} />
           </button>
           <button
             className="titlebar-btn close"

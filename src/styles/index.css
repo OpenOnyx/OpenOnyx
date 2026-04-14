@@ -359,8 +359,8 @@ body {
 }
 
 .titlebar-btn[aria-label="Maximize"] svg {
-  width: 15px;
-  height: 15px;
+  width: 13px;
+  height: 13px;
 }
 
 .titlebar-btn:hover {
@@ -5937,6 +5937,61 @@ blockquote:has(.callout) {
   color: var(--text-secondary);
   font-size: 11px;
   font-weight: 600;
+}
+
+.cv-draw-size-slider {
+  position: relative;
+  width: 100%;
+  height: 22px;
+  cursor: pointer;
+  touch-action: none;
+}
+
+.cv-draw-size-track,
+.cv-draw-size-fill {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  height: 4px;
+  transform: translateY(-50%);
+  border-radius: 999px;
+}
+
+.cv-draw-size-track {
+  width: 100%;
+  background: color-mix(in srgb, var(--cv-ctrl-border) 55%, transparent);
+}
+
+.cv-draw-size-fill {
+  background: color-mix(in srgb, var(--cv-sel) 85%, #ffffff 15%);
+}
+
+.cv-draw-size-thumb {
+  position: absolute;
+  top: 50%;
+  width: 14px;
+  height: 14px;
+  margin-left: -7px;
+  transform: translateY(-50%);
+  border-radius: 50%;
+  border: 1px solid color-mix(in srgb, var(--cv-ctrl-border) 80%, transparent);
+  background: color-mix(in srgb, var(--cv-ctrl-bg) 88%, #ffffff 12%);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+  transition: left 0.03s linear;
+}
+
+.cv-draw-size-slider:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--cv-sel) 65%, transparent);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+.cv-draw-size-slider:active .cv-draw-size-thumb {
+  transform: translateY(-50%) scale(1.08);
+}
+
+.cv-draw-size-slider:hover .cv-draw-size-thumb {
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
 }
 
 .cv-draw-size input[type="range"] {
