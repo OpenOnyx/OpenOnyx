@@ -22,8 +22,8 @@ import {
   Maximize,
   Grid3X3,
   ArrowUpRight,
-  RotateCcw,
-  RotateCw,
+  Undo2,
+  Redo2,
   Type,
   FileText,
   Globe,
@@ -3178,20 +3178,20 @@ export function CanvasView({
         </div>
         <div className="cv-ctrl-group">
           <button
-            className="cv-ctrl cv-history-btn"
+            className="cv-ctrl"
             title="Undo"
             onClick={undo}
             disabled={histIdx <= 0}
           >
-            <RotateCcw size={15} />
+            <Undo2 size={16} />
           </button>
           <button
-            className="cv-ctrl cv-history-btn"
+            className="cv-ctrl"
             title="Redo"
             onClick={redo}
             disabled={histIdx >= hist.length - 1}
           >
-            <RotateCw size={15} />
+            <Redo2 size={16} />
           </button>
         </div>
       </div>

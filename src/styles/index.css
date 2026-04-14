@@ -6044,21 +6044,6 @@ blockquote:has(.callout) {
   min-width: 42px;
 }
 
-.cv-history-btn {
-  background: color-mix(in srgb, #1f8b57 88%, transparent);
-  color: #eafff2;
-}
-
-.cv-history-btn:hover {
-  background: color-mix(in srgb, #25a869 86%, transparent);
-  color: #ffffff;
-}
-
-.cv-history-btn:disabled {
-  background: color-mix(in srgb, #1f8b57 42%, transparent);
-  color: rgba(234, 255, 242, 0.65);
-}
-
 /* ═════════════════════════════════════════════════════
    BOTTOM ADD BAR
    ═════════════════════════════════════════════════════ */
