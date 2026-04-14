@@ -56,6 +56,9 @@ export interface AppSettings {
   nodeSize: number;
   nodeSpacing: number;
   showOrphans: boolean;
+
+  // Canvas
+  autoHideDrawingControls: boolean;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -88,6 +91,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   nodeSize: 5,
   nodeSpacing: 100,
   showOrphans: true,
+
+  autoHideDrawingControls: true,
 };
 
 interface SettingsPageProps {
@@ -348,6 +353,27 @@ export function SettingsPage({
                     />
                     <span className="toggle-slider"></span>
                   </label>
+                </div>
+
+                <div className="setting-group">
+                  <label className="setting-toggle">
+                    <span>Auto-hide drawing controls</span>
+                    <input
+                      type="checkbox"
+                      checked={localSettings.autoHideDrawingControls}
+                      onChange={(e) =>
+                        updateSetting(
+                          "autoHideDrawingControls",
+                          e.target.checked,
+                        )
+                      }
+                    />
+                    <span className="toggle-slider"></span>
+                  </label>
+                  <small className="setting-description">
+                    Collapse canvas drawing controls after a stroke and reopen
+                    when drawing resumes.
+                  </small>
                 </div>
               </div>
             )}

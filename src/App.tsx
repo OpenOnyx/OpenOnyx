@@ -1525,6 +1525,9 @@ export default function App() {
                     isFullScreen={canvasFullScreen}
                     onToggleFullScreen={() => setCanvasFullScreen((f) => !f)}
                     theme={theme}
+                    autoHideDrawingControls={
+                      settings.autoHideDrawingControls ?? true
+                    }
                     vaultPath={vaultPath}
                     fileTree={fileTree}
                     canvasFilePath={canvasFilePath}

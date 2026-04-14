@@ -339,7 +339,7 @@ body {
 }
 
 .titlebar-btn {
-  width: 28px;
+  width: 30px;
   height: 28px;
   border: none;
   background: transparent;
@@ -351,6 +351,16 @@ body {
   cursor: pointer;
   transition: var(--transition-fast);
   font-size: var(--text-sm);
+}
+
+.titlebar-btn svg {
+  width: 14px;
+  height: 14px;
+}
+
+.titlebar-btn[aria-label="Maximize"] svg {
+  width: 15px;
+  height: 15px;
 }
 
 .titlebar-btn:hover {
@@ -5855,6 +5865,60 @@ blockquote:has(.callout) {
   width: 178px;
 }
 
+.cv-draw-panel-wrap {
+  position: relative;
+  overflow: visible;
+}
+
+.cv-draw-mini {
+  display: none;
+}
+
+.cv-draw-panel {
+  transform-origin: right top;
+  transition:
+    opacity var(--transition-fast),
+    transform var(--transition-fast),
+    visibility var(--transition-fast);
+}
+
+.cv-draw-panel-wrap.collapsed {
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  backdrop-filter: none;
+}
+
+.cv-draw-panel-wrap.collapsed .cv-draw-mini {
+  display: flex;
+  border: 1px solid var(--cv-ctrl-border);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--cv-ctrl-bg) 78%, transparent);
+  backdrop-filter: blur(12px);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+}
+
+.cv-draw-panel-wrap.collapsed .cv-draw-mini.on {
+  color: var(--cv-sel);
+}
+
+.cv-draw-panel-wrap.collapsed .cv-draw-panel {
+  position: absolute;
+  top: 0;
+  right: calc(100% + 8px);
+  opacity: 0;
+  transform: translateY(4px) scale(0.98);
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.cv-draw-panel-wrap.collapsed .cv-draw-panel.open {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  visibility: visible;
+  pointer-events: auto;
+}
+
 .cv-draw-swatches {
   display: flex;
   flex-wrap: wrap;
@@ -5918,10 +5982,26 @@ blockquote:has(.callout) {
 }
 .cv-ctrl-label {
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 600;
   letter-spacing: -0.3px;
   padding: 0 2px;
+  min-width: 42px;
+}
+
+.cv-history-btn {
+  background: color-mix(in srgb, #1f8b57 88%, transparent);
+  color: #eafff2;
+}
+
+.cv-history-btn:hover {
+  background: color-mix(in srgb, #25a869 86%, transparent);
+  color: #ffffff;
+}
+
+.cv-history-btn:disabled {
+  background: color-mix(in srgb, #1f8b57 42%, transparent);
+  color: rgba(234, 255, 242, 0.65);
 }
 
 /* ═════════════════════════════════════════════════════

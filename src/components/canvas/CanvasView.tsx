@@ -116,6 +116,7 @@ interface Props {
   isFullScreen: boolean;
   onToggleFullScreen: () => void;
   theme: string;
+  autoHideDrawingControls?: boolean;
   vaultPath: string;
   fileTree: any[];
   canvasFilePath: string | null;
@@ -361,6 +362,7 @@ export function CanvasView({
   isFullScreen,
   onToggleFullScreen,
   theme,
+  autoHideDrawingControls = true,
   vaultPath,
   fileTree,
   canvasFilePath,
@@ -427,6 +429,9 @@ export function CanvasView({
   const [scribbleWidth, setScribbleWidth] = useState<number>(
     DEFAULT_SCRIBBLE_WIDTH,
   );
+  const [drawPanelCollapsed, setDrawPanelCollapsed] = useState(false);
+  const [drawPanelPinnedOpen, setDrawPanelPinnedOpen] = useState(false);
+  const [drawPanelHoverOpen, setDrawPanelHoverOpen] = useState(false);
 
   /* refs */
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -434,6 +439,7 @@ export function CanvasView({
   const editRef = useRef<HTMLTextAreaElement>(null);
   const linkRef = useRef<HTMLInputElement>(null);
   const recentMenuRef = useRef<HTMLDivElement>(null);
+  const drawPanelRef = useRef<HTMLDivElement>(null);
   const nodesRef = useRef(nodes); // always-latest snapshot for move handler
   const scribblesRef = useRef(scribbles);
   const activeScribbleRef = useRef<CanvasScribbleStroke | null>(null);
@@ -445,6 +451,8 @@ export function CanvasView({
   const scribbleMoveChangedRef = useRef(false);
   const eraseChangedRef = useRef(false);
   const vpRef = useRef<CanvasViewport>(vp);
+  const holdDrawModeRef = useRef(false);
+  const holdPrevToolRef = useRef<CanvasToolMode>("select");
   const targetVpRef = useRef<CanvasViewport>(vp);
   const zoomAnimFrameRef = useRef<number | null>(null);
   const panInertiaFrameRef = useRef<number | null>(null);
@@ -500,6 +508,55 @@ export function CanvasView({
     document.addEventListener("mousedown", onDocDown);
     return () => document.removeEventListener("mousedown", onDocDown);
   }, [showRecentCanvasMenu]);
+
+  const isDrawFamilyTool =
+    tool === "draw" || tool === "erase" || tool === "lasso";
+  const shouldRenderDrawControls =
+    isDrawFamilyTool || selectedScribbleIds.size > 0;
+  const drawPanelExpanded =
+    !autoHideDrawingControls ||
+    !drawPanelCollapsed ||
+    drawPanelPinnedOpen ||
+    drawPanelHoverOpen;
+
+  const revealDrawControls = useCallback(() => {
+    setDrawPanelCollapsed(false);
+    setDrawPanelPinnedOpen(true);
+  }, []);
+
+  const collapseDrawControls = useCallback(() => {
+    if (!autoHideDrawingControls) return;
+    setDrawPanelCollapsed(true);
+    setDrawPanelPinnedOpen(false);
+    setDrawPanelHoverOpen(false);
+  }, [autoHideDrawingControls]);
+
+  useEffect(() => {
+    if (!isDrawFamilyTool) {
+      setDrawPanelCollapsed(false);
+      setDrawPanelPinnedOpen(false);
+      setDrawPanelHoverOpen(false);
+      return;
+    }
+    if (!autoHideDrawingControls) {
+      setDrawPanelCollapsed(false);
+    }
+  }, [isDrawFamilyTool, autoHideDrawingControls]);
+
+  useEffect(() => {
+    if (!autoHideDrawingControls) return;
+    if (!shouldRenderDrawControls) return;
+
+    const onDocDown = (event: MouseEvent) => {
+      const target = event.target as Node | null;
+      if (!target) return;
+      if (drawPanelRef.current?.contains(target)) return;
+      collapseDrawControls();
+    };
+
+    document.addEventListener("mousedown", onDocDown);
+    return () => document.removeEventListener("mousedown", onDocDown);
+  }, [autoHideDrawingControls, shouldRenderDrawControls, collapseDrawControls]);
 
   const push = useCallback(
     (
@@ -1163,6 +1220,7 @@ export function CanvasView({
   const onAreaDown = useCallback(
     (e: React.MouseEvent) => {
       if (e.button === 0 && tool === "draw") {
+        revealDrawControls();
         const p = s2c(e.clientX, e.clientY);
         const stroke: CanvasScribbleStroke = {
           id: generateId(),
@@ -1183,6 +1241,7 @@ export function CanvasView({
       }
 
       if (e.button === 0 && tool === "erase") {
+        revealDrawControls();
         const p = s2c(e.clientX, e.clientY);
         eraseChangedRef.current = false;
         setSelNodes(new Set());
@@ -1208,6 +1267,7 @@ export function CanvasView({
       }
 
       if (e.button === 0 && tool === "lasso") {
+        revealDrawControls();
         const p = s2c(e.clientX, e.clientY);
         const selected = selectedScribbleIdsRef.current;
         const moveHitId = selected.size
@@ -1280,7 +1340,15 @@ export function CanvasView({
         setColorPickerFor(null);
       }
     },
-    [tool, s2c, stopPanInertia, stopSmoothZoom, scribbleWidth, scribbleColor],
+    [
+      tool,
+      s2c,
+      stopPanInertia,
+      stopSmoothZoom,
+      scribbleWidth,
+      scribbleColor,
+      revealDrawControls,
+    ],
   );
 
   const onNodeDown = useCallback(
@@ -1899,6 +1967,7 @@ export function CanvasView({
         }
         setActiveScribble(null);
         activeScribbleRef.current = null;
+        collapseDrawControls();
       }
 
       if (drag.type === "erase") {
@@ -1906,6 +1975,7 @@ export function CanvasView({
           push(nodesRef.current, edges, scribblesRef.current);
         }
         eraseChangedRef.current = false;
+        collapseDrawControls();
       }
 
       if (drag.type === "lasso") {
@@ -1922,6 +1992,7 @@ export function CanvasView({
         }
         setLassoPoints([]);
         lassoPointsRef.current = [];
+        collapseDrawControls();
       }
 
       if (drag.type === "scribble-move") {
@@ -1943,7 +2014,17 @@ export function CanvasView({
       window.removeEventListener("mousemove", onMove);
       window.removeEventListener("mouseup", onUp);
     };
-  }, [drag, vp, selNodes, edges, s2c, snap, push, startPanInertia]);
+  }, [
+    drag,
+    vp,
+    selNodes,
+    edges,
+    s2c,
+    snap,
+    push,
+    startPanInertia,
+    collapseDrawControls,
+  ]);
 
   /* ═══ WHEEL / ZOOM ═══ */
   useEffect(() => {
@@ -2049,10 +2130,22 @@ export function CanvasView({
 
   /* ═══ KEYBOARD ═══ */
   useEffect(() => {
-    const handle = (e: KeyboardEvent) => {
+    const handleDown = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement;
       if (t.tagName === "TEXTAREA" || t.tagName === "INPUT") return;
       const ctrl = e.ctrlKey || e.metaKey;
+      const key = e.key.toLowerCase();
+
+      if (!ctrl && key === "p") {
+        if (!holdDrawModeRef.current && !e.repeat) {
+          holdPrevToolRef.current = tool;
+          holdDrawModeRef.current = true;
+          setTool("draw");
+          revealDrawControls();
+        }
+        return;
+      }
+
       if (
         (e.key === "Delete" || e.key === "Backspace") &&
         (selNodes.size || selEdges.size || selectedScribbleIds.size)
@@ -2074,9 +2167,18 @@ export function CanvasView({
       if (e.key === "v" && !ctrl) setTool("select");
       if (e.key === "h" && !ctrl) setTool("pan");
       if (e.key === "c" && !ctrl) setTool("edge");
-      if (e.key === "d" && !ctrl) setTool("draw");
-      if (e.key === "e" && !ctrl) setTool("erase");
-      if (e.key === "l" && !ctrl) setTool("lasso");
+      if (e.key === "d" && !ctrl) {
+        setTool("draw");
+        revealDrawControls();
+      }
+      if (e.key === "e" && !ctrl) {
+        setTool("erase");
+        revealDrawControls();
+      }
+      if (e.key === "l" && !ctrl) {
+        setTool("lasso");
+        revealDrawControls();
+      }
       if (e.key === "Escape") {
         setSelNodes(new Set());
         setSelEdges(new Set());
@@ -2089,10 +2191,25 @@ export function CanvasView({
         setActiveScribble(null);
         activeScribbleRef.current = null;
         setDrag({ type: "none", startX: 0, startY: 0 });
+        holdDrawModeRef.current = false;
+        collapseDrawControls();
       }
     };
-    window.addEventListener("keydown", handle);
-    return () => window.removeEventListener("keydown", handle);
+
+    const handleUp = (e: KeyboardEvent) => {
+      if (e.key.toLowerCase() !== "p") return;
+      if (!holdDrawModeRef.current) return;
+      holdDrawModeRef.current = false;
+      setTool(holdPrevToolRef.current || "select");
+      collapseDrawControls();
+    };
+
+    window.addEventListener("keydown", handleDown);
+    window.addEventListener("keyup", handleUp);
+    return () => {
+      window.removeEventListener("keydown", handleDown);
+      window.removeEventListener("keyup", handleUp);
+    };
   }, [
     selNodes,
     selEdges,
@@ -2101,6 +2218,9 @@ export function CanvasView({
     deleteSelected,
     undo,
     redo,
+    tool,
+    revealDrawControls,
+    collapseDrawControls,
   ]);
 
   /* ═══ EDITING ═══ */
@@ -2831,74 +2951,101 @@ export function CanvasView({
           <button
             className={`cv-ctrl${tool === "draw" ? " on" : ""}`}
             title="Draw scribble (D)"
-            onClick={() =>
-              setTool((prev) => (prev === "draw" ? "select" : "draw"))
-            }
+            onClick={() => {
+              setTool((prev) => (prev === "draw" ? "select" : "draw"));
+              revealDrawControls();
+            }}
           >
             <PenLine size={15} />
           </button>
           <button
             className={`cv-ctrl${tool === "erase" ? " on" : ""}`}
             title="Eraser (E)"
-            onClick={() =>
-              setTool((prev) => (prev === "erase" ? "select" : "erase"))
-            }
+            onClick={() => {
+              setTool((prev) => (prev === "erase" ? "select" : "erase"));
+              revealDrawControls();
+            }}
           >
             <Eraser size={15} />
           </button>
           <button
             className={`cv-ctrl${tool === "lasso" ? " on" : ""}`}
             title="Lasso select + move scribbles (L)"
-            onClick={() =>
-              setTool((prev) => (prev === "lasso" ? "select" : "lasso"))
-            }
+            onClick={() => {
+              setTool((prev) => (prev === "lasso" ? "select" : "lasso"));
+              revealDrawControls();
+            }}
           >
             <Lasso size={15} />
           </button>
         </div>
-        {(tool === "draw" ||
-          tool === "erase" ||
-          tool === "lasso" ||
-          selectedScribbleIds.size > 0) && (
-          <div className="cv-ctrl-group cv-draw-panel">
-            <div className="cv-draw-swatches">
-              {[
-                "",
-                "#f9fafb",
-                "#f97316",
-                "#38bdf8",
-                "#22c55e",
-                "#f43f5e",
-                "#a78bfa",
-              ].map((color) => (
-                <button
-                  key={color || "default"}
-                  className={`cv-swatch cv-draw-swatch${(scribbleColor || "") === color ? " on" : ""}${!color ? " cv-swatch-none" : ""}`}
-                  style={color ? { background: color } : undefined}
-                  title={color ? `Stroke ${color}` : "Default stroke color"}
-                  onClick={() => setScribbleColor(color)}
+        {shouldRenderDrawControls && (
+          <div
+            ref={drawPanelRef}
+            className={`cv-ctrl-group cv-draw-panel-wrap${drawPanelExpanded ? "" : " collapsed"}`}
+            onMouseEnter={() => {
+              if (drawPanelCollapsed) setDrawPanelHoverOpen(true);
+            }}
+            onMouseLeave={() => setDrawPanelHoverOpen(false)}
+          >
+            <button
+              className={`cv-ctrl cv-draw-mini${drawPanelExpanded ? " on" : ""}`}
+              title={drawPanelExpanded ? "Collapse drawing controls" : "Drawing controls"}
+              onClick={() => {
+                if (!autoHideDrawingControls) return;
+                if (drawPanelExpanded) {
+                  setDrawPanelPinnedOpen(false);
+                  setDrawPanelCollapsed(true);
+                  setDrawPanelHoverOpen(false);
+                } else {
+                  setDrawPanelCollapsed(false);
+                  setDrawPanelPinnedOpen(true);
+                }
+              }}
+            >
+              <PenLine size={14} />
+            </button>
+
+            <div className={`cv-ctrl-group cv-draw-panel${drawPanelExpanded ? " open" : ""}`}>
+              <div className="cv-draw-swatches">
+                {[
+                  "",
+                  "#f9fafb",
+                  "#f97316",
+                  "#38bdf8",
+                  "#22c55e",
+                  "#f43f5e",
+                  "#a78bfa",
+                ].map((color) => (
+                  <button
+                    key={color || "default"}
+                    className={`cv-swatch cv-draw-swatch${(scribbleColor || "") === color ? " on" : ""}${!color ? " cv-swatch-none" : ""}`}
+                    style={color ? { background: color } : undefined}
+                    title={color ? `Stroke ${color}` : "Default stroke color"}
+                    onClick={() => setScribbleColor(color)}
+                  />
+                ))}
+              </div>
+              <label className="cv-draw-size">
+                <span>{scribbleWidth.toFixed(1)}px</span>
+                <input
+                  type="range"
+                  min={1}
+                  max={10}
+                  step={0.2}
+                  value={scribbleWidth}
+                  onChange={(e) => setScribbleWidth(Number(e.target.value))}
                 />
-              ))}
+              </label>
+              {selectedScribbleIds.size > 0 ? (
+                <button
+                  className="cv-file-row cv-draw-delete"
+                  onClick={deleteSelected}
+                >
+                  Delete selected strokes
+                </button>
+              ) : null}
             </div>
-            <label className="cv-draw-size">
-              <span>{scribbleWidth.toFixed(1)}px</span>
-              <input
-                type="range"
-                min={1}
-                max={10}
-                step={0.2}
-                value={scribbleWidth}
-                onChange={(e) => setScribbleWidth(Number(e.target.value))}
-              />
-            </label>
-            {selectedScribbleIds.size > 0 ? (
-              <button
-                className="cv-file-row cv-draw-delete"
-                onClick={deleteSelected}
-              >
-                Delete selected strokes
-              </button>
-            ) : null}
           </div>
         )}
         <div className="cv-ctrl-group">
@@ -2934,7 +3081,7 @@ export function CanvasView({
         </div>
         <div className="cv-ctrl-group">
           <button
-            className="cv-ctrl"
+            className="cv-ctrl cv-history-btn"
             title="Undo"
             onClick={undo}
             disabled={histIdx <= 0}
@@ -2942,7 +3089,7 @@ export function CanvasView({
             <RotateCcw size={15} />
           </button>
           <button
-            className="cv-ctrl"
+            className="cv-ctrl cv-history-btn"
             title="Redo"
             onClick={redo}
             disabled={histIdx >= hist.length - 1}

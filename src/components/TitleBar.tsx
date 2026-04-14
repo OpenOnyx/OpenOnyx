@@ -8,7 +8,7 @@
 import React, { useState, useRef, useEffect } from "react";
 import { Theme, Command } from "../types";
 import { getAPI } from "../utils/api";
-import { Search } from "lucide-react";
+import { Search, Minus, Square, X as CloseIcon } from "lucide-react";
 
 interface TitleBarProps {
   theme: Theme;
@@ -176,21 +176,21 @@ export function TitleBar({
             onClick={() => api.minimizeWindow()}
             aria-label="Minimize"
           >
-            ─
+            <Minus size={14} />
           </button>
           <button
             className="titlebar-btn"
             onClick={() => api.maximizeWindow()}
             aria-label="Maximize"
           >
-            □
+            <Square size={13} strokeWidth={2.1} />
           </button>
           <button
             className="titlebar-btn close"
             onClick={() => api.closeWindow()}
             aria-label="Close"
           >
-            ✕
+            <CloseIcon size={14} />
           </button>
         </div>
       )}
