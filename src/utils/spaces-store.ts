@@ -133,6 +133,12 @@ export async function pushSpaceNotes(
     return;
   }
 
+  const spaceData = await getSpace(spaceId);
+  if (spaceData && spaceData.visibility === 'private') {
+    console.log('[SpacesStore] pushSpaceNotes skipped: private E2EE space.');
+    return;
+  }
+
   console.log(`[SpacesStore] Pushing ${vaultNotes.length} notes to space ${spaceId}`);
   const now = new Date().toISOString();
 
@@ -185,6 +191,12 @@ export async function pushSpaceChunks(
   chunks: SpaceChunk[],
 ): Promise<void> {
   if (!isSupabaseConfigured || !authManager.isLoggedIn()) return;
+
+  const spaceData = await getSpace(spaceId);
+  if (spaceData && spaceData.visibility === 'private') {
+    console.log('[SpacesStore] pushSpaceChunks skipped: private E2EE space.');
+    return;
+  }
 
   // 1. Delete old chunks for this space to avoid duplicates
   await getClient()

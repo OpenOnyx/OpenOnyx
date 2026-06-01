@@ -259,6 +259,31 @@ REVOKE EXECUTE ON FUNCTION public.set_updated_at() FROM anon, authenticated;
 
 
 -- ════════════════════════════════════════════════════════════════════════════
+-- COLLABORATION HELPER FUNCTION
+-- ════════════════════════════════════════════════════════════════════════════
+-- SECURITY DEFINER function that bypasses RLS to check space membership.
+-- This prevents infinite recursion when policies on notes/linked_vaults/etc.
+-- need to verify the caller is a space collaborator.
+
+CREATE OR REPLACE FUNCTION public.is_space_member(p_space_id uuid)
+RETURNS boolean
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path = public
+STABLE
+AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM public.space_collaborators
+    WHERE space_id = p_space_id AND user_id = auth.uid()
+  )
+  OR EXISTS (
+    SELECT 1 FROM public.spaces
+    WHERE id = p_space_id AND owner_id = auth.uid()
+  );
+$$;
+
+
+-- ════════════════════════════════════════════════════════════════════════════
 -- ROW LEVEL SECURITY POLICIES
 -- ════════════════════════════════════════════════════════════════════════════
 
@@ -549,29 +574,6 @@ END;
 $$;
 
 
--- ════════════════════════════════════════════════════════════════════════════
--- COLLABORATION HELPER FUNCTION
--- ════════════════════════════════════════════════════════════════════════════
--- SECURITY DEFINER function that bypasses RLS to check space membership.
--- This prevents infinite recursion when policies on notes/linked_vaults/etc.
--- need to verify the caller is a space collaborator.
-
-CREATE OR REPLACE FUNCTION public.is_space_member(p_space_id uuid)
-RETURNS boolean
-LANGUAGE sql
-SECURITY DEFINER
-SET search_path = public
-STABLE
-AS $$
-  SELECT EXISTS (
-    SELECT 1 FROM public.space_collaborators
-    WHERE space_id = p_space_id AND user_id = auth.uid()
-  )
-  OR EXISTS (
-    SELECT 1 FROM public.spaces
-    WHERE id = p_space_id AND owner_id = auth.uid()
-  );
-$$;
 
 
 -- ════════════════════════════════════════════════════════════════════════════

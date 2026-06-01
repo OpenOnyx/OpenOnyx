@@ -1,6 +1,7 @@
 import { openDB, DBSchema, IDBPDatabase } from 'idb';
 import { v4 as uuidv4 } from 'uuid';
 import { EMPTY_DOCUMENT_HASH, normalizeVersion, sha256Hex } from '../utils/collabDocument';
+import { isSpaceUnlocked, getSpaceKey, encryptText, decryptText } from '../utils/spaces-crypto';
 
 export interface LocalVault {
   id: string;
@@ -148,6 +149,47 @@ interface OpenObsidianDB extends DBSchema {
 
 let dbPromise: Promise<IDBPDatabase<OpenObsidianDB>>;
 
+async function getPlaintextContent(note: LocalNote): Promise<string> {
+  const content = note.content || '';
+  if (content.startsWith('__ENCRYPTED_NOTE__:') && note.space_id) {
+    if (isSpaceUnlocked(note.space_id)) {
+      const spaceKey = getSpaceKey(note.space_id);
+      if (spaceKey) {
+        try {
+          const raw = content.substring('__ENCRYPTED_NOTE__:'.length);
+          const { ciphertext, iv, authTag } = JSON.parse(raw);
+          return await decryptText(ciphertext, iv, authTag, spaceKey);
+        } catch { /* fallback */ }
+      }
+    }
+  }
+  return content;
+}
+
+async function decryptNoteIfPossible(note: LocalNote | undefined): Promise<LocalNote | undefined> {
+  if (!note || !note.content || !note.space_id) return note;
+  if (note.content.startsWith('__ENCRYPTED_NOTE__:')) {
+    if (isSpaceUnlocked(note.space_id)) {
+      const spaceKey = getSpaceKey(note.space_id);
+      if (spaceKey) {
+        try {
+          const raw = note.content.substring('__ENCRYPTED_NOTE__:'.length);
+          const { ciphertext, iv, authTag } = JSON.parse(raw);
+          const decrypted = await decryptText(ciphertext, iv, authTag, spaceKey);
+          return { ...note, content: decrypted };
+        } catch (e) {
+          console.error('[localDB] Failed to decrypt note content:', e);
+        }
+      }
+    }
+  }
+  return note;
+}
+
+async function decryptNotesIfPossible(notes: LocalNote[]): Promise<LocalNote[]> {
+  return Promise.all(notes.map(n => decryptNoteIfPossible(n) as Promise<LocalNote>));
+}
+
 async function normalizeNoteMetadata(
   note: LocalNote,
   existing: LocalNote | undefined,
@@ -155,8 +197,8 @@ async function normalizeNoteMetadata(
   clientId?: string,
 ): Promise<LocalNote> {
   const now = note.updated_at || new Date().toISOString();
-  const content = note.content || '';
-  const currentHash = enqueueSync ? await sha256Hex(content) : (note.content_hash || await sha256Hex(content));
+  const plainContent = await getPlaintextContent(note);
+  const currentHash = enqueueSync ? await sha256Hex(plainContent) : (note.content_hash || await sha256Hex(plainContent));
   const currentVersion = normalizeVersion(note.version ?? existing?.version);
 
   if (!enqueueSync) {
@@ -418,17 +460,20 @@ export const localDB = {
   // ── Notes ───────────────────────────────────────────────
   async getNotes(spaceId: string): Promise<LocalNote[]> {
     const db = await getLocalDB();
-    return db.getAllFromIndex('notes', 'by-space', spaceId);
+    const notes = await db.getAllFromIndex('notes', 'by-space', spaceId);
+    return decryptNotesIfPossible(notes);
   },
 
   async getNotesByVault(vaultId: string): Promise<LocalNote[]> {
     const db = await getLocalDB();
-    return db.getAllFromIndex('notes', 'by-vault', vaultId);
+    const notes = await db.getAllFromIndex('notes', 'by-vault', vaultId);
+    return decryptNotesIfPossible(notes);
   },
 
   async getNote(id: string): Promise<LocalNote | undefined> {
     const db = await getLocalDB();
-    return db.get('notes', id);
+    const note = await db.get('notes', id);
+    return decryptNoteIfPossible(note);
   },
 
   /**
@@ -442,6 +487,30 @@ export const localDB = {
 
   async putNote(note: LocalNote, enqueueSync = true): Promise<void> {
     const db = await getLocalDB();
+    
+    // Encrypt if private cloud space and content is not already encrypted
+    if (note.space_id) {
+      const space = await this.getSpace(note.space_id);
+      if (space && space.visibility === 'private') {
+        if (note.content && !note.content.startsWith('__ENCRYPTED_NOTE__:')) {
+          if (isSpaceUnlocked(note.space_id)) {
+            const spaceKey = getSpaceKey(note.space_id);
+            if (spaceKey) {
+              const enc = await encryptText(note.content, spaceKey);
+              note = {
+                ...note,
+                content: `__ENCRYPTED_NOTE__:${JSON.stringify(enc)}`
+              };
+            } else {
+              throw new Error('Space key not in memory (locked)');
+            }
+          } else {
+            throw new Error('Space is locked');
+          }
+        }
+      }
+    }
+
     const isExisting = await db.get('notes', note.id);
     
     if (enqueueSync) {

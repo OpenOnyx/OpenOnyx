@@ -186,6 +186,7 @@ class CollaborationEngine {
   private remoteCursorListeners = new Set<RemoteCursorListener>();
   private _status: CollabStatus = { state: 'idle' };
   private _activeSpaceId: string | null = null;
+  private activeSpaceVisibility: string | null = null;
   private _activeUsers: ActiveUser[] = [];
   private realtimeChannel: ReturnType<typeof supabase.channel> | null = null;
   private clientId: string = '';
@@ -491,6 +492,7 @@ class CollaborationEngine {
       }, false);
       await localDB.setMeta(`collab_space_${normalizedVaultPath}`, spaceId);
       this._activeSpaceId = spaceId;
+      this.activeSpaceVisibility = 'private';
 
       const space: CloudSpace = {
         id: spaceId,
@@ -854,6 +856,7 @@ class CollaborationEngine {
         }, false);
 
         this._activeSpaceId = spaceId;
+        this.activeSpaceVisibility = data.visibility || 'private';
         return data as CloudSpace;
       }
 
@@ -883,6 +886,7 @@ class CollaborationEngine {
     if (cachedSpace) {
       console.log('[Collab] Using cached space details for space:', spaceId);
       this._activeSpaceId = spaceId;
+      this.activeSpaceVisibility = cachedSpace.visibility || 'private';
       return {
         id: cachedSpace.id,
         owner_id: cachedSpace.owner_id,
@@ -969,6 +973,7 @@ class CollaborationEngine {
           created_at: space.created_at,
           updated_at: space.updated_at,
         }, false);
+        this.activeSpaceVisibility = space.visibility || 'private';
       }
     } catch (e) {
       console.warn('[Collab] Failed to cache linked space details:', e);
@@ -988,6 +993,44 @@ class CollaborationEngine {
     // would be undefined and create ghost entries.
     if (!userId) {
       console.warn('[Collab] subscribeToSpace: skipping -- userId is null');
+      return;
+    }
+
+    // Fetch space details first to determine visibility
+    let space = await localDB.getSpace(spaceId);
+    if (!space) {
+      try {
+        const { data } = await getClient().from('spaces').select('*').eq('id', spaceId).single();
+        if (data) {
+          space = {
+            id: data.id,
+            owner_id: data.owner_id,
+            title: data.title,
+            description: data.description,
+            helps_with: data.helps_with || null,
+            is_public: data.is_public || false,
+            visibility: (data.visibility || 'private') as 'local' | 'private' | 'public',
+            forked_from: data.forked_from || null,
+            created_at: data.created_at,
+            updated_at: data.updated_at,
+          };
+          await localDB.putSpace(space, false);
+        }
+      } catch (err) {
+        console.warn('[Collab] Failed to fetch space details for subscription:', err);
+      }
+    }
+
+    const visibility = space?.visibility || 'public';
+    this.activeSpaceVisibility = visibility;
+
+    if (visibility === 'private') {
+      console.log('[Collab] Skipping realtime subscription for private cloud space:', spaceId);
+      this.unsubscribeFromSpace();
+      this._activeSpaceId = spaceId;
+      if (space) {
+        this.notify({ state: 'ready', space: { ...space, status: 'ready' } as any });
+      }
       return;
     }
 
@@ -1143,11 +1186,13 @@ class CollaborationEngine {
     this.clearRealtimeReconnect();
     this.unsubscribeFromSpace();
     this._activeSpaceId = null;
+    this.activeSpaceVisibility = null;
   }
 
   private ensureRealtimeConnected() {
     if (this._collabPaused) return;
     if (!this._activeSpaceId) return;
+    if (this.activeSpaceVisibility === 'private') return;
     if (!authManager.getUserId()) return;
 
     const state = this.realtimeChannel ? (this.realtimeChannel as any).state : null;
@@ -1472,6 +1517,7 @@ class CollaborationEngine {
    */
   broadcastOperations(path: string, ops: CollabOperation[]) {
     if (this._collabPaused) return;
+    if (this.activeSpaceVisibility === 'private') return;
     if (ops.length === 0) return;
     if (!this.realtimeChannel || (this.realtimeChannel as any).state !== 'joined') {
       this.ensureRealtimeConnected();
@@ -1530,6 +1576,7 @@ class CollaborationEngine {
    */
   async broadcastFullDocument(path: string, content: string, meta?: Partial<RemoteDocumentMeta>) {
     if (this._collabPaused) return;
+    if (this.activeSpaceVisibility === 'private') return;
     if (!this.realtimeChannel || (this.realtimeChannel as any).state !== 'joined') {
       this.ensureRealtimeConnected();
       return;
@@ -1571,6 +1618,7 @@ class CollaborationEngine {
    */
   broadcastCursorPresence(presence: CursorPresence) {
     if (this._collabPaused) return;
+    if (this.activeSpaceVisibility === 'private') return;
     if (!this.realtimeChannel) {
       this.ensureRealtimeConnected();
       return;

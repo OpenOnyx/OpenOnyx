@@ -41,6 +41,16 @@ export function registerIpcHandlers(
     return fsManager.getVaultPath();
   });
 
+  ipcMain.handle('vault:setCryptoKey', async (_event, spaceId: string, base64Key: string | null, visibility: string | null) => {
+    fsManager.setCryptoKey(spaceId, base64Key, visibility);
+    // Rebuild search index with decrypted content (if key is set) or clear it (if key is removed)
+    try {
+      await searchEngine.buildIndex(fsManager);
+    } catch (e) {
+      console.error('[IPC] Failed to rebuild search index after key change:', e);
+    }
+  });
+
   ipcMain.handle('vault:getPreviousPaths', () => {
     if (getPreviousPaths) return getPreviousPaths();
     return [];

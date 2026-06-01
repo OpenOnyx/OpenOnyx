@@ -19,6 +19,9 @@ const electronAPI = {
   getVaultPath: (): Promise<string | null> =>
     ipcRenderer.invoke('vault:getPath'),
 
+  setCryptoKey: (spaceId: string, base64Key: string | null, visibility: string | null = 'private'): Promise<void> =>
+    ipcRenderer.invoke('vault:setCryptoKey', spaceId, base64Key, visibility),
+
   getPreviouslyOpenedVaults: (): Promise<string[]> =>
     ipcRenderer.invoke('vault:getPreviousPaths'),
 

@@ -253,6 +253,9 @@ export function createMockAPI(): ElectronAPI {
       if (stored) return JSON.parse(stored);
       return mockVaultPath ? [mockVaultPath] : [];
     },
+    setCryptoKey: async (spaceId: string, base64Key: string | null, visibility: string | null = 'private') => {
+      console.log(`[MockAPI] setCryptoKey spaceId=${spaceId} base64Key=${base64Key} visibility=${visibility}`);
+    },
 
     // File operations
     listFiles: async (dirPath?: string) => {

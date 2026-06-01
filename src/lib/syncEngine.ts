@@ -1,6 +1,7 @@
 import { supabase } from './supabase';
 import { localDB, type LocalNote, type SyncQueueItem } from './localdb';
 import { authManager } from './auth';
+import { isSpaceUnlocked } from '../utils/spaces-crypto';
 import { getUserSupabaseClient } from './userDatabase';
 import { collaborationEngine } from './collaborationEngine';
 import { getAPI } from '../utils/api';
@@ -102,6 +103,7 @@ export class SyncEngine {
   private authUnsubscribe: (() => void) | null = null;
 
   private activeSpaceId: string | null = null;
+  private activeSpaceVisibility: string | null = null;
   private activeVaultPath: string | null = null;
   private clientId: string = '';
   private lastLocalScanTime = 0;
@@ -129,11 +131,19 @@ export class SyncEngine {
       try {
         const space = await collaborationEngine.getSpaceForVault(vaultPath);
         this.activeSpaceId = space?.id || null;
+        if (this.activeSpaceId) {
+          const localSpace = await localDB.getSpace(this.activeSpaceId);
+          this.activeSpaceVisibility = localSpace?.visibility || null;
+        } else {
+          this.activeSpaceVisibility = null;
+        }
       } catch {
         this.activeSpaceId = null;
+        this.activeSpaceVisibility = null;
       }
     } else {
       this.activeSpaceId = null;
+      this.activeSpaceVisibility = null;
     }
 
     // If there's an active space, do an initial sync (push + pull)
@@ -219,6 +229,12 @@ export class SyncEngine {
     // Don't push during bootstrap
     if (collaborationEngine.status.state === 'bootstrapping') return;
     if (!this.activeSpaceId) return;
+    
+    // Don't push if private space is locked
+    if (this.activeSpaceVisibility === 'private' && !isSpaceUnlocked(this.activeSpaceId)) {
+      console.log('[SyncEngine] Sync push skipped: private space is locked.');
+      return;
+    }
 
     if (this.pushDebounceTimeout) clearTimeout(this.pushDebounceTimeout);
     this.pushDebounceTimeout = setTimeout(() => {
@@ -241,6 +257,14 @@ export class SyncEngine {
     if (this.isSyncing) return { pushed: 0, pulled: 0 };
     if (!authManager.isLoggedIn()) return { pushed: 0, pulled: 0 };
     if (collaborationEngine.status.state === 'bootstrapping') return { pushed: 0, pulled: 0 };
+    
+    // Don't sync if private space is locked
+    if (this.activeSpaceId && this.activeSpaceVisibility === 'private') {
+      if (!isSpaceUnlocked(this.activeSpaceId)) {
+        console.log('[SyncEngine] Sync skipped: private space is locked.');
+        return { pushed: 0, pulled: 0 };
+      }
+    }
 
     this.isSyncing = true;
     this.notifyStatus({ state: 'syncing' });

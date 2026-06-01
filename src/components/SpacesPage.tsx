@@ -13,15 +13,27 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from "react"
 import {
   Plus, X, Trash2, ArrowLeft, ArrowUp, Loader2,
   Copy, FileText, Globe, RefreshCw, LogIn, LogOut, Search, Sparkles,
-  Zap, Layers, Brain, Check, GitBranch, MessageSquare, Edit2, Square
+  Zap, Layers, Brain, Check, GitBranch, MessageSquare, Edit2, Square,
+  Lock, Unlock
 } from "lucide-react";
 import {
-  listSpaces, getSpace, createSpace, deleteSpace, forkSpace,
+  listSpaces, getSpace, createSpace, deleteSpace, forkSpace, updateSpace,
   loadSpaceChat, saveSpaceChat,
   loadSpaceConversations, saveSpaceConversations,
   loadSpaceConversationMessages, saveSpaceConversationMessages,
   deleteSpaceConversationMessages
 } from "../utils/spaces-store";
+import {
+  isSpaceUnlocked,
+  unlockSpace,
+  lockSpace,
+  deriveMasterKey,
+  generateSpaceKey,
+  encryptSpaceKey,
+  decryptSpaceKey,
+  base64ToArrayBuffer,
+  arrayBufferToBase64
+} from "../utils/spaces-crypto";
 import { buildVectorIndex, type VaultNote } from "../utils/spaces-processing";
 import { querySpaceStreaming, parseActionPayload, stripJSONBlock, type RAGResult, type SpaceMetadata } from "../utils/spaces-rag";
 import { isAIConfigured } from "../utils/ai-core";
@@ -119,6 +131,18 @@ function getVisibilityLabel(visibility: SpaceVisibility): string {
     default:
       return "Local";
   }
+}
+
+function cleanDescription(desc: string | null | undefined): string {
+  if (!desc) return "";
+  if (desc.startsWith("__ENCRYPTED_SPACE__:")) {
+    const newlineIndex = desc.indexOf("\n");
+    if (newlineIndex !== -1) {
+      return desc.substring(newlineIndex + 1);
+    }
+    return "";
+  }
+  return desc;
 }
 
 /**
@@ -222,6 +246,18 @@ function ActiveActionStatus({ actionType, isApplied }: ActiveActionStatusProps) 
 // ── Component ────────────────────────────────────────────────────────────────
 
 export function SpacesPage({ onClose, fileTree, onOpenNote }: SpacesPageProps) {
+  // E2EE Private Spaces States
+  const [spaceUnlocked, setSpaceUnlocked] = useState(false);
+  const [unlockPassword, setUnlockPassword] = useState("");
+  const [unlockError, setUnlockError] = useState<string | null>(null);
+  const [createPassword, setCreatePassword] = useState("");
+  
+  const [showChangePasswordModal, setShowChangePasswordModal] = useState(false);
+  const [changePasswordCurrent, setChangePasswordCurrent] = useState("");
+  const [changePasswordNew, setChangePasswordNew] = useState("");
+  const [changePasswordConfirm, setChangePasswordConfirm] = useState("");
+  const [changePasswordError, setChangePasswordError] = useState<string | null>(null);
+
   // Navigation
   const [view, setView] = useState<"marketplace" | "space">("marketplace");
   const [activeSpaceId, setActiveSpaceId] = useState<string | null>(null);
@@ -451,6 +487,12 @@ export function SpacesPage({ onClose, fileTree, onOpenNote }: SpacesPageProps) {
     if (space) {
       setActiveSpace(space);
       setActiveSpaceId(id);
+      
+      const isPrivate = space.visibility === "private";
+      setSpaceUnlocked(!isPrivate || isSpaceUnlocked(id));
+      setUnlockPassword("");
+      setUnlockError(null);
+
       setView("space");
       setStreamingText("");
       setChatInput("");
@@ -611,18 +653,52 @@ export function SpacesPage({ onClose, fileTree, onOpenNote }: SpacesPageProps) {
     if (!createTitle.trim()) return;
     setCreateError(null);
     try {
+      let finalDescription = createDesc.trim();
+      let spaceKey: CryptoKey | null = null;
+      
+      if (createVisibility === "private") {
+        if (createPassword.length < 8) {
+          setCreateError("Encryption password must be at least 8 characters long.");
+          return;
+        }
+        
+        spaceKey = await generateSpaceKey();
+        const salt = window.crypto.getRandomValues(new Uint8Array(16));
+        const masterKey = await deriveMasterKey(createPassword, salt);
+        const encrypted = await encryptSpaceKey(spaceKey, masterKey);
+        
+        const e2eeMeta = {
+          salt: arrayBufferToBase64(salt),
+          keyVersion: 1,
+          encryptedKey: {
+            ciphertext: encrypted.ciphertext,
+            iv: encrypted.iv,
+            authTag: encrypted.authTag
+          }
+        };
+        
+        finalDescription = `__ENCRYPTED_SPACE__:${JSON.stringify(e2eeMeta)}\n${createDesc.trim()}`;
+      }
+
       const space = await createSpace({
         title: createTitle.trim(),
-        description: createDesc.trim(),
+        description: finalDescription,
         helpsWith: createTags,
         noteCount: vaultNoteCount,
         visibility: createVisibility,
       });
+      
+      if (createVisibility === "private" && spaceKey) {
+        unlockSpace(space.id, spaceKey);
+        setSpaceUnlocked(true);
+      }
+      
       setCreateTitle("");
       setCreateDesc("");
       setCreateTags([]);
       setCreateTagInput("");
       setCreateVisibility("local");
+      setCreatePassword("");
       setShowCreateModal(false);
       await refreshSpaces();
       openSpace(space.id);
@@ -635,7 +711,133 @@ export function SpacesPage({ onClose, fileTree, onOpenNote }: SpacesPageProps) {
       console.error("[SpacesPage] Failed to create space:", err);
       setCreateError(err instanceof Error ? err.message : "Failed to create space.");
     }
-  }, [createTitle, createDesc, createTags, vaultNoteCount, createVisibility, refreshSpaces, openSpace]);
+  }, [createTitle, createDesc, createTags, vaultNoteCount, createVisibility, createPassword, refreshSpaces, openSpace]);
+
+  const handleLockSpace = useCallback(() => {
+    if (!activeSpace) return;
+    lockSpace(activeSpace.id);
+    setSpaceUnlocked(false);
+    setView("marketplace");
+    setActiveSpace(null);
+    setActiveSpaceId(null);
+    activeSpaceIdRef.current = null;
+    showToast("Space locked.");
+  }, [activeSpace]);
+
+  const handleUnlockSubmit = useCallback(async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!activeSpace || !unlockPassword) return;
+    setUnlockError(null);
+    try {
+      const desc = activeSpace.description || "";
+      if (!desc.startsWith("__ENCRYPTED_SPACE__:")) {
+        setUnlockError("No encryption metadata found for this space.");
+        return;
+      }
+      
+      const newlineIndex = desc.indexOf("\n");
+      const metaJsonStr = newlineIndex !== -1 
+        ? desc.substring("__ENCRYPTED_SPACE__:".length, newlineIndex)
+        : desc.substring("__ENCRYPTED_SPACE__:".length);
+      
+      const e2eeMeta = JSON.parse(metaJsonStr);
+      const salt = new Uint8Array(base64ToArrayBuffer(e2eeMeta.salt));
+      
+      const masterKey = await deriveMasterKey(unlockPassword, salt);
+      const spaceKey = await decryptSpaceKey(e2eeMeta.encryptedKey, masterKey);
+      
+      unlockSpace(activeSpace.id, spaceKey);
+      setSpaceUnlocked(true);
+      
+      syncEngine.sync();
+      showToast("Space unlocked successfully.");
+    } catch (err) {
+      console.error("[SpacesPage] Unlock failed:", err);
+      setUnlockError("Incorrect password. Please try again.");
+    }
+  }, [activeSpace, unlockPassword]);
+
+  const handleChangePasswordSubmit = useCallback(async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!activeSpace || !changePasswordCurrent || !changePasswordNew || !changePasswordConfirm) return;
+    setChangePasswordError(null);
+    
+    if (changePasswordNew.length < 8) {
+      setChangePasswordError("New password must be at least 8 characters long.");
+      return;
+    }
+    if (changePasswordNew !== changePasswordConfirm) {
+      setChangePasswordError("Passwords do not match.");
+      return;
+    }
+    
+    try {
+      const desc = activeSpace.description || "";
+      if (!desc.startsWith("__ENCRYPTED_SPACE__:")) {
+        setChangePasswordError("No E2EE metadata found.");
+        return;
+      }
+      
+      const newlineIndex = desc.indexOf("\n");
+      const metaJsonStr = newlineIndex !== -1 
+        ? desc.substring("__ENCRYPTED_SPACE__:".length, newlineIndex)
+        : desc.substring("__ENCRYPTED_SPACE__:".length);
+      
+      const userDesc = newlineIndex !== -1 ? desc.substring(newlineIndex + 1) : "";
+      
+      const e2eeMeta = JSON.parse(metaJsonStr);
+      const salt = new Uint8Array(base64ToArrayBuffer(e2eeMeta.salt));
+      
+      const oldMasterKey = await deriveMasterKey(changePasswordCurrent, salt);
+      const spaceKey = await decryptSpaceKey(e2eeMeta.encryptedKey, oldMasterKey);
+      
+      const newSalt = window.crypto.getRandomValues(new Uint8Array(16));
+      const newMasterKey = await deriveMasterKey(changePasswordNew, newSalt);
+      const encrypted = await encryptSpaceKey(spaceKey, newMasterKey);
+      
+      const newE2eeMeta = {
+        salt: arrayBufferToBase64(newSalt),
+        keyVersion: 1,
+        encryptedKey: {
+          ciphertext: encrypted.ciphertext,
+          iv: encrypted.iv,
+          authTag: encrypted.authTag
+        }
+      };
+      
+      const finalDescription = `__ENCRYPTED_SPACE__:${JSON.stringify(newE2eeMeta)}\n${userDesc}`;
+      
+      await updateSpace(activeSpace.id, { description: finalDescription });
+      setActiveSpace(prev => prev ? { ...prev, description: finalDescription } : null);
+      
+      setShowChangePasswordModal(false);
+      setChangePasswordCurrent("");
+      setChangePasswordNew("");
+      setChangePasswordConfirm("");
+      showToast("Password changed successfully.");
+    } catch (err) {
+      console.error("[SpacesPage] Change password failed:", err);
+      setChangePasswordError("Incorrect current password. Please try again.");
+    }
+  }, [activeSpace, changePasswordCurrent, changePasswordNew, changePasswordConfirm]);
+
+  useEffect(() => {
+    const handleAutoLocked = () => {
+      if (activeSpace && activeSpace.visibility === "private") {
+        setSpaceUnlocked(false);
+        setView("marketplace");
+        setActiveSpace(null);
+        setActiveSpaceId(null);
+        activeSpaceIdRef.current = null;
+        showToast("Auto-locked due to inactivity.");
+      }
+    };
+
+    window.addEventListener("spaces-crypto:auto-locked", handleAutoLocked);
+    return () => {
+      window.removeEventListener("spaces-crypto:auto-locked", handleAutoLocked);
+    };
+  }, [activeSpace]);
 
   // ── Delete space ─────────────────────────────────────
   const handleDelete = useCallback(async (id: string) => {
@@ -1452,7 +1654,7 @@ export function SpacesPage({ onClose, fileTree, onOpenNote }: SpacesPageProps) {
                         </span>
                       </div>
 
-                      {s.description && <p className="space-card-desc">{s.description}</p>}
+                      {cleanDescription(s.description) && <p className="space-card-desc">{cleanDescription(s.description)}</p>}
 
                       {(s.helpsWith || []).length > 0 && (
                         <div className="space-card-tags">
@@ -1578,6 +1780,22 @@ export function SpacesPage({ onClose, fileTree, onOpenNote }: SpacesPageProps) {
                       Cloud DB parameters (Supabase environment keys) are required to toggle remote features.
                     </div>
                   )}
+                  {createVisibility === "private" && (
+                    <div className="space-form-field" style={{ marginTop: '12px' }}>
+                      <label>Encryption Password (Min 8 characters)</label>
+                      <input
+                        type="password"
+                        className="space-form-input"
+                        placeholder="Create a strong password..."
+                        value={createPassword}
+                        onChange={(e) => setCreatePassword(e.target.value)}
+                        required
+                      />
+                      <div className="space-form-hint warning" style={{ marginTop: '4px', color: '#eab308' }}>
+                        <strong>WARNING:</strong> This password cannot be recovered. If you lose it, you will lose access to all notes in this private space.
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 {createError && <div className="space-form-error">{createError}</div>}
@@ -1677,6 +1895,91 @@ export function SpacesPage({ onClose, fileTree, onOpenNote }: SpacesPageProps) {
 
   if (!activeSpace) return null;
 
+  if (activeSpace.visibility === "private" && !spaceUnlocked) {
+    return (
+      <div className="spaces-page space-view" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', background: 'var(--bg-primary)' }}>
+        <div style={{
+          width: '100%',
+          maxWidth: '400px',
+          padding: '40px 32px',
+          background: 'var(--bg-secondary)',
+          border: '1px solid var(--border-medium)',
+          borderRadius: '12px',
+          boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          gap: '24px',
+          textAlign: 'center'
+        }}>
+          <div style={{
+            width: '64px',
+            height: '64px',
+            borderRadius: '50%',
+            background: 'rgba(59, 130, 246, 0.1)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            color: 'var(--color-accent)'
+          }}>
+            <Lock size={32} />
+          </div>
+          <div>
+            <h3 style={{ fontSize: '20px', fontWeight: 600, color: 'var(--text-primary)', margin: '0 0 8px 0' }}>Unlock Space</h3>
+            <p style={{ fontSize: '13px', color: 'var(--text-secondary)', margin: 0, lineHeight: 1.5 }}>
+              <strong>{activeSpace.title}</strong> is protected with Zero-Knowledge E2EE. Enter the password to unlock.
+            </p>
+          </div>
+          <form onSubmit={handleUnlockSubmit} style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', textAlign: 'left' }}>
+              <label style={{ fontSize: '12px', fontWeight: 500, color: 'var(--text-muted)' }}>Password</label>
+              <input
+                type="password"
+                className="space-form-input"
+                placeholder="Enter password..."
+                value={unlockPassword}
+                onChange={(e) => {
+                  setUnlockPassword(e.target.value);
+                  setUnlockError(null);
+                }}
+                autoFocus
+                style={{ width: '100%', boxSizing: 'border-box' }}
+              />
+              {unlockError && (
+                <div style={{ fontSize: '12px', color: '#ef4444', marginTop: '4px', fontWeight: 500 }}>
+                  {unlockError}
+                </div>
+              )}
+            </div>
+            <div style={{ display: 'flex', gap: '12px', marginTop: '8px' }}>
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                onClick={() => {
+                  setView("marketplace");
+                  setActiveSpace(null);
+                  setActiveSpaceId(null);
+                  activeSpaceIdRef.current = null;
+                }}
+                style={{ flex: 1 }}
+              >
+                Back
+              </button>
+              <button
+                type="submit"
+                className="btn btn-primary btn-sm"
+                disabled={!unlockPassword}
+                style={{ flex: 1 }}
+              >
+                Unlock
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="spaces-page space-view">
       {/* Dual Column Workspace Container */}
@@ -1726,8 +2029,8 @@ export function SpacesPage({ onClose, fileTree, onOpenNote }: SpacesPageProps) {
                 <span className="space-sidebar-project-title">{activeSpace.title}</span>
               </div>
               
-              {activeSpace.description && (
-                <p className="space-sidebar-project-desc">{activeSpace.description}</p>
+              {cleanDescription(activeSpace.description) && (
+                <p className="space-sidebar-project-desc">{cleanDescription(activeSpace.description)}</p>
               )}
 
               {(activeSpace.helpsWith || []).length > 0 && (
@@ -1760,6 +2063,26 @@ export function SpacesPage({ onClose, fileTree, onOpenNote }: SpacesPageProps) {
                   <Copy size={11} />
                   <span>Remix</span>
                 </button>
+                {activeSpace.visibility === "private" && (
+                  <button
+                    className="space-sidebar-project-btn"
+                    onClick={handleLockSpace}
+                    title="Lock this E2EE space"
+                  >
+                    <Lock size={11} />
+                    <span>Lock Space</span>
+                  </button>
+                )}
+                {activeSpace.visibility === "private" && activeSpace.ownerId === currentUserId && (
+                  <button
+                    className="space-sidebar-project-btn"
+                    onClick={() => setShowChangePasswordModal(true)}
+                    title="Change password for E2EE"
+                  >
+                    <Lock size={11} />
+                    <span>Change Password</span>
+                  </button>
+                )}
               </div>
             </div>
           </div>
@@ -2804,6 +3127,69 @@ export function SpacesPage({ onClose, fileTree, onOpenNote }: SpacesPageProps) {
         )}
 
       </div>
+
+      {showChangePasswordModal && (
+        <div className="modal-overlay" onClick={() => setShowChangePasswordModal(false)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 400 }}>
+            <div className="modal-header">
+              <h3>Change E2EE Password</h3>
+              <button className="modal-close" onClick={() => setShowChangePasswordModal(false)}>
+                <X size={15} />
+              </button>
+            </div>
+            <form onSubmit={handleChangePasswordSubmit} style={{ padding: 24, display: "flex", flexDirection: "column", gap: 16 }}>
+              <div className="space-form-field">
+                <label>Current Password</label>
+                <input
+                  type="password"
+                  className="space-form-input"
+                  placeholder="Enter current password..."
+                  value={changePasswordCurrent}
+                  onChange={(e) => setChangePasswordCurrent(e.target.value)}
+                  required
+                />
+              </div>
+              <div className="space-form-field">
+                <label>New Password (Min 8 characters)</label>
+                <input
+                  type="password"
+                  className="space-form-input"
+                  placeholder="Enter new password..."
+                  value={changePasswordNew}
+                  onChange={(e) => setChangePasswordNew(e.target.value)}
+                  required
+                />
+              </div>
+              <div className="space-form-field">
+                <label>Confirm New Password</label>
+                <input
+                  type="password"
+                  className="space-form-input"
+                  placeholder="Confirm new password..."
+                  value={changePasswordConfirm}
+                  onChange={(e) => setChangePasswordConfirm(e.target.value)}
+                  required
+                />
+              </div>
+              
+              {changePasswordError && (
+                <div style={{ fontSize: '12px', color: '#ef4444', fontWeight: 500 }}>
+                  {changePasswordError}
+                </div>
+              )}
+
+              <div className="space-form-actions" style={{ marginTop: 8 }}>
+                <button type="button" className="btn btn-ghost btn-sm" onClick={() => setShowChangePasswordModal(false)}>
+                  Cancel
+                </button>
+                <button type="submit" className="btn btn-primary btn-sm">
+                  Update Password
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {showAuthModal && (
         <AuthModal

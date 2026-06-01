@@ -28,6 +28,80 @@ export interface NoteLink {
 
 export class FileSystemManager {
   private vaultPath: string | null = null;
+  private activeSpaceId: string | null = null;
+  private activeSpaceKey: string | null = null;
+  private activeSpaceVisibility: string | null = null;
+
+  setCryptoKey(spaceId: string, base64Key: string | null, visibility: string | null): void {
+    if (!base64Key) {
+      this.activeSpaceId = null;
+      this.activeSpaceKey = null;
+      this.activeSpaceVisibility = null;
+    } else {
+      this.activeSpaceId = spaceId;
+      this.activeSpaceKey = base64Key;
+      this.activeSpaceVisibility = visibility;
+    }
+  }
+
+  private decryptContent(encryptedText: string): string {
+    if (!this.activeSpaceKey) {
+      throw new Error('FILE_LOCKED');
+    }
+    try {
+      const raw = encryptedText.substring('__ENCRYPTED_NOTE__:'.length);
+      const { content_encrypted, iv, auth_tag } = JSON.parse(raw);
+      
+      const keyBuffer = Buffer.from(this.activeSpaceKey, 'base64');
+      const ivBuffer = Buffer.from(iv, 'base64');
+      const authTagBuffer = Buffer.from(auth_tag, 'base64');
+      const encryptedBuffer = Buffer.from(content_encrypted, 'base64');
+      
+      const decipher = crypto.createDecipheriv('aes-256-gcm', keyBuffer, ivBuffer);
+      decipher.setAuthTag(authTagBuffer);
+      
+      const decrypted = Buffer.concat([
+        decipher.update(encryptedBuffer),
+        decipher.final()
+      ]);
+      
+      return decrypted.toString('utf8');
+    } catch (err) {
+      console.error('[NodeCrypto] Decryption failed:', err);
+      throw new Error('DECRYPTION_FAILED');
+    }
+  }
+
+  private encryptContent(plaintext: string): string {
+    if (!this.activeSpaceKey) {
+      throw new Error('FILE_LOCKED');
+    }
+    try {
+      const keyBuffer = Buffer.from(this.activeSpaceKey, 'base64');
+      const iv = crypto.randomBytes(12);
+      
+      const cipher = crypto.createCipheriv('aes-256-gcm', keyBuffer, iv);
+      
+      const encrypted = Buffer.concat([
+        cipher.update(plaintext, 'utf8'),
+        cipher.final()
+      ]);
+      
+      const authTag = cipher.getAuthTag();
+      
+      const payload = {
+        content_encrypted: encrypted.toString('base64'),
+        iv: iv.toString('base64'),
+        auth_tag: authTag.toString('base64')
+      };
+      
+      return '__ENCRYPTED_NOTE__:' + JSON.stringify(payload);
+    } catch (err) {
+      console.error('[NodeCrypto] Encryption failed:', err);
+      throw new Error('ENCRYPTION_FAILED');
+    }
+  }
+
 
   /** Set the active vault directory */
   setVaultPath(vaultPath: string): boolean {
@@ -110,7 +184,11 @@ export class FileSystemManager {
   /** Read file content */
   async readFile(filePath: string): Promise<string> {
     const absolutePath = this.resolvePath(filePath);
-    return fs.promises.readFile(absolutePath, 'utf-8');
+    const rawContent = await fs.promises.readFile(absolutePath, 'utf-8');
+    if (rawContent.startsWith('__ENCRYPTED_NOTE__:')) {
+      return this.decryptContent(rawContent);
+    }
+    return rawContent;
   }
 
   /** Write file content (auto-creates directories) */
@@ -118,7 +196,14 @@ export class FileSystemManager {
     const absolutePath = this.resolvePath(filePath);
     const dir = path.dirname(absolutePath);
     await fs.promises.mkdir(dir, { recursive: true });
-    await fs.promises.writeFile(absolutePath, content, 'utf-8');
+    
+    let contentToWrite = content;
+    if (this.activeSpaceVisibility === 'private') {
+      if (!content.startsWith('__ENCRYPTED_NOTE__:')) {
+        contentToWrite = this.encryptContent(content);
+      }
+    }
+    await fs.promises.writeFile(absolutePath, contentToWrite, 'utf-8');
   }
 
   /** Create a new file */
@@ -131,7 +216,13 @@ export class FileSystemManager {
     if (fs.existsSync(absolutePath)) {
       return;
     }
-    await fs.promises.writeFile(absolutePath, content, 'utf-8');
+    let contentToWrite = content;
+    if (this.activeSpaceVisibility === 'private') {
+      if (!content.startsWith('__ENCRYPTED_NOTE__:')) {
+        contentToWrite = this.encryptContent(content);
+      }
+    }
+    await fs.promises.writeFile(absolutePath, contentToWrite, 'utf-8');
   }
 
   /** Delete a file */

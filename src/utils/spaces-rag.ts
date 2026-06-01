@@ -13,7 +13,7 @@
  */
 
 import { embedText } from "./embeddings";
-import { loadVectorIndex } from "./spaces-store";
+import { loadVectorIndex, getSpace } from "./spaces-store";
 import { loadAIConfig, getBaseUrl, getProviderHeaders, parseProviderError } from "./ai-settings";
 import { supabase, isSupabaseConfigured } from "../lib/supabase";
 import type { SpaceChunk, SpaceChatMessage } from "../types/spaces";
@@ -286,8 +286,18 @@ export async function retrieveChunks(
   const queryVector = await embedText(query);
   const results: RetrievedChunk[] = [];
 
-  // 1. If cloud is available, try it first
-  if (isSupabaseConfigured) {
+  // 1. If cloud is available, try it first (unless it is a private E2EE space)
+  let bypassCloud = false;
+  try {
+    const space = await getSpace(spaceId);
+    if (space && space.visibility === "private") {
+      bypassCloud = true;
+    }
+  } catch (err) {
+    console.warn("[SpacesRAG] Failed to check space visibility:", err);
+  }
+
+  if (isSupabaseConfigured && !bypassCloud) {
     try {
       const { data: cloudChunks, error } = await supabase.rpc("match_note_chunks", {
         filter_space_id: spaceId,

@@ -280,6 +280,49 @@ export function CollaborationPanel({
   }
 
   // ── Main Panel ───────────────────────────────────────────────────────────
+ 
+  if (cloudSpace && cloudSpace.visibility === 'private') {
+    return (
+      <div className="collaboration-panel-container">
+        {error && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 14px', background: 'rgba(239, 68, 68, 0.08)', border: '1px solid rgba(239, 68, 68, 0.2)', borderRadius: '6px', color: '#ef4444', fontSize: '12.5px', marginBottom: '16px' }}>
+            <AlertCircle size={14} style={{ flexShrink: 0 }} />
+            <span style={{ flex: 1 }}>{error}</span>
+            <button onClick={() => setError(null)} style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', display: 'flex', padding: '2px' }} aria-label="Dismiss error"><X size={12} /></button>
+          </div>
+        )}
+        
+        <h3 className="setting-group-header">Cloud Space Status</h3>
+        <div className="setting-card">
+          <div className="setting-info">
+            <div className="setting-title-with-icon">
+              <Cloud size={16} className="setting-title-icon" style={{ color: 'var(--color-accent)' }} />
+              <span>{cloudSpace.title}</span>
+            </div>
+            <div className="setting-description" style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '2px' }}>
+              <span className={`collab-status-dot collab-status-ready`} style={{ display: 'inline-block', width: '8px', height: '8px', borderRadius: '50%', background: '#10b981', boxShadow: '0 0 6px rgba(16, 185, 129, 0.4)' }} />
+              <span style={{ color: 'var(--text-muted)', fontSize: '11px' }}>
+                Zero-Knowledge Encrypted (E2EE)
+              </span>
+            </div>
+          </div>
+          <div className="setting-control">
+            <button className="setting-btn-secondary" onClick={() => loadSpaceData(false)} title="Refresh collaboration data" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <RefreshCw size={12} /> Refresh
+            </button>
+          </div>
+        </div>
+
+        <div className="setting-card" style={{ padding: '24px 16px', background: 'rgba(59, 130, 246, 0.04)', border: '1px dashed var(--color-accent)', borderRadius: '6px', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
+          <Users size={24} style={{ color: 'var(--color-accent)' }} />
+          <div style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text-primary)' }}>End-to-End Encrypted Space</div>
+          <div style={{ fontSize: '12px', color: 'var(--text-secondary)', maxWidth: '280px', lineHeight: '1.5' }}>
+            Realtime collaboration for encrypted spaces is coming soon. Your notes are safely encrypted locally before being synchronized to the cloud.
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="collaboration-panel-container">

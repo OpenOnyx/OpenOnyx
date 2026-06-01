@@ -216,7 +216,7 @@ export async function buildVectorIndex(
 
   // 1.5. Push raw notes to Supabase immediately if this is a cloud space
   const spaceData = await getSpace(spaceId);
-  if (spaceData && spaceData.visibility !== "local" && !customNotes) {
+  if (spaceData && spaceData.visibility !== "local" && spaceData.visibility !== "private" && !customNotes) {
     const notesForCloud = vaultNotes.map((n) => ({
       path: n.path,
       title: n.title,
@@ -328,7 +328,7 @@ export async function buildVectorIndex(
   await saveVectorIndex(index);
 
   // 4. Push notes to Supabase if this space is cloud-synced
-  if (spaceData && spaceData.visibility !== "local") {
+  if (spaceData && spaceData.visibility !== "local" && spaceData.visibility !== "private") {
     const notesForCloud = vaultNotes
       .map((n) => ({
         path: n.path,
