@@ -258,7 +258,39 @@ Electron Builder writes distributable artifacts to `release/`.
 Current package targets:
 
 - Windows: NSIS installer
+- macOS: DMG and ZIP
 - Linux: AppImage and Debian package
+
+Platform-specific package commands are also available:
+
+```bash
+npm run package:linux
+npm run package:win
+npm run package:mac
+```
+
+Use the matching operating system for production release builds. Linux can build
+the Linux artifacts, Windows can build the Windows installer, and macOS can
+build the macOS DMG/ZIP. `npm run package:all` is available for local
+cross-build experiments, but macOS artifacts should be produced on macOS.
+
+### Create a GitHub Release
+
+The release workflow builds Linux, Windows, and macOS artifacts in parallel and
+publishes them when a version tag is pushed.
+
+1. Update `version` in `package.json`.
+2. Commit the release change.
+3. Create and push a tag:
+
+```bash
+git tag v1.0.0
+git push origin main --tags
+```
+
+GitHub Actions writes all installers to the tagged GitHub Release. You can also
+run the `Release` workflow manually from GitHub Actions; manual runs upload
+artifacts but do not publish a tagged release.
 
 ## Configuration
 
@@ -305,6 +337,9 @@ Common commands:
 | `npm run build` | Type-check, build the renderer, and build Electron |
 | `npm run build:electron` | Compile the Electron main and preload process |
 | `npm run package` | Build and package desktop installers |
+| `npm run package:linux` | Build Linux AppImage and Debian artifacts |
+| `npm run package:win` | Build the Windows NSIS installer |
+| `npm run package:mac` | Build macOS DMG and ZIP artifacts |
 | `npm run lint` | Run TypeScript with `--noEmit` |
 
 The Vite dev server uses:

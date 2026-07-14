@@ -11,6 +11,10 @@
     "build": "tsc && vite build && npm run build:electron",
     "build:electron": "tsc -p tsconfig.electron.json",
     "package": "npm run build && electron-builder",
+    "package:linux": "npm run build && electron-builder --linux",
+    "package:win": "npm run build && electron-builder --win",
+    "package:mac": "npm run build && electron-builder --mac",
+    "package:all": "npm run build && electron-builder --linux --win --mac",
     "lint": "tsc --noEmit",
     "test:canvas-compat": "node scripts/test-canvas-compat.cjs",
     "test:obsidian-api": "node scripts/test-obsidian-api-compat.cjs",
@@ -30,9 +34,20 @@
     "markdown",
     "graph"
   ],
-  "author": "OpenObsidian",
+  "author": {
+    "name": "OpenObsidian",
+    "email": "releases@openobsidian.app"
+  },
   "license": "MIT",
   "dependencies": {
+    "fuse.js": "^7.1.0"
+  },
+  "overrides": {
+    "protobufjs": "7.6.3",
+    "@protobufjs/utf8": "1.1.1",
+    "@codemirror/state": "$@codemirror/state"
+  },
+  "devDependencies": {
     "@codemirror/autocomplete": "^6.18.6",
     "@codemirror/commands": "^6.8.1",
     "@codemirror/lang-markdown": "^6.3.2",
@@ -47,32 +62,6 @@
     "@lezer/lr": "^1.4.8",
     "@replit/codemirror-vim": "^6.3.0",
     "@supabase/supabase-js": "^2.104.1",
-    "@xenova/transformers": "^2.17.2",
-    "codemirror": "^5.65.20",
-    "d3": "^7.9.0",
-    "dompurify": "^3.2.6",
-    "file-saver": "^2.0.5",
-    "fuse.js": "^7.1.0",
-    "idb": "^8.0.3",
-    "jszip": "^3.10.1",
-    "katex": "^0.16.44",
-    "kill-port": "^2.0.1",
-    "lucide": "^1.14.0",
-    "lucide-react": "^1.8.0",
-    "marked": "^15.0.8",
-    "marked-katex-extension": "^5.1.7",
-    "moment": "^2.30.1",
-    "react": "^19.1.0",
-    "react-colorful": "^5.6.1",
-    "react-dom": "^19.1.0",
-    "uuid": "^14.0.0"
-  },
-  "overrides": {
-    "protobufjs": "7.6.3",
-    "@protobufjs/utf8": "1.1.1",
-    "@codemirror/state": "$@codemirror/state"
-  },
-  "devDependencies": {
     "@tailwindcss/vite": "^4.3.0",
     "@types/d3": "^7.4.3",
     "@types/dompurify": "^3.2.0",
@@ -82,14 +71,32 @@
     "@types/react-dom": "^19.1.1",
     "@types/uuid": "^10.0.0",
     "@vitejs/plugin-react": "^4.4.1",
+    "@xenova/transformers": "^2.17.2",
+    "codemirror": "^5.65.20",
     "concurrently": "^9.1.2",
+    "d3": "^7.9.0",
+    "dompurify": "^3.2.6",
     "electron": "^41.2.0",
     "electron-builder": "^26.0.12",
     "fake-indexeddb": "^6.2.4",
+    "file-saver": "^2.0.5",
+    "idb": "^8.0.3",
     "jsdom": "^26.1.0",
+    "jszip": "^3.10.1",
+    "katex": "^0.16.44",
+    "kill-port": "^2.0.1",
+    "lucide": "^1.14.0",
+    "lucide-react": "^1.8.0",
+    "marked": "^15.0.8",
+    "marked-katex-extension": "^5.1.7",
+    "moment": "^2.30.1",
     "obsidian": "^1.13.1",
+    "react": "^19.1.0",
+    "react-colorful": "^5.6.1",
+    "react-dom": "^19.1.0",
     "tailwindcss": "^4.3.0",
     "typescript": "^5.8.2",
+    "uuid": "^14.0.0",
     "vite": "^6.3.1",
     "vitest": "^3.2.4",
     "wait-on": "^8.0.3"
@@ -109,8 +116,14 @@
     "win": {
       "target": [
         "nsis"
+      ]
+    },
+    "mac": {
+      "target": [
+        "dmg",
+        "zip"
       ],
-      "icon": "public/icon.ico"
+      "category": "public.app-category.productivity"
     },
     "nsis": {
       "oneClick": false,
@@ -124,7 +137,7 @@
         "deb"
       ],
       "category": "Office",
-      "icon": "public/icons"
+      "icon": "public/logos/logo-light.png"
     },
     "deb": {
       "priority": "optional",
