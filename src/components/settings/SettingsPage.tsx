@@ -1,4 +1,11 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, {
+  createContext,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react";
 import {
   AlertCircle,
   Brain,
@@ -175,10 +182,10 @@ type CustomThemeColorKey = "accentColor" | "customBgPrimary" | "customTextPrimar
 
 export const DEFAULT_SETTINGS: AppSettings = {
   theme: "dark",
-  accentColor: "#3b82f6",
-  fontFamily: "Inter, system-ui, sans-serif",
-  customBgPrimary: "#151515",
-  customTextPrimary: "#e6e6e6",
+  accentColor: "#E8A84A",
+  fontFamily: '"IBM Plex Sans", system-ui, sans-serif',
+  customBgPrimary: "#0C0D0F",
+  customTextPrimary: "#E8EAED",
   customThemeType: "dark",
 
   fontSize: 17,
@@ -320,31 +327,31 @@ function cx(...classes: Array<string | false | null | undefined>) {
   return classes.filter(Boolean).join(" ");
 }
 
-const overlayClass = "fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm";
-const pageClass = "relative flex h-[min(92vh,920px)] w-[min(96vw,1100px)] overflow-hidden rounded-lg border border-[var(--border-medium)] bg-[var(--bg-primary)] text-[var(--text-primary)] shadow-2xl";
-const sidebarClass = "w-[250px] shrink-0 overflow-y-auto border-r border-[var(--divider-color)] bg-[var(--bg-secondary)] px-5 py-7";
-const contentClass = "min-w-0 flex-1 overflow-y-auto bg-[var(--bg-primary)] px-10 pb-12 pt-8";
-const closeClass = "absolute right-4 top-4 z-10 rounded p-1.5 text-[var(--text-muted)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]";
-const navHeaderClass = "mb-2 mt-6 px-1 text-[11px] font-semibold text-[var(--text-muted)] first:mt-0";
-const navItemClass = "flex h-28px w-full items-center gap-2 rounded px-2 py-1.5 text-left text-[15px] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]";
-const navItemActiveClass = "bg-[var(--bg-active)] text-[var(--text-primary)]";
+const overlayClass = "fixed inset-0 z-[9999] flex items-center justify-center bg-black/55 backdrop-blur-[2px]";
+const pageClass = "oo-prefs relative flex h-[min(92vh,920px)] w-[min(96vw,1100px)] overflow-hidden rounded-xl border border-[var(--oo-border-medium,var(--border-medium))] bg-[var(--oo-surface-0,var(--bg-primary))] text-[var(--oo-text-primary,var(--text-primary))] shadow-[0_24px_64px_rgba(0,0,0,0.45)]";
+const sidebarClass = "oo-prefs-nav w-[250px] shrink-0 overflow-y-auto border-r border-[var(--oo-border-subtle,var(--divider-color))] bg-[var(--oo-surface-1,var(--bg-secondary))] px-5 py-7";
+const contentClass = "oo-prefs-content min-w-0 flex-1 overflow-y-auto bg-[var(--oo-surface-0,var(--bg-primary))] px-10 pb-12 pt-8";
+const closeClass = "absolute right-4 top-4 z-10 rounded-md p-1.5 text-[var(--oo-text-muted,var(--text-muted))] hover:bg-[var(--bg-hover)] hover:text-[var(--oo-text-primary,var(--text-primary))]";
+const navHeaderClass = "mb-2 mt-6 px-1 text-[11px] font-semibold uppercase tracking-[0.06em] text-[var(--oo-text-muted,var(--text-muted))] first:mt-0";
+const navItemClass = "oo-prefs-nav-item flex h-28px w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[14px] text-[var(--oo-text-secondary,var(--text-secondary))] hover:bg-[var(--bg-hover)] hover:text-[var(--oo-text-primary,var(--text-primary))]";
+const navItemActiveClass = "bg-[var(--oo-accent-muted,var(--bg-active))] text-[var(--oo-text-primary,var(--text-primary))]";
 const sectionClass = "mx-auto max-w-[740px]";
-const groupTitleClass = "mb-4 mt-7 text-[15px] font-semibold text-[var(--text-primary)] first:mt-0";
-const cardClass = "overflow-hidden rounded-xl bg-[var(--bg-elevated)] px-5";
-const rowClass = "flex min-h-[72px] items-center justify-between gap-6 border-b border-[var(--divider-color)] py-4 last:border-b-0";
+const groupTitleClass = "mb-4 mt-7 text-[15px] font-semibold text-[var(--oo-text-primary,var(--text-primary))] first:mt-0";
+const cardClass = "oo-prefs-card overflow-hidden rounded-xl border border-[var(--oo-border-subtle,transparent)] bg-[var(--oo-surface-2,var(--bg-elevated))] px-5";
+const rowClass = "oo-prefs-row flex min-h-[72px] items-center justify-between gap-6 border-b border-[var(--oo-border-subtle,var(--divider-color))] py-4 last:border-b-0";
 const rowInfoClass = "min-w-0 flex-1";
-const rowTitleClass = "text-[16px] font-normal leading-snug text-[var(--text-primary)]";
-const rowDescClass = "mt-1 text-[12.5px] leading-[1.35] text-[var(--text-muted)]";
+const rowTitleClass = "text-[15px] font-medium leading-snug text-[var(--oo-text-primary,var(--text-primary))]";
+const rowDescClass = "mt-1 text-[12.5px] leading-[1.4] text-[var(--oo-text-muted,var(--text-muted))]";
 const controlClass = "flex shrink-0 items-center gap-2";
-const buttonClass = "rounded-md border border-[var(--border-medium)] bg-[var(--bg-tertiary)] px-3 py-1.5 text-[13px] text-[var(--text-primary)] hover:bg-[var(--bg-hover)]";
-const primaryButtonClass = "rounded-md border border-transparent bg-[var(--color-accent)] px-3 py-1.5 text-[13px] font-medium text-[var(--text-on-accent)] hover:bg-[var(--color-accent-1)]";
-const selectClass = "settings-select h-8 min-w-[130px] rounded-md border border-[var(--border-medium)] bg-[var(--bg-tertiary)] px-3 pr-8 text-[13px] text-[var(--text-primary)] outline-none transition-colors focus:border-[var(--border-strong)]";
-const inputClass = "h-8 min-w-[220px] rounded-md border border-[var(--border-medium)] bg-[var(--bg-tertiary)] px-3 text-[13px] text-[var(--text-primary)] outline-none placeholder:text-[var(--text-faint)] focus:border-[var(--color-accent)]";
-const textareaClass = "min-h-24 w-full rounded-md border border-[var(--border-medium)] bg-[var(--bg-tertiary)] px-3 py-2 font-mono text-[12px] text-[var(--text-primary)] outline-none";
+const buttonClass = "rounded-md border border-[var(--oo-border-medium,var(--border-medium))] bg-[var(--oo-surface-3,var(--bg-tertiary))] px-3 py-1.5 text-[13px] text-[var(--oo-text-primary,var(--text-primary))] hover:bg-[var(--bg-hover)]";
+const primaryButtonClass = "rounded-md border border-transparent bg-[var(--oo-accent,var(--color-accent))] px-3 py-1.5 text-[13px] font-medium text-[var(--oo-accent-on,var(--text-on-accent))] hover:bg-[var(--oo-accent-hover,var(--color-accent-1))]";
+const selectClass = "settings-select h-8 min-w-[130px] rounded-md border border-[var(--oo-border-medium,var(--border-medium))] bg-[var(--oo-surface-3,var(--bg-tertiary))] px-3 pr-8 text-[13px] text-[var(--oo-text-primary,var(--text-primary))] outline-none transition-colors focus:border-[var(--oo-accent,var(--border-strong))]";
+const inputClass = "h-8 min-w-[220px] rounded-md border border-[var(--oo-border-medium,var(--border-medium))] bg-[var(--oo-surface-3,var(--bg-tertiary))] px-3 text-[13px] text-[var(--oo-text-primary,var(--text-primary))] outline-none placeholder:text-[var(--oo-text-faint,var(--text-faint))] focus:border-[var(--oo-accent,var(--color-accent))]";
+const textareaClass = "min-h-24 w-full rounded-md border border-[var(--oo-border-medium,var(--border-medium))] bg-[var(--oo-surface-3,var(--bg-tertiary))] px-3 py-2 font-mono text-[12px] text-[var(--oo-text-primary,var(--text-primary))] outline-none";
 const toggleClass = "relative inline-flex h-[22px] w-10 cursor-pointer items-center rounded-full border transition-colors";
 const toggleThumbClass = "absolute left-[2px] h-[18px] w-[18px] rounded-full shadow transition-transform data-[checked=true]:translate-x-[18px]";
 const rangeClass = "settings-range w-28";
-const kbdClass = "rounded bg-[var(--bg-tertiary)] px-2 py-1 font-mono text-[12px] text-[var(--text-secondary)]";
+const kbdClass = "rounded bg-[var(--oo-surface-3,var(--bg-tertiary))] px-2 py-1 font-mono text-[12px] text-[var(--oo-text-secondary,var(--text-secondary))]";
 const settingsPageStyle = `
   .settings-select {
     appearance: none;
@@ -370,6 +377,21 @@ const settingsPageStyle = `
   .settings-select option:checked {
     background-color: var(--bg-active);
     color: var(--text-primary);
+  }
+  /* 6d: empty active-section filter (no matching SettingRows / panels) */
+  .oo-prefs-content[data-prefs-filtering="true"]:not(:has([data-prefs-row])):not(:has([data-prefs-panel])) .oo-prefs-empty-filter {
+    display: block;
+  }
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
   }
   .settings-range {
     height: 18px;
@@ -440,18 +462,85 @@ const settingsPageStyle = `
   }
 `;
 
+/** Preferences search query (MVP 6d). Empty string = no filter. */
+const PrefsSearchContext = createContext("");
+
+function prefsNodeText(node: ReactNode): string {
+  if (node == null || typeof node === "boolean") return "";
+  if (typeof node === "string" || typeof node === "number") return String(node);
+  if (Array.isArray(node)) return node.map(prefsNodeText).join(" ");
+  if (React.isValidElement(node)) {
+    const props = node.props as { children?: ReactNode };
+    return prefsNodeText(props.children);
+  }
+  return "";
+}
+
+function matchesPrefsQuery(
+  title: ReactNode,
+  description: ReactNode | undefined,
+  query: string,
+): boolean {
+  if (!query) return true;
+  const haystack = `${prefsNodeText(title)} ${prefsNodeText(description)}`.toLowerCase();
+  return haystack.includes(query);
+}
+
 function SettingGroup({ title, children }: { title?: string; children: React.ReactNode }) {
+  const prefsQuery = useContext(PrefsSearchContext).trim().toLowerCase();
+  const childList = React.Children.toArray(children);
+  const titleMatches = Boolean(title && prefsQuery && title.toLowerCase().includes(prefsQuery));
+
+  let visibleChildren: React.ReactNode = children;
+  if (prefsQuery && !titleMatches) {
+    const matchingRows: React.ReactElement[] = [];
+    const chrome: React.ReactElement[] = [];
+    for (const child of childList) {
+      if (!React.isValidElement(child)) continue;
+      const props = child.props as { title?: ReactNode; description?: ReactNode };
+      if (!("title" in props) || props.title === undefined) {
+        chrome.push(child);
+        continue;
+      }
+      if (matchesPrefsQuery(props.title, props.description, prefsQuery)) {
+        matchingRows.push(child);
+      }
+    }
+    // Drop orphan status/chrome when no rows match this group.
+    visibleChildren = matchingRows.length > 0 ? [...matchingRows, ...chrome] : [];
+  }
+
+  const filteredEmpty =
+    prefsQuery &&
+    !titleMatches &&
+    Array.isArray(visibleChildren) &&
+    visibleChildren.length === 0;
+
+  if (filteredEmpty) {
+    return null;
+  }
+
   return (
-    <section>
+    <section data-prefs-group={title || undefined}>
       {title && <h3 className={groupTitleClass}>{title}</h3>}
-      <div className={cardClass}>{children}</div>
+      <div className={cardClass}>
+        {prefsQuery && !titleMatches ? visibleChildren : children}
+      </div>
     </section>
   );
 }
 
-function SettingRow({ title, description, children }: { title: React.ReactNode; description?: React.ReactNode; children?: React.ReactNode }) {
+function SettingRow({
+  title,
+  description,
+  children,
+}: {
+  title: React.ReactNode;
+  description?: React.ReactNode;
+  children?: React.ReactNode;
+}) {
   return (
-    <div className={rowClass}>
+    <div className={rowClass} data-prefs-row="">
       <div className={rowInfoClass}>
         <div className={rowTitleClass}>{title}</div>
         {description && <div className={rowDescClass}>{description}</div>}
@@ -475,7 +564,7 @@ function Toggle({ checked, onChange, disabled = false }: { checked: boolean; onC
       className={cx(toggleClass, disabled && "cursor-not-allowed opacity-50")}
       data-checked={checked}
       style={{
-        backgroundColor: checked ? "var(--accent-primary, var(--color-accent, #3b82f6))" : "var(--bg-tertiary)",
+        backgroundColor: checked ? "var(--accent-primary, var(--color-accent, var(--oo-accent, #E8A84A)))" : "var(--bg-tertiary)",
         borderColor: checked ? "var(--border-strong)" : "var(--border-medium)",
         boxShadow: checked ? "inset 0 0 0 1px color-mix(in srgb, var(--text-primary) 14%, transparent)" : "none",
       }}
@@ -531,6 +620,8 @@ export function SettingsPage({
   }));
   const [isBrowsingPlugins, setIsBrowsingPlugins] = useState(false);
   const [searchHotkey, setSearchHotkey] = useState("");
+  /** Preferences search (6d MVP): nav + active-section rows + jump-to-section. */
+  const [prefsSearch, setPrefsSearch] = useState("");
   const [currentUser, setCurrentUser] = useState(authManager.getUser());
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [authModalMode, setAuthModalMode] = useState<"login" | "signup">("login");
@@ -818,33 +909,78 @@ export function SettingsPage({
     }
   };
 
-  const optionSections = [
-    { id: "general" as const, label: "General", icon: Settings },
-    { id: "editor" as const, label: "Editor", icon: Type },
-    { id: "files" as const, label: "Files and links", icon: FileText },
-    { id: "appearance" as const, label: "Appearance", icon: Palette },
-    { id: "hotkeys" as const, label: "Hotkeys", icon: Keyboard },
-    { id: "keychain" as const, label: "Keychain", icon: KeyRound },
-    { id: "core-plugins" as const, label: "Core plugins", icon: Puzzle },
-    { id: "plugins" as const, label: "Community plugins", icon: Puzzle },
+  // Preferences nav IA (PR 6b): section ids unchanged; labels + grouping only.
+  type PrefsNavItem = {
+    id: SettingsSection;
+    label: string;
+    icon: React.ComponentType<{ size?: number; className?: string }>;
+  };
+
+  const workspaceSections: PrefsNavItem[] = [
+    { id: "general", label: "General", icon: Settings },
+    { id: "editor", label: "Editor", icon: Type },
+    { id: "appearance", label: "Appearance", icon: Palette },
+    { id: "hotkeys", label: "Keyboard", icon: Keyboard },
   ];
 
-  const appSections = [
-    { id: "ai" as const, label: "Configure AI", icon: Brain },
-    { id: "database" as const, label: "Database", icon: Database },
+  const filesSections: PrefsNavItem[] = [
+    { id: "files", label: "Files & links", icon: FileText },
+    { id: "templates", label: "Templates", icon: Copy },
+    { id: "daily-notes", label: "Daily notes", icon: CalendarDays },
   ];
 
-  const coreSections = [
-    { id: "backlinks" as const, label: "Backlinks", icon: Link2 },
-    { id: "canvas" as const, label: "Canvas", icon: Grid2X2 },
-    { id: "command-palette" as const, label: "Command palette", icon: Terminal },
-    { id: "daily-notes" as const, label: "Daily notes", icon: CalendarDays },
-    { id: "page-preview" as const, label: "Page preview", icon: Eye },
-    { id: "quick-switcher" as const, label: "Quick switcher", icon: Search },
-    { id: "templates" as const, label: "Templates", icon: Copy },
-    { id: "collaboration" as const, label: "Collaboration", icon: Users },
-    { id: "about" as const, label: "About", icon: Info },
+  const intelligenceSections: PrefsNavItem[] = [
+    { id: "ai", label: "AI", icon: Brain },
+    { id: "database", label: "Database", icon: Database },
   ];
+
+  const modulesSections: PrefsNavItem[] = [
+    { id: "core-plugins", label: "Built-in modules", icon: Puzzle },
+    { id: "plugins", label: "Extensions", icon: Puzzle },
+    { id: "backlinks", label: "Backlinks", icon: Link2 },
+    { id: "canvas", label: "Canvas", icon: Grid2X2 },
+    { id: "command-palette", label: "Command palette", icon: Terminal },
+    { id: "page-preview", label: "Link previews", icon: Eye },
+    { id: "quick-switcher", label: "Quick open", icon: Search },
+  ];
+
+  const accountSections: PrefsNavItem[] = [
+    { id: "collaboration", label: "Collaboration", icon: Users },
+    { id: "keychain", label: "Keychain", icon: KeyRound },
+    { id: "about", label: "About", icon: Info },
+  ];
+
+  const allNavSections: PrefsNavItem[] = [
+    ...workspaceSections,
+    ...filesSections,
+    ...intelligenceSections,
+    ...modulesSections,
+    ...accountSections,
+  ];
+
+  const prefsQuery = prefsSearch.trim().toLowerCase();
+
+  const filterNavItems = (items: PrefsNavItem[]) => {
+    if (!prefsQuery) return items;
+    // Keep the active section visible so in-section row filtering remains usable
+    // even when the section label itself does not match the query.
+    return items.filter(
+      (item) =>
+        item.id === activeSection ||
+        item.label.toLowerCase().includes(prefsQuery),
+    );
+  };
+
+  const jumpSections = !prefsQuery
+    ? ([] as PrefsNavItem[])
+    : allNavSections.filter(
+        (item) =>
+          item.id !== activeSection &&
+          item.label.toLowerCase().includes(prefsQuery),
+      );
+
+  const activeSectionLabel =
+    allNavSections.find((item) => item.id === activeSection)?.label || activeSection;
 
   const commandRows = useMemo(() => {
     const baseCommands = commands.length > 0 ? commands : [
@@ -863,7 +999,7 @@ export function SettingsPage({
       .sort((a, b) => a.label.localeCompare(b.label));
   }, [commands, searchHotkey]);
 
-  const renderNavSection = (items: Array<{ id: SettingsSection; label: string; icon: React.ComponentType<{ size?: number; className?: string }> }>) => (
+  const renderNavSection = (items: PrefsNavItem[]) =>
     items.map((item) => (
       <button
         key={item.id}
@@ -873,8 +1009,18 @@ export function SettingsPage({
         <item.icon size={16} />
         <span>{item.label}</span>
       </button>
-    ))
-  );
+    ));
+
+  const renderNavGroup = (label: string, items: PrefsNavItem[]) => {
+    const filtered = filterNavItems(items);
+    if (filtered.length === 0) return null;
+    return (
+      <>
+        <div className={navHeaderClass}>{label}</div>
+        {renderNavSection(filtered)}
+      </>
+    );
+  };
 
   return (
     <div className={overlayClass}>
@@ -887,20 +1033,97 @@ export function SettingsPage({
             installedPluginIds={plugins.map((p) => p.manifest.id)}
           />
         ) : (
+          <PrefsSearchContext.Provider value={prefsSearch}>
           <>
-            <button className={closeClass} onClick={onClose} aria-label="Close settings">
+            <button className={closeClass} onClick={onClose} aria-label="Close preferences">
               <X size={20} />
             </button>
             <aside className={sidebarClass}>
-              <div className={navHeaderClass}>Options</div>
-              {renderNavSection(optionSections)}
-              <div className={navHeaderClass}>OpenOnyx</div>
-              {renderNavSection(appSections)}
-              <div className={navHeaderClass}>Core plugins</div>
-              {renderNavSection(coreSections)}
+              <div className="mb-3 px-1 text-[13px] font-semibold tracking-tight text-[var(--oo-text-primary,var(--text-primary))]">
+                Preferences
+              </div>
+              <div className="mb-4 px-1">
+                <label className="sr-only" htmlFor="oo-prefs-search">
+                  Search preferences
+                </label>
+                <div className="flex h-9 items-center gap-2 rounded-md border border-[var(--oo-border-medium,var(--border-medium))] bg-[var(--oo-surface-3,var(--bg-tertiary))] px-2.5">
+                  <Search size={15} className="shrink-0 text-[var(--oo-text-muted,var(--text-muted))]" />
+                  <input
+                    id="oo-prefs-search"
+                    className="min-w-0 flex-1 bg-transparent text-[13px] text-[var(--oo-text-primary,var(--text-primary))] outline-none placeholder:text-[var(--oo-text-faint,var(--text-faint))]"
+                    type="search"
+                    value={prefsSearch}
+                    onChange={(e) => setPrefsSearch(e.target.value)}
+                    placeholder="Search preferences…"
+                    autoComplete="off"
+                    spellCheck={false}
+                  />
+                  {prefsSearch && (
+                    <button
+                      type="button"
+                      className="rounded p-0.5 text-[var(--oo-text-muted,var(--text-muted))] hover:bg-[var(--bg-hover)] hover:text-[var(--oo-text-primary,var(--text-primary))]"
+                      onClick={() => setPrefsSearch("")}
+                      aria-label="Clear preferences search"
+                    >
+                      <X size={14} />
+                    </button>
+                  )}
+                </div>
+                {jumpSections.length > 0 && (
+                  <div className="mt-2 space-y-0.5">
+                    <div className="px-0.5 text-[10px] font-semibold uppercase tracking-[0.06em] text-[var(--oo-text-muted,var(--text-muted))]">
+                      Go to
+                    </div>
+                    {jumpSections.map((item) => (
+                      <button
+                        key={`jump-${item.id}`}
+                        type="button"
+                        className={cx(navItemClass, "text-[13px]")}
+                        onClick={() => setActiveSection(item.id)}
+                      >
+                        <item.icon size={14} />
+                        <span>{item.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {prefsQuery &&
+                  filterNavItems(allNavSections).length === 0 &&
+                  jumpSections.length === 0 && (
+                    <p className="mt-2 px-0.5 text-[11px] leading-snug text-[var(--oo-text-muted,var(--text-muted))]">
+                      No sections match “{prefsSearch.trim()}”.
+                    </p>
+                  )}
+              </div>
+              {renderNavGroup("Workspace", workspaceSections)}
+              {renderNavGroup("Files", filesSections)}
+              {renderNavGroup("Intelligence", intelligenceSections)}
+              {renderNavGroup("Modules", modulesSections)}
+              {renderNavGroup("Account", accountSections)}
             </aside>
 
-            <main className={contentClass}>
+            <main
+              className={contentClass}
+              data-prefs-section={activeSection}
+              data-prefs-filtering={prefsQuery ? "true" : undefined}
+            >
+              {prefsQuery && (
+                <p className="mx-auto mb-4 max-w-[740px] text-[12px] text-[var(--oo-text-muted,var(--text-muted))]">
+                  Filtering <span className="font-medium text-[var(--oo-text-secondary,var(--text-secondary))]">{activeSectionLabel}</span>
+                  {" "}for “{prefsSearch.trim()}”. Other matching sections appear under Go to.
+                </p>
+              )}
+              <div
+                className="oo-prefs-empty-filter mx-auto hidden max-w-[740px] rounded-xl border border-dashed border-[var(--oo-border-medium,var(--border-medium))] bg-[var(--oo-surface-2,var(--bg-elevated))] px-5 py-8 text-center"
+                role="status"
+              >
+                <p className="text-[13px] text-[var(--oo-text-secondary,var(--text-secondary))]">
+                  No settings match “{prefsSearch.trim()}” in {activeSectionLabel}.
+                </p>
+                <p className="mt-1 text-[12px] text-[var(--oo-text-muted,var(--text-muted))]">
+                  Try another phrase, clear search, or use Go to for other sections.
+                </p>
+              </div>
               {activeSection === "general" && (
                 <div className={sectionClass}>
                   <SettingGroup>
@@ -908,9 +1131,9 @@ export function SettingsPage({
                       title={`Version ${APP_VERSION}`}
                       description={(
                         <>
-                          Installer version: {APP_VERSION}{" "}
+                          Installed version {APP_VERSION}.{" "}
                           <button className="text-[var(--text-link)] underline" onClick={() => setActiveSection("about")}>
-                            Read the changelog.
+                            View changelog
                           </button>
                           <StatusLine type={updateType} message={updateStatus} />
                         </>
@@ -920,28 +1143,27 @@ export function SettingsPage({
                         {isCheckingUpdates ? "Checking..." : "Check for updates"}
                       </button>
                     </SettingRow>
-                    <SettingRow title="Language" description="Change the display language.">
+                    <SettingRow title="Language" description="Interface language. More languages may be added later.">
                       <select className={selectClass} value={localSettings.language} onChange={(e) => updateSetting("language", e.target.value as AppSettings["language"])}>
                         <option>English</option>
                       </select>
                     </SettingRow>
-                    <SettingRow title="Help" description="Learn how to use OpenOnyx and get help from the community.">
-                      <button className={buttonClass} onClick={() => window.open("https://github.com", "_blank", "noopener,noreferrer")}>Open</button>
+                    <SettingRow title="Help" description="Documentation and community resources for OpenOnyx.">
+                      <button className={buttonClass} onClick={() => window.open("https://github.com/OpenOnyx/OpenOnyx", "_blank", "noopener,noreferrer")}>Open docs</button>
                     </SettingRow>
                   </SettingGroup>
 
-                  <h3 className={groupTitleClass}>Account</h3>
-                  <SettingGroup>
+                  <SettingGroup title="Account">
                     <SettingRow
                       title="Your account"
-                      description={currentUser ? <>Logged in as <strong>{currentUser.email}</strong>.</> : "You're not logged in right now. Log in or sign up to enable cloud spaces and collaboration."}
+                      description={currentUser ? <>Signed in as <strong>{currentUser.email}</strong>.</> : "Sign in to use optional cloud Spaces and collaboration features."}
                     >
                       {currentUser ? (
-                        <button className={buttonClass} onClick={() => void authManager.signOut()}>Log out</button>
+                        <button className={buttonClass} onClick={() => void authManager.signOut()}>Sign out</button>
                       ) : (
                         <>
-                          <button className={buttonClass} onClick={() => { setAuthModalMode("login"); setShowAuthModal(true); }}>Log in</button>
-                          <button className={buttonClass} onClick={() => { setAuthModalMode("signup"); setShowAuthModal(true); }}>Sign up</button>
+                          <button className={buttonClass} onClick={() => { setAuthModalMode("login"); setShowAuthModal(true); }}>Sign in</button>
+                          <button className={buttonClass} onClick={() => { setAuthModalMode("signup"); setShowAuthModal(true); }}>Create account</button>
                         </>
                       )}
                     </SettingRow>
@@ -952,83 +1174,80 @@ export function SettingsPage({
               {activeSection === "editor" && (
                 <div className={sectionClass}>
                   <SettingGroup>
-                    <SettingRow title="Always focus new tabs" description="When you open a link in a new tab, switch to it immediately.">
+                    <SettingRow title="Focus newly opened tabs" description="Switch to a tab as soon as you open a link in a new tab.">
                       <Toggle checked={localSettings.alwaysFocusNewTabs} onChange={(v) => updateSetting("alwaysFocusNewTabs", v)} />
                     </SettingRow>
-                    <SettingRow title="Default view for new tabs" description="The default view that a new Markdown tab gets opened in.">
+                    <SettingRow title="Default tab view" description="How new Markdown tabs open: edit, read, or split.">
                       <select className={selectClass} value={localSettings.defaultView} onChange={(e) => updateSetting("defaultView", e.target.value as AppSettings["defaultView"])}>
-                        <option value="editor">Editing view</option>
-                        <option value="preview">Reading view</option>
-                        <option value="split">Split view</option>
+                        <option value="editor">Editor</option>
+                        <option value="preview">Reading</option>
+                        <option value="split">Split</option>
                       </select>
                     </SettingRow>
-                    <SettingRow title="Default editing mode" description="The default editing mode a new tab will start with.">
+                    <SettingRow title="Default editor mode" description="Live preview or raw source for new editing tabs.">
                       <select className={selectClass} value={localSettings.defaultEditingMode} onChange={(e) => updateSetting("defaultEditingMode", e.target.value as AppSettings["defaultEditingMode"])}>
-                        <option value="live-preview">Live Preview</option>
-                        <option value="source">Source mode</option>
+                        <option value="live-preview">Live preview</option>
+                        <option value="source">Source</option>
                       </select>
                     </SettingRow>
-                    <SettingRow title="Show editing mode in status bar" description="Show the editing mode toggle in the status bar.">
+                    <SettingRow title="Show editor mode in status strip" description="Show the edit/read mode indicator in the status strip.">
                       <Toggle checked={localSettings.showEditingModeStatusBar} onChange={(v) => updateSetting("showEditingModeStatusBar", v)} />
                     </SettingRow>
                   </SettingGroup>
 
-                  <h3 className={groupTitleClass}>Display</h3>
-                  <SettingGroup>
-                    <SettingRow title="Readable line length" description="Limit maximum line length. Less content fits onscreen, but long blocks of text are more readable.">
+                  <SettingGroup title="Display">
+                    <SettingRow title="Comfortable line width" description="Limit line width for long-form reading. Less text fits on screen, but paragraphs are easier to scan.">
                       <Toggle checked={localSettings.readableLineLength} onChange={(v) => updateSetting("readableLineLength", v)} />
                     </SettingRow>
-                    <SettingRow title="Line width" description="Width used when readable line length is enabled.">
+                    <SettingRow title="Line width" description="Maximum content width when comfortable line width is on.">
                       <input className={rangeClass} type="range" min={640} max={1180} step={1} value={localSettings.readingViewWidth} style={rangeProgressStyle(localSettings.readingViewWidth, 640, 1180)} onChange={(e) => updateSetting("readingViewWidth", Number(e.target.value))} />
                       <span className="w-14 text-right text-xs text-[var(--text-muted)]">{localSettings.readingViewWidth}px</span>
                     </SettingRow>
-                    <SettingRow title="Strict line breaks" description="Markdown specs ignore single line breaks in reading view.">
+                    <SettingRow title="Preserve single line breaks" description="Keep single newlines in reading view instead of collapsing them.">
                       <Toggle checked={localSettings.strictLineBreaks} onChange={(v) => updateSetting("strictLineBreaks", v)} />
                     </SettingRow>
-                    <SettingRow title="Properties in document" description="Choose how properties are displayed at the top of notes.">
+                    <SettingRow title="Properties display" description="How note properties appear at the top of the document.">
                       <select className={selectClass} value={localSettings.propertiesInDocument} onChange={(e) => updateSetting("propertiesInDocument", e.target.value as AppSettings["propertiesInDocument"])}>
                         <option value="visible">Visible</option>
                         <option value="hidden">Hidden</option>
                         <option value="source">Source</option>
                       </select>
                     </SettingRow>
-                    <SettingRow title="Fold heading" description="Lets you fold all content under a heading.">
+                    <SettingRow title="Collapsible headings" description="Fold or expand content under each heading.">
                       <Toggle checked={localSettings.foldHeading} onChange={(v) => updateSetting("foldHeading", v)} />
                     </SettingRow>
-                    <SettingRow title="Line numbers" description="Show line numbers in the gutter.">
+                    <SettingRow title="Line numbers" description="Show line numbers in the editor gutter.">
                       <Toggle checked={localSettings.showLineNumbers} onChange={(v) => updateSetting("showLineNumbers", v)} />
                     </SettingRow>
-                    <SettingRow title="Indentation guides" description="Show vertical relationship lines between list items.">
+                    <SettingRow title="Indentation guides" description="Show vertical guides for nested lists and blocks.">
                       <Toggle checked={localSettings.indentationGuides} onChange={(v) => updateSetting("indentationGuides", v)} />
                     </SettingRow>
-                    <SettingRow title="Right-to-left (RTL)" description="Sets the default text direction of notes to right-to-left.">
+                    <SettingRow title="Right-to-left (RTL)" description="Default note text direction is right-to-left.">
                       <Toggle checked={localSettings.rightToLeft} onChange={(v) => updateSetting("rightToLeft", v)} />
                     </SettingRow>
                   </SettingGroup>
 
-                  <h3 className={groupTitleClass}>Behavior</h3>
-                  <SettingGroup>
-                    <SettingRow title="Spellcheck" description="Turn on the spellchecker.">
+                  <SettingGroup title="Typing & behavior">
+                    <SettingRow title="Spellcheck" description="Underline spelling suggestions while editing.">
                       <Toggle checked={localSettings.spellcheck} onChange={(v) => updateSetting("spellcheck", v)} />
                     </SettingRow>
-                    <SettingRow title="Auto-pair brackets" description="Pair brackets and quotes automatically.">
+                    <SettingRow title="Auto-pair brackets" description="Insert matching brackets and quotes as you type.">
                       <Toggle checked={localSettings.autoPairBrackets} onChange={(v) => updateSetting("autoPairBrackets", v)} />
                     </SettingRow>
-                    <SettingRow title="Auto-pair Markdown syntax" description="Pair symbols automatically for bold, italic, code, and more.">
+                    <SettingRow title="Auto-pair Markdown marks" description="Pair formatting marks for bold, italic, code, and similar syntax.">
                       <Toggle checked={localSettings.autoPairMarkdown} onChange={(v) => updateSetting("autoPairMarkdown", v)} />
                     </SettingRow>
-                    <SettingRow title="Indent using tabs" description="Use tabs to indent by pressing the Tab key.">
+                    <SettingRow title="Indent with tabs" description="Insert a tab character when you press Tab.">
                       <Toggle checked={localSettings.indentUsingTabs} onChange={(v) => updateSetting("indentUsingTabs", v)} />
                     </SettingRow>
-                    <SettingRow title="Indent visual width" description="Number of spaces a tab character will render as.">
+                    <SettingRow title="Tab display width" description="How many spaces wide a tab character appears.">
                       <input className={rangeClass} type="range" min={2} max={8} step={1} value={localSettings.tabSize} style={rangeProgressStyle(localSettings.tabSize, 2, 8)} onChange={(e) => updateSetting("tabSize", Number(e.target.value))} />
                       <span className="w-8 text-right text-xs text-[var(--text-muted)]">{localSettings.tabSize}</span>
                     </SettingRow>
                   </SettingGroup>
 
-                  <h3 className={groupTitleClass}>Advanced</h3>
-                  <SettingGroup>
-                    <SettingRow title="Vim key bindings" description="Use Vim key bindings when editing.">
+                  <SettingGroup title="Advanced">
+                    <SettingRow title="Vim key bindings" description="Enable Vim-style keys in the editor.">
                       <Toggle checked={localSettings.vimMode} onChange={(v) => updateSetting("vimMode", v)} />
                     </SettingRow>
                   </SettingGroup>
@@ -1038,42 +1257,40 @@ export function SettingsPage({
               {activeSection === "files" && (
                 <div className={sectionClass}>
                   <SettingGroup>
-                    <SettingRow title="Default file to open" description="Choose which file to open when the app starts.">
+                    <SettingRow title="Startup file" description="What opens when you launch OpenOnyx with a vault.">
                       <select className={selectClass} value={localSettings.defaultFileToOpen} onChange={(e) => updateSetting("defaultFileToOpen", e.target.value as AppSettings["defaultFileToOpen"])}>
-                        <option value="last-opened">Last opened</option>
-                        <option value="new-tab">New tab</option>
+                        <option value="last-opened">Last opened note</option>
+                        <option value="new-tab">Empty new tab</option>
                       </select>
                     </SettingRow>
-                    <SettingRow title="Default location for new notes" description="Where newly created notes are placed.">
+                    <SettingRow title="New note location" description="Folder used when you create a new note.">
                       <select className={selectClass} value={localSettings.defaultNoteLocation} onChange={(e) => updateSetting("defaultNoteLocation", e.target.value as AppSettings["defaultNoteLocation"])}>
-                        <option value="vault">Vault folder</option>
-                        <option value="same-folder">Same folder as active file</option>
+                        <option value="vault">Vault root</option>
+                        <option value="same-folder">Same folder as the active file</option>
                       </select>
                     </SettingRow>
                   </SettingGroup>
 
-                  <h3 className={groupTitleClass}>Links</h3>
-                  <SettingGroup>
-                    <SettingRow title="Automatically update internal links" description="Prompt to update links after renaming a file.">
+                  <SettingGroup title="Links">
+                    <SettingRow title="Update links after rename" description="Offer to rewrite links when a file is renamed.">
                       <Toggle checked={localSettings.autoUpdateInternalLinks} onChange={(v) => updateSetting("autoUpdateInternalLinks", v)} />
                     </SettingRow>
-                    <SettingRow title="Use [[Wikilinks]]" description="Auto-generate Wikilinks instead of Markdown links and images.">
+                    <SettingRow title="Prefer wiki-style links" description="Create [[wiki links]] instead of standard Markdown links when possible.">
                       <Toggle checked={localSettings.useWikiLinks} onChange={(v) => updateSetting("useWikiLinks", v)} />
                     </SettingRow>
-                    <SettingRow title="Show all file types" description="Show files with any extension in File Explorer and Quick Switcher.">
+                    <SettingRow title="Show non-Markdown files" description="List all file types in the explorer and quick open.">
                       <Toggle checked={localSettings.showAllFileTypes} onChange={(v) => updateSetting("showAllFileTypes", v)} />
                     </SettingRow>
                   </SettingGroup>
 
-                  <h3 className={groupTitleClass}>Trash</h3>
-                  <SettingGroup>
-                    <SettingRow title="Confirm before deleting files" description="Avoid accidentally deleting files.">
+                  <SettingGroup title="Deletion">
+                    <SettingRow title="Confirm file deletion" description="Ask before deleting files from the vault.">
                       <Toggle checked={localSettings.confirmBeforeDelete} onChange={(v) => updateSetting("confirmBeforeDelete", v)} />
                     </SettingRow>
-                    <SettingRow title="Deleted files" description="What happens to a file after you delete it.">
+                    <SettingRow title="After delete" description="Where deleted files go.">
                       <select className={selectClass} value={localSettings.deletedFilesMode} onChange={(e) => updateSetting("deletedFilesMode", e.target.value as AppSettings["deletedFilesMode"])}>
-                        <option value="system-trash">Move to system trash</option>
-                        <option value="app-trash">Move to app trash</option>
+                        <option value="system-trash">System trash</option>
+                        <option value="app-trash">App trash</option>
                         <option value="permanent">Delete permanently</option>
                       </select>
                     </SettingRow>
@@ -1085,11 +1302,11 @@ export function SettingsPage({
               {activeSection === "appearance" && (
                 <div className={sectionClass}>
                   <SettingGroup>
-                    <SettingRow title="Base color scheme" description="Choose OpenOnyx's default color scheme.">
+                    <SettingRow title="Theme" description="Color theme for the OpenOnyx workspace.">
                       <select className={selectClass} value={localSettings.theme} onChange={(e) => updateSetting("theme", e.target.value as AppSettings["theme"])}>
                         <option value="dark">Dark</option>
                         <option value="light">Light</option>
-                        <option value="system">Adapt to system</option>
+                        <option value="system">Match system</option>
                         <option value="dark-plus">Dark+</option>
                         <option value="blue-night">Blue Night</option>
                         <option value="oceanic">Oceanic</option>
@@ -1102,13 +1319,13 @@ export function SettingsPage({
                     </SettingRow>
                     {localSettings.theme === "custom" && (
                       <>
-                        <SettingRow title="Custom theme type" description="Choose whether the custom theme is treated as dark or light for image assets.">
+                        <SettingRow title="Custom theme mode" description="Treat the custom theme as dark or light for assets and contrast.">
                           <select className={selectClass} value={localSettings.customThemeType || "dark"} onChange={(e) => updateSetting("customThemeType", e.target.value as "dark" | "light")}>
                             <option value="dark">Dark</option>
                             <option value="light">Light</option>
                           </select>
                         </SettingRow>
-                        <SettingRow title="Accent color" description="Choose the accent color used throughout the app.">
+                        <SettingRow title="Accent color" description="Highlight color for selection, focus, and primary actions.">
                           <input
                             type="color"
                             className="h-8 w-10 rounded border border-[var(--border-medium)] bg-transparent"
@@ -1121,7 +1338,7 @@ export function SettingsPage({
                             }}
                           />
                         </SettingRow>
-                        <SettingRow title="Custom background color">
+                        <SettingRow title="Background color">
                           <input
                             type="color"
                             className="h-8 w-10 rounded border border-[var(--border-medium)] bg-transparent"
@@ -1134,7 +1351,7 @@ export function SettingsPage({
                             }}
                           />
                         </SettingRow>
-                        <SettingRow title="Custom text color">
+                        <SettingRow title="Text color">
                           <input
                             type="color"
                             className="h-8 w-10 rounded border border-[var(--border-medium)] bg-transparent"
@@ -1151,28 +1368,28 @@ export function SettingsPage({
                     )}
                   </SettingGroup>
 
-                  <h3 className={groupTitleClass}>Interface</h3>
-                  <SettingGroup>
-                    <SettingRow title="Show ribbon" description="Display vertical toolbar on the side of the window.">
+                  <SettingGroup title="Chrome">
+                    <SettingRow title="Show activity rail" description="Show the vertical activity rail on the side of the window.">
                       <Toggle checked={localSettings.showRibbon} onChange={(v) => updateSetting("showRibbon", v)} />
                     </SettingRow>
-                    <SettingRow title="Ribbon menu configuration" description="Configure what commands appear in the ribbon menu.">
+                    <SettingRow title="Activity rail actions" description="Manage built-in modules that appear as rail actions.">
                       <button className={buttonClass} onClick={() => setActiveSection("core-plugins")}>Manage</button>
                     </SettingRow>
                   </SettingGroup>
 
-                  <h3 className={groupTitleClass}>Font</h3>
-                  <SettingGroup>
-                    <SettingRow title="Interface font" description="Set base font for all of OpenOnyx.">
+                  <SettingGroup title="Typography">
+                    <SettingRow title="Interface font" description="Default typeface for the OpenOnyx interface.">
                       <select className={selectClass} value={localSettings.fontFamily} onChange={(e) => updateSetting("fontFamily", e.target.value)}>
+                        <option value={'"IBM Plex Sans", system-ui, sans-serif'}>IBM Plex Sans</option>
                         <option value="Inter, system-ui, sans-serif">Inter</option>
                         <option value="'SF Pro Display', system-ui, sans-serif">SF Pro</option>
                         <option value="'Segoe UI', system-ui, sans-serif">Segoe UI</option>
                         <option value="Georgia, serif">Georgia</option>
+                        <option value={'"IBM Plex Mono", monospace'}>IBM Plex Mono</option>
                         <option value="'JetBrains Mono', monospace">JetBrains Mono</option>
                       </select>
                     </SettingRow>
-                    <SettingRow title="Font size" description="Font size in pixels that affects editing and reading views.">
+                    <SettingRow title="Font size" description="Base size for editing and reading views.">
                       <input className={rangeClass} type="range" min={12} max={24} value={localSettings.fontSize} style={rangeProgressStyle(localSettings.fontSize, 12, 24)} onChange={(e) => {
                         const value = Number(e.target.value);
                         const updated = { ...localSettings, fontSize: value, editorFontSize: value, previewFontSize: value };
@@ -1181,14 +1398,13 @@ export function SettingsPage({
                       }} />
                       <span className="w-10 text-right text-xs text-[var(--text-muted)]">{localSettings.fontSize}px</span>
                     </SettingRow>
-                    <SettingRow title="Quick font size adjustment" description="Adjust font size using Ctrl + Scroll or trackpad pinch-zoom.">
+                    <SettingRow title="Pinch / Ctrl+scroll font size" description="Change font size with Ctrl+scroll or trackpad pinch.">
                       <Toggle checked={localSettings.quickFontSizeAdjustment} onChange={(v) => updateSetting("quickFontSizeAdjustment", v)} />
                     </SettingRow>
                   </SettingGroup>
 
-                  <h3 className={groupTitleClass}>Advanced</h3>
-                  <SettingGroup>
-                    <SettingRow title="Zoom level" description="Controls the overall zoom level of the app.">
+                  <SettingGroup title="Advanced">
+                    <SettingRow title="Zoom level" description="Scale the entire application UI.">
                       <input className={rangeClass} type="range" min={80} max={140} value={localSettings.zoomLevel} style={rangeProgressStyle(localSettings.zoomLevel, 80, 140)} onChange={(e) => updateSetting("zoomLevel", Number(e.target.value))} />
                       <span className="w-10 text-right text-xs text-[var(--text-muted)]">{localSettings.zoomLevel}%</span>
                     </SettingRow>
@@ -1199,7 +1415,7 @@ export function SettingsPage({
               {activeSection === "hotkeys" && (
                 <div className={sectionClass}>
                   <SettingGroup>
-                    <SettingRow title="Search hotkeys" description={`Showing ${commandRows.length} commands.`}>
+                    <SettingRow title="Filter commands" description={`Showing ${commandRows.length} commands.`}>
                       <div className="flex h-9 items-center gap-2 rounded-md border border-[var(--border-medium)] bg-[var(--bg-tertiary)] px-3">
                         <Search size={16} className="text-[var(--text-muted)]" />
                         <input className="w-52 bg-transparent text-sm outline-none placeholder:text-[var(--text-faint)]" value={searchHotkey} onChange={(e) => setSearchHotkey(e.target.value)} placeholder="Filter..." />
@@ -1217,10 +1433,10 @@ export function SettingsPage({
               {activeSection === "keychain" && (
                 <div className={sectionClass}>
                   <SettingGroup>
-                    <SettingRow title="Stored AI credentials" description="Provider API keys are saved locally in this app profile.">
+                    <SettingRow title="AI credentials" description="Provider API keys stored locally in this app profile.">
                       <button className={buttonClass} onClick={() => setActiveSection("ai")}>Manage</button>
                     </SettingRow>
-                    <SettingRow title="Stored database credentials" description="Supabase URL and anon key are saved locally when configured.">
+                    <SettingRow title="Database credentials" description="Supabase URL and anon key stored locally when configured.">
                       <button className={buttonClass} onClick={() => setActiveSection("database")}>Manage</button>
                     </SettingRow>
                   </SettingGroup>
@@ -1230,25 +1446,25 @@ export function SettingsPage({
               {activeSection === "core-plugins" && (
                 <div className={sectionClass}>
                   <SettingGroup>
-                    <SettingRow title="Backlinks" description="Show backlinks and mentions for the active note.">
+                    <SettingRow title="Backlinks" description="Show notes that link to the active note.">
                       <Toggle checked={localSettings.coreBacklinks} onChange={(v) => updateSetting("coreBacklinks", v)} />
                     </SettingRow>
-                    <SettingRow title="Canvas" description="Create visual boards with notes and media.">
+                    <SettingRow title="Canvas" description="Create visual boards with notes, cards, and media.">
                       <Toggle checked={localSettings.coreCanvas} onChange={(v) => updateSetting("coreCanvas", v)} />
                     </SettingRow>
-                    <SettingRow title="Command palette" description="Quick access to commands.">
+                    <SettingRow title="Command palette" description="Run any command from a searchable palette.">
                       <Toggle checked={localSettings.coreCommandPalette} onChange={(v) => updateSetting("coreCommandPalette", v)} />
                     </SettingRow>
-                    <SettingRow title="Daily notes" description="Create notes for today's date.">
+                    <SettingRow title="Daily notes" description="Create a note for today's date with one action.">
                       <Toggle checked={localSettings.coreDailyNotes} onChange={(v) => updateSetting("coreDailyNotes", v)} />
                     </SettingRow>
-                    <SettingRow title="Page preview" description="Preview internal links and files.">
+                    <SettingRow title="Link previews" description="Preview linked notes and files on hover.">
                       <Toggle checked={localSettings.corePagePreview} onChange={(v) => updateSetting("corePagePreview", v)} />
                     </SettingRow>
-                    <SettingRow title="Quick switcher" description="Jump to notes quickly.">
+                    <SettingRow title="Quick open" description="Jump to notes by name.">
                       <Toggle checked={localSettings.coreQuickSwitcher} onChange={(v) => updateSetting("coreQuickSwitcher", v)} />
                     </SettingRow>
-                    <SettingRow title="Templates" description="Insert reusable note templates.">
+                    <SettingRow title="Templates" description="Insert reusable Markdown templates into notes.">
                       <Toggle checked={localSettings.coreTemplates} onChange={(v) => updateSetting("coreTemplates", v)} />
                     </SettingRow>
                   </SettingGroup>
@@ -1258,10 +1474,10 @@ export function SettingsPage({
               {activeSection === "backlinks" && (
                 <div className={sectionClass}>
                   <SettingGroup>
-                    <SettingRow title="Show backlinks pane by default" description="Open the Backlinks panel when loading a note.">
+                    <SettingRow title="Open backlinks by default" description="Show the Backlinks panel when a note loads.">
                       <Toggle checked={localSettings.backlinksOpenByDefault} onChange={(v) => updateSetting("backlinksOpenByDefault", v)} />
                     </SettingRow>
-                    <SettingRow title="Include unlinked mentions" description="Search notes that mention the current file name without a link.">
+                    <SettingRow title="Include unlinked mentions" description="Also list notes that mention this file name without a formal link.">
                       <Toggle checked={localSettings.backlinksShowUnlinked} onChange={(v) => updateSetting("backlinksShowUnlinked", v)} />
                     </SettingRow>
                   </SettingGroup>
@@ -1271,10 +1487,10 @@ export function SettingsPage({
               {activeSection === "canvas" && (
                 <div className={sectionClass}>
                   <SettingGroup>
-                    <SettingRow title="Default location for new canvas files">
+                    <SettingRow title="New canvas location" description="Where new canvas files are created.">
                       <select className={selectClass} value={localSettings.canvasDefaultLocation} onChange={(e) => updateSetting("canvasDefaultLocation", e.target.value as AppSettings["canvasDefaultLocation"])}>
-                        <option value="vault">Vault folder</option>
-                        <option value="same-folder">Same folder as active file</option>
+                        <option value="vault">Vault root</option>
+                        <option value="same-folder">Same folder as the active file</option>
                       </select>
                     </SettingRow>
                   </SettingGroup>
@@ -1284,7 +1500,7 @@ export function SettingsPage({
               {activeSection === "command-palette" && (
                 <div className={sectionClass}>
                   <SettingGroup>
-                    <SettingRow title="Command palette" description="Open the command palette with Ctrl+P and search all app/plugin commands.">
+                    <SettingRow title="Enable command palette" description="Open with Ctrl+P to search app and extension commands.">
                       <Toggle checked={localSettings.coreCommandPalette} onChange={(v) => updateSetting("coreCommandPalette", v)} />
                     </SettingRow>
                   </SettingGroup>
@@ -1294,14 +1510,14 @@ export function SettingsPage({
               {activeSection === "daily-notes" && (
                 <div className={sectionClass}>
                   <SettingGroup>
-                    <SettingRow title="Date format" description="Choose how daily notes are named in your vault.">
+                    <SettingRow title="Daily note date format" description="How daily note file names are built from the date.">
                       <input className={inputClass} value={localSettings.dailyNoteDateFormat} onChange={(e) => updateSetting("dailyNoteDateFormat", e.target.value)} />
                     </SettingRow>
-                    <SettingRow title="New file location" description="New daily notes will be placed here.">
-                      <input className={inputClass} value={localSettings.dailyNoteLocation} onChange={(e) => updateSetting("dailyNoteLocation", e.target.value)} placeholder="Example: folder 1/folder 2" />
+                    <SettingRow title="Daily note folder" description="Folder for new daily notes.">
+                      <input className={inputClass} value={localSettings.dailyNoteLocation} onChange={(e) => updateSetting("dailyNoteLocation", e.target.value)} placeholder="e.g. Daily" />
                     </SettingRow>
-                    <SettingRow title="Template file location" description="Choose the file to use as a template.">
-                      <input className={inputClass} value={localSettings.dailyNoteTemplate} onChange={(e) => updateSetting("dailyNoteTemplate", e.target.value)} placeholder="Example: folder/note" />
+                    <SettingRow title="Daily note template" description="Optional template note applied to new daily notes.">
+                      <input className={inputClass} value={localSettings.dailyNoteTemplate} onChange={(e) => updateSetting("dailyNoteTemplate", e.target.value)} placeholder="e.g. Templates/Daily" />
                     </SettingRow>
                   </SettingGroup>
                 </div>
@@ -1310,10 +1526,10 @@ export function SettingsPage({
               {activeSection === "page-preview" && (
                 <div className={sectionClass}>
                   <SettingGroup>
-                    <SettingRow title="Require Ctrl to trigger page preview on hover">
+                    <SettingRow title="Require Ctrl for hover preview" description="Only show link previews while holding Ctrl (or Cmd).">
                       <Toggle checked={localSettings.pagePreviewRequireCtrl} onChange={(v) => updateSetting("pagePreviewRequireCtrl", v)} />
                     </SettingRow>
-                    <SettingRow title="Reading view">
+                    <SettingRow title="Previews in reading view" description="Allow link previews while reading.">
                       <Toggle checked={localSettings.pagePreviewReading} onChange={(v) => updateSetting("pagePreviewReading", v)} />
                     </SettingRow>
                   </SettingGroup>
@@ -1323,7 +1539,7 @@ export function SettingsPage({
               {activeSection === "quick-switcher" && (
                 <div className={sectionClass}>
                   <SettingGroup>
-                    <SettingRow title="Quick switcher" description="Use Ctrl+O to search and open notes quickly.">
+                    <SettingRow title="Enable quick open" description="Use Ctrl+O to search and open notes.">
                       <Toggle checked={localSettings.coreQuickSwitcher} onChange={(v) => updateSetting("coreQuickSwitcher", v)} />
                     </SettingRow>
                   </SettingGroup>
@@ -1333,13 +1549,13 @@ export function SettingsPage({
               {activeSection === "templates" && (
                 <div className={sectionClass}>
                   <SettingGroup>
-                    <SettingRow title="Template folder location" description="Folder containing reusable Markdown templates.">
+                    <SettingRow title="Template folder" description="Folder that holds reusable Markdown templates.">
                       <input className={inputClass} value={localSettings.templatesFolder} onChange={(e) => updateSetting("templatesFolder", e.target.value)} />
                     </SettingRow>
-                    <SettingRow title="Date format" description="Format used for {{date}} replacement.">
+                    <SettingRow title="Template date format" description="Format for {{date}} placeholders in templates.">
                       <input className={inputClass} value={localSettings.templateDateFormat} onChange={(e) => updateSetting("templateDateFormat", e.target.value)} />
                     </SettingRow>
-                    <SettingRow title="Time format" description="Format used for {{time}} replacement.">
+                    <SettingRow title="Template time format" description="Format for {{time}} placeholders in templates.">
                       <input className={inputClass} value={localSettings.templateTimeFormat} onChange={(e) => updateSetting("templateTimeFormat", e.target.value)} />
                     </SettingRow>
                   </SettingGroup>
@@ -1349,30 +1565,32 @@ export function SettingsPage({
               {activeSection === "plugins" && (
                 <div className={sectionClass}>
                   <SettingGroup>
-                    <SettingRow title="Community plugins" description="Browse and install community plugins.">
+                    <SettingRow title="Browse extensions" description="Find and install community extensions via the compatibility runtime.">
                       <button className={primaryButtonClass} onClick={() => setIsBrowsingPlugins(true)}>Browse</button>
                     </SettingRow>
-                    <SettingRow title="Current plugins" description={`You currently have ${plugins.length} plugin${plugins.length === 1 ? "" : "s"} installed.`} />
+                    <SettingRow title="Installed extensions" description={`You have ${plugins.length} extension${plugins.length === 1 ? "" : "s"} installed.`} />
                   </SettingGroup>
-                  <h3 className={groupTitleClass}>Installed plugins</h3>
-                  <PluginSettingsPanel
-                    plugins={plugins}
-                    settingTabs={pluginSettingTabs}
-                    onEnablePlugin={onEnablePlugin || (async () => { })}
-                    onDisablePlugin={onDisablePlugin || (async () => { })}
-                    onRefresh={onRefreshPlugins || (async () => { })}
-                    onReloadPlugin={onReloadPlugin}
-                    onUninstallPlugin={onUninstallPlugin}
-                    onInstallPlugin={onInstallPlugin}
-                    onBrowse={() => setIsBrowsingPlugins(true)}
-                  />
+                  <div data-prefs-panel="">
+                    <h3 className={groupTitleClass}>Installed extensions</h3>
+                    <PluginSettingsPanel
+                      plugins={plugins}
+                      settingTabs={pluginSettingTabs}
+                      onEnablePlugin={onEnablePlugin || (async () => { })}
+                      onDisablePlugin={onDisablePlugin || (async () => { })}
+                      onRefresh={onRefreshPlugins || (async () => { })}
+                      onReloadPlugin={onReloadPlugin}
+                      onUninstallPlugin={onUninstallPlugin}
+                      onInstallPlugin={onInstallPlugin}
+                      onBrowse={() => setIsBrowsingPlugins(true)}
+                    />
+                  </div>
                 </div>
               )}
 
               {activeSection === "ai" && (
                 <div className={sectionClass}>
                   <SettingGroup>
-                    <SettingRow title="Provider" description="Choose which AI provider you want to use for advanced reasoning.">
+                    <SettingRow title="Provider" description="Remote AI provider used for advanced reasoning and writing tools.">
                       {AI_PROVIDER_PRESETS.map((preset) => (
                         <button
                           key={preset.id}
@@ -1393,10 +1611,10 @@ export function SettingsPage({
                       ))}
                     </SettingRow>
                     <SettingRow
-                      title="API Key"
+                      title="API key"
                       description={(
                         <>
-                          Enter credentials for your provider.{" "}
+                          API key for the selected provider.{" "}
                           <a className="inline-flex items-center gap-1 text-[var(--text-link)] underline" href={AI_PROVIDER_PRESETS.find((p) => p.id === aiSettings.provider)?.keyUrl} target="_blank" rel="noopener noreferrer">
                             Get key <ExternalLink size={12} />
                           </a>
@@ -1407,8 +1625,7 @@ export function SettingsPage({
                     </SettingRow>
                   </SettingGroup>
 
-                  <h3 className={groupTitleClass}>Available Models</h3>
-                  <SettingGroup>
+                  <SettingGroup title="Models">
                     {models.map((model) => (
                       <SettingRow key={model.id} title={model.label} description={model.description}>
                         <button className={cx(buttonClass, aiSettings.modelId === model.id && "border-[var(--color-accent)]")} onClick={() => updateAISettings({ modelId: model.id })}>
@@ -1417,7 +1634,7 @@ export function SettingsPage({
                       </SettingRow>
                     ))}
                     {aiSettings.provider === "openrouter" && (
-                      <SettingRow title="Custom Model" description={customModelDescription}>
+                      <SettingRow title="Custom model" description={customModelDescription}>
                         <div className="flex flex-wrap items-center justify-end gap-2">
                           <input
                             className={inputClass}
@@ -1440,18 +1657,17 @@ export function SettingsPage({
                     )}
                   </SettingGroup>
 
-                  <h3 className={groupTitleClass}>System Status</h3>
-                  <SettingGroup>
-                    <SettingRow title="Analysis Engine" description="State of the background note indexer and vector embeddings store.">
+                  <SettingGroup title="Status">
+                    <SettingRow title="Local analysis engine" description="Background indexer and local embeddings store.">
                       <span className={cx("inline-flex items-center gap-1.5 text-[12.5px]", isModelLoaded() ? "text-[var(--success)]" : "text-[var(--text-muted)]")}>
                         {isModelLoaded() ? <Check size={14} /> : <AlertCircle size={14} />}
-                        {isModelLoaded() ? `Running - ${indexedCount} notes indexed` : "Loads automatically on first note save"}
+                        {isModelLoaded() ? `Running - ${indexedCount} notes indexed` : "Starts automatically on first note save"}
                       </span>
                     </SettingRow>
-                    <SettingRow title="LLM Service Connection" description="Verification of the active remote large language model connection.">
+                    <SettingRow title="Remote LLM connection" description="Status of the configured remote model provider.">
                       <span className={cx("inline-flex items-center gap-1.5 text-[12.5px]", aiSettings.apiKey ? "text-[var(--success)]" : "text-[var(--text-muted)]")}>
                         {aiSettings.apiKey ? <Check size={14} /> : <AlertCircle size={14} />}
-                        {aiSettings.apiKey ? `Connected: ${currentModel?.shortLabel || currentModel?.label}` : "No API key - local analysis still works"}
+                        {aiSettings.apiKey ? `Connected: ${currentModel?.shortLabel || currentModel?.label}` : "No API key — local analysis still works"}
                       </span>
                     </SettingRow>
                   </SettingGroup>
@@ -1461,23 +1677,26 @@ export function SettingsPage({
               {activeSection === "database" && (
                 <div className={sectionClass}>
                   <SettingGroup>
-                    <SettingRow title="Supabase URL" description="Project URL from your Supabase API settings.">
+                    <SettingRow title="Supabase URL" description="Project URL from your Supabase dashboard API settings.">
                       <input className={inputClass} value={databaseConfig.supabaseUrl} onChange={(e) => setDatabaseConfig((current) => ({ ...current, supabaseUrl: e.target.value }))} placeholder="https://project.supabase.co" />
                     </SettingRow>
-                    <SettingRow title="Anon public key" description="Use the anon public key. Do not paste a service role key into the app.">
+                    <SettingRow title="Anon public key" description="Use the public anon key only. Never paste a service-role key.">
                       <input className={inputClass} type="password" value={databaseConfig.anonKey} onChange={(e) => setDatabaseConfig((current) => ({ ...current, anonKey: e.target.value }))} placeholder="eyJhbGciOi..." />
                     </SettingRow>
                   </SettingGroup>
 
-                  <h3 className={groupTitleClass}>Import from .env</h3>
-                  <textarea className={textareaClass} value={databaseEnvText} onChange={(e) => setDatabaseEnvText(e.target.value)} placeholder={"VITE_SUPABASE_URL=https://project.supabase.co\nVITE_SUPABASE_ANON_KEY=eyJhbGciOi..."} />
-                  <div className="mt-3 flex justify-end">
-                    <button className={buttonClass} onClick={handleImportDatabaseEnv}>Import values</button>
-                  </div>
+                  {(!prefsQuery || matchesPrefsQuery("Import from .env", "environment variables VITE_SUPABASE", prefsQuery)) && (
+                    <div data-prefs-row="">
+                      <h3 className={groupTitleClass}>Import from .env</h3>
+                      <textarea className={textareaClass} value={databaseEnvText} onChange={(e) => setDatabaseEnvText(e.target.value)} placeholder={"VITE_SUPABASE_URL=https://project.supabase.co\nVITE_SUPABASE_ANON_KEY=eyJhbGciOi..."} />
+                      <div className="mt-3 flex justify-end">
+                        <button className={buttonClass} onClick={handleImportDatabaseEnv}>Import values</button>
+                      </div>
+                    </div>
+                  )}
 
-                  <h3 className={groupTitleClass}>Schema migration</h3>
-                  <SettingGroup>
-                    <SettingRow title="Database creation SQL" description="Copy the bundled schema.sql migration and run it in the Supabase SQL Editor for a personal database.">
+                  <SettingGroup title="Schema migration">
+                    <SettingRow title="Database setup SQL" description="Copy the bundled schema migration and run it in the Supabase SQL editor.">
                       <button className={cx(buttonClass, "inline-flex items-center gap-2")} onClick={handleCopyDatabaseSchema}>
                         <Copy size={14} /> Copy SQL
                       </button>
@@ -1487,9 +1706,8 @@ export function SettingsPage({
                     </div>
                   </SettingGroup>
 
-                  <h3 className={groupTitleClass}>Local Storage</h3>
-                  <SettingGroup>
-                    <SettingRow title="Saved credentials" description="Credentials are saved in this app's local browser storage and restored automatically on startup.">
+                  <SettingGroup title="Local storage">
+                    <SettingRow title="Saved credentials" description="Credentials are stored locally for this app and restored on startup.">
                       <button className={buttonClass} onClick={handleTestDatabaseConnection} disabled={isTestingDatabase}>{isTestingDatabase ? "Testing..." : "Test"}</button>
                       <button className={primaryButtonClass} onClick={handleSaveDatabaseConfig}>Save</button>
                       <button className={buttonClass} onClick={handleClearDatabaseConfig}>Clear</button>
@@ -1502,7 +1720,7 @@ export function SettingsPage({
               )}
 
               {activeSection === "collaboration" && (
-                <div className={sectionClass}>
+                <div className={sectionClass} data-prefs-panel="">
                   <CollaborationPanel
                     vaultPath={vaultPath || null}
                     isSettingsMode={true}
@@ -1513,7 +1731,7 @@ export function SettingsPage({
               )}
 
               {activeSection === "about" && (
-                <div className={sectionClass}>
+                <div className={sectionClass} data-prefs-panel="">
                   <div className="flex flex-col items-center py-8">
                     {/* Logo container with static contrast background (no hover scale animation) */}
                     <div className={`mb-6 flex items-center justify-center p-4 rounded-2xl shadow-sm border ${isDark ? "bg-[#18181b] border-neutral-800/80" : "bg-white border-neutral-200/60"} h-24 w-24`}>
@@ -1531,39 +1749,43 @@ export function SettingsPage({
                     </div>
 
                     <p className="max-w-lg text-center text-sm leading-relaxed text-[var(--text-secondary)] mb-10">
-                      A local-first, offline-ready knowledge management tool for creating, linking, and mapping Markdown note networks.
+                      A local-first knowledge studio for creating, linking, and exploring Markdown vaults.
+                    </p>
+
+                    <p className="max-w-xl text-center text-[12px] leading-relaxed text-[var(--text-muted)] mb-10 px-4">
+                      OpenOnyx is an independent open-source project. It can open Markdown vault folders and optionally run community extensions through a compatibility runtime for interoperability. OpenOnyx is not affiliated with, endorsed by, or related to Obsidian or Dynalist Inc.
                     </p>
 
                     {/* Features Grid */}
                     <div className="grid w-full max-w-2xl grid-cols-1 gap-4 sm:grid-cols-3 mb-10">
                       <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-secondary)] p-4 text-center sm:text-left">
-                        <h4 className="mb-1 text-[13px] font-semibold text-[var(--text-primary)]">Private & Secure</h4>
-                        <p className="text-[12px] leading-relaxed text-[var(--text-muted)]">Notes are stored locally on your device in plain text Markdown files.</p>
+                        <h4 className="mb-1 text-[13px] font-semibold text-[var(--text-primary)]">Private by default</h4>
+                        <p className="text-[12px] leading-relaxed text-[var(--text-muted)]">Notes stay on your device as plain Markdown files you control.</p>
                       </div>
                       <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-secondary)] p-4 text-center sm:text-left">
-                        <h4 className="mb-1 text-[13px] font-semibold text-[var(--text-primary)]">Linked Graph</h4>
-                        <p className="text-[12px] leading-relaxed text-[var(--text-muted)]">Explore connections and visualize your thoughts as an interconnected network.</p>
+                        <h4 className="mb-1 text-[13px] font-semibold text-[var(--text-primary)]">Linked knowledge</h4>
+                        <p className="text-[12px] leading-relaxed text-[var(--text-muted)]">Explore connections across your vault as an interactive graph.</p>
                       </div>
                       <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-secondary)] p-4 text-center sm:text-left">
-                        <h4 className="mb-1 text-[13px] font-semibold text-[var(--text-primary)]">Offline First</h4>
-                        <p className="text-[12px] leading-relaxed text-[var(--text-muted)]">Work anywhere, anytime. Synced selectively when you choose.</p>
+                        <h4 className="mb-1 text-[13px] font-semibold text-[var(--text-primary)]">Works offline</h4>
+                        <p className="text-[12px] leading-relaxed text-[var(--text-muted)]">Core workflows work offline. Sync only when you choose.</p>
                       </div>
                     </div>
 
                     {/* Community / Help Section */}
                     <div className="w-full max-w-2xl rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-secondary)] p-5 mb-8">
                       <h4 className="mb-3 text-sm font-semibold text-[var(--text-primary)]">
-                        Useful Links & Resources
+                        Resources
                       </h4>
                       <div className="flex items-center gap-6">
                         <a href="https://github.com/OpenOnyx/OpenOnyx" target="_blank" rel="noopener noreferrer" className="text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors">
-                          GitHub Repository
+                          GitHub
                         </a>
                         <a href="https://github.com/OpenOnyx/OpenOnyx/wiki" target="_blank" rel="noopener noreferrer" className="text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors">
                           Documentation
                         </a>
                         <a href="https://github.com/OpenOnyx/OpenOnyx/issues" target="_blank" rel="noopener noreferrer" className="text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors">
-                          Report Issue
+                          Report an issue
                         </a>
                       </div>
                     </div>
@@ -1571,15 +1793,16 @@ export function SettingsPage({
                     {/* Factory reset button */}
                     <div className="w-full max-w-2xl border-t border-[var(--border-subtle)] pt-6 flex flex-col items-center gap-3">
                       <button className={cx(buttonClass, "inline-flex items-center border-dashed border-red-500/30 text-red-500 hover:bg-red-500/10 hover:border-red-500/50")} onClick={() => onSettingsChange(DEFAULT_SETTINGS)}>
-                        Reset all settings to factory default
+                        Reset preferences to defaults
                       </button>
-                      <p className="text-[11px] text-[var(--text-muted)]">This will reset all user preferences back to their original values.</p>
+                      <p className="text-[11px] text-[var(--text-muted)]">Restores all preferences to factory defaults. Vault files are not deleted.</p>
                     </div>
                   </div>
                 </div>
               )}
             </main>
           </>
+          </PrefsSearchContext.Provider>
         )}
       </div>
       {showAuthModal && (
