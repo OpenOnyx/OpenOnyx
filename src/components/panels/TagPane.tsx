@@ -84,7 +84,7 @@ export function TagPane({ visible, onTagClick }: TagPaneProps) {
         {loading ? (
           <div className="px-4 py-6 text-center text-xs text-(--text-muted)">Loading tags...</div>
         ) : tags.length === 0 ? (
-          <div className="px-4 py-6 text-center text-xs text-(--text-muted)">No tags found</div>
+          <div className="mx-3 my-2 rounded-lg border border-dashed border-[var(--oo-border-subtle,var(--border-subtle))] px-4 py-6 text-center text-xs text-[var(--oo-text-muted,var(--text-muted))]">No tags in this vault yet</div>
         ) : (
           tags.map((tag) => (
             <div key={tag.name}>

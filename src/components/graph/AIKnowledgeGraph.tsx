@@ -2103,7 +2103,7 @@ Summarize the theme and key intersections. No emojis.`;
                       style={{ padding: "3px 8px", fontSize: "11.5px" }}
                       onClick={() => {
                         const name = `Path: ${noteNameFromPath(computedPath[0])} to ${noteNameFromPath(computedPath[computedPath.length - 1])}`;
-                        onCreateGroupFromPaths(name, "#3b82f6", computedPath);
+                        onCreateGroupFromPaths(name, "#E8A84A", computedPath);
                       }}
                     >
                       Save Path as Group
@@ -2386,7 +2386,7 @@ Summarize the theme and key intersections. No emojis.`;
                         <button
                           type="button"
                           className="graph-btn-secondary"
-                          style={{ flex: 1, padding: "5px 8px", color: "#3b82f6" }}
+                          style={{ flex: 1, padding: "5px 8px", color: "var(--oo-accent, #E8A84A)" }}
                           onClick={() => handleCreateManualLink(selectedEdge.source, selectedEdge.target)}
                         >
                           Create Link
@@ -2843,7 +2843,7 @@ Summarize the theme and key intersections. No emojis.`;
                           <button
                             type="button"
                             className="graph-btn-secondary"
-                            style={{ flex: 1, padding: "2px", fontSize: "9.5px", color: "#3b82f6" }}
+                            style={{ flex: 1, padding: "2px", fontSize: "9.5px", color: "var(--oo-accent, #E8A84A)" }}
                             onClick={() => handleCreateManualLink(edge.source, edge.target)}
                           >
                             Accept Link

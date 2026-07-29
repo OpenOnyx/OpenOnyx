@@ -117,30 +117,34 @@ export function BacklinksPanel({
   };
 
   return (
-    <div className="flex flex-col bg-(--bg-secondary) select-none">
+    <div className="flex flex-col select-none bg-[var(--oo-surface-1,var(--bg-secondary))]">
       {/* Header */}
       <div
-        className="flex items-center justify-between px-4 py-2 cursor-pointer hover:bg-(--bg-hover) transition-colors duration-100"
+        className="flex cursor-pointer items-center justify-between px-4 py-2 transition-colors duration-100 hover:bg-[var(--bg-hover)]"
         onClick={() => setPanelExpanded(!panelExpanded)}
       >
-        <span className="flex items-center gap-1.5 text-[13px] font-medium text-(--text-primary)">
+        <span className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.06em] text-[var(--oo-text-muted,var(--text-muted))]">
           {panelExpanded ? (
-            <ChevronDown size={14} className="text-(--text-muted) shrink-0" />
+            <ChevronDown size={14} className="shrink-0 text-[var(--oo-text-muted,var(--text-muted))]" />
           ) : (
-            <ChevronRight size={14} className="text-(--text-muted) shrink-0" />
+            <ChevronRight size={14} className="shrink-0 text-[var(--oo-text-muted,var(--text-muted))]" />
           )}
-          Linked mentions
+          <span className="text-[13px] font-medium normal-case tracking-normal text-[var(--oo-text-primary,var(--text-primary))]">
+            Backlinks
+          </span>
         </span>
-        <span className="text-[12px] text-(--text-muted)">{backlinks.length}</span>
+        <span className="text-[12px] text-[var(--oo-text-muted,var(--text-muted))]">{backlinks.length}</span>
       </div>
 
       {/* Collapsible Content */}
       {panelExpanded && (
         <div className="flex flex-col pb-2">
           {loading ? (
-            <div className="px-8 py-3 text-xs text-(--text-muted) italic">Loading mentions...</div>
+            <div className="px-8 py-3 text-xs italic text-[var(--oo-text-muted,var(--text-muted))]">Loading…</div>
           ) : groups.length === 0 ? (
-            <div className="px-8 py-3 text-xs text-(--text-muted) italic">No linked mentions</div>
+            <div className="mx-3 my-2 rounded-lg border border-dashed border-[var(--oo-border-subtle,var(--border-subtle))] px-4 py-5 text-center text-xs text-[var(--oo-text-muted,var(--text-muted))]">
+              No backlinks yet. Link other notes to this one with wiki links.
+            </div>
           ) : (
             groups.map((group) => {
               const isExpanded = expandedGroups.has(group.path);

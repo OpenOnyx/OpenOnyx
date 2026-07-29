@@ -1,7 +1,7 @@
 /**
  * Graph Renderer using pure Canvas2D
  * No WebGL dependencies - guaranteed compatibility with Electron
- * Matches Obsidian's visual style and interactions
+ * Canvas2D knowledge graph renderer for OpenOnyx.
  */
 
 export interface RendererOptions {
@@ -126,27 +126,27 @@ export class GraphRenderer {
   private cachedRect: DOMRect | null = null;
   private cachedNodeRadii = new Map<string, number>();
 
-  // Obsidian-style colors
+  // Onyx Studio graph defaults (muted graphite; themed via GraphView CSS vars)
   private nodeStyle: NodeStyle = {
-    color: 0x7f7f7f, // Gray (Obsidian default)
+    color: 0x6b7380,
     size: 5,
-    selectedColor: 0x7f7f7f,
-    hoveredColor: 0x7f7f7f,
-    connectedColor: 0x7f7f7f,
+    selectedColor: 0xe8a84a,
+    hoveredColor: 0xe8a84a,
+    connectedColor: 0xa8b0bd,
     dimmedAlpha: 0.15,
   };
 
   private edgeStyle: EdgeStyle = {
-    color: 0x7f7f7f,
+    color: 0x4a5160,
     width: 1,
-    highlightColor: 0x7f7f7f,
+    highlightColor: 0xe8a84a,
     highlightWidth: 2,
-    alpha: 1.0,      // Base alpha (fQ=0.2 dimming handled in drawEdges)
-    dimmedAlpha: 0.2, // Match Obsidian's fQ constant
+    alpha: 1.0,
+    dimmedAlpha: 0.22,
   };
 
   private labelStyle: LabelStyle = {
-    color: "#7f7f7f",
+    color: "#a8b0bd",
     size: 11,
     show: true,
     threshold: 0.4,
@@ -278,7 +278,7 @@ export class GraphRenderer {
     const mouseY = e.clientY - rect.top;
 
     if (e.ctrlKey || e.metaKey) {
-      // Smooth zoom factor (Obsidian style)
+      // Smooth zoom factor
       const zoomFactor = Math.pow(1.5, -e.deltaY / 120);
       const newScale = Math.max(1 / 128, Math.min(8, this.targetScale * zoomFactor));
 
@@ -594,7 +594,7 @@ export class GraphRenderer {
   private drawEdges(ctx: CanvasRenderingContext2D): void {
     const highlightNode = this.hoveredNodeId || this.selectedNodeId;
 
-    // Obsidian constants
+    // Dim factor for non-highlighted graph elements
     const fQ = 0.2;
     const zoomAlphaFactor = Math.max(0, Math.min(1, 2 * (this.scale - 0.3)));
     const lineThickness = this.edgeStyle.width / this.scale;
@@ -684,7 +684,7 @@ export class GraphRenderer {
       ? this.adjacencyMap.get(highlightNode)
       : null;
 
-    // Obsidian constants
+    // Dim factor for non-highlighted graph elements
     const fQ = 0.2;
 
     for (const node of this.nodes.values()) {
@@ -706,7 +706,7 @@ export class GraphRenderer {
       // Use pre-cached radius
       const size = this.cachedNodeRadii.get(node.id) || 8;
 
-      // Obsidian-style alpha: dimmed nodes use fQ (0.2), highlighted/normal use 1
+      // Dimmed nodes use fQ; highlighted/normal use full alpha
       const alpha = isDimmed ? fQ : 1;
 
       // Draw node circle
@@ -715,7 +715,7 @@ export class GraphRenderer {
       ctx.arc(node.x, node.y, size, 0, Math.PI * 2);
       ctx.fill();
 
-      // Obsidian draws a highlight ring around the hovered/selected node
+      // Highlight ring around the hovered/selected node
       if (isHighlightNode || (this.highlightedPathNodeIds && this.highlightedPathNodeIds.has(node.id) && !isDimmed)) {
         const ringWidth = Math.max(1, Math.sqrt(this.scale) / this.scale);
         ctx.strokeStyle = hexToColor(isHighlightNode ? this.edgeStyle.highlightColor : color, 0.8);
@@ -730,14 +730,14 @@ export class GraphRenderer {
   private drawLabels(ctx: CanvasRenderingContext2D): void {
     if (!this.labelStyle.show) return;
 
-    // Obsidian-parity text fade: textAlpha = clamp(log2(scale) + 1 - fTextShowMult, 0, 1)
+    // Label fade with zoom: textAlpha = clamp(log2(scale) + 1 - fTextShowMult, 0, 1)
     const n = Math.log(this.scale) / Math.log(2);
     const textAlpha = Math.max(0, Math.min(1, n + 1 - (1 - this.labelStyle.threshold)));
     
     // Draw labels if textAlpha is positive or if a node is currently hovered
     if (textAlpha <= 0 && !this.hoveredNodeId) return;
 
-    // Obsidian's font stack for graph labels
+    // Host UI font stack for graph labels
     ctx.font = `${this.labelStyle.size}px ui-sans-serif, -apple-system, BlinkMacSystemFont, system-ui, "Segoe UI", Roboto, "Inter", sans-serif`;
     ctx.textAlign = "center";
     ctx.textBaseline = "top";
@@ -755,7 +755,7 @@ export class GraphRenderer {
       b = parseInt(this.labelStyle.color.slice(5, 7), 16);
     }
 
-    // Obsidian fQ constant for dimming
+    // Dim factor for non-focused labels
     const fQ = 0.2;
 
     for (const node of this.nodes.values()) {

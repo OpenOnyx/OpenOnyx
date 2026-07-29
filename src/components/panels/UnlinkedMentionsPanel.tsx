@@ -168,7 +168,7 @@ export function UnlinkedMentionsPanel({
             <div className="px-8 py-3 text-xs text-(--text-muted) italic">Searching...</div>
           ) : mentions.length === 0 ? (
             <div className="px-8 py-3 text-xs text-(--text-muted) italic">
-              No unlinked mentions found
+              No unlinked mentions
             </div>
           ) : (
             Array.from(groupedMentions.entries()).map(([path, fileMentions]) => {

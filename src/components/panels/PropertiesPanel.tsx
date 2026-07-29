@@ -245,7 +245,7 @@ export function PropertiesPanel({
       <div className="px-4 pb-2">
         {properties.length === 0 ? (
           <div className="py-4 text-center text-xs text-(--text-muted) leading-relaxed">
-            No properties defined.
+            No properties on this note yet.
             <br />
             <small>Add YAML frontmatter to define properties.</small>
           </div>

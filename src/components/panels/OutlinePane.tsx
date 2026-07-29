@@ -227,8 +227,8 @@ export function OutlinePane({
           className={`flex items-center gap-1.5 px-2 py-0.5 rounded cursor-pointer transition-colors duration-100 select-none group relative
             ${
               isActive
-                ? "bg-[var(--bg-active)] text-[var(--text-primary)] font-medium"
-                : "text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]"
+                ? "bg-[var(--oo-accent-muted,var(--bg-active))] font-medium text-[var(--oo-text-primary,var(--text-primary))]"
+                : "text-[var(--oo-text-secondary,var(--text-secondary))] hover:bg-[var(--bg-hover)] hover:text-[var(--oo-text-primary,var(--text-primary))]"
             }`}
           onClick={() => {
             setActiveLine(node.line);
@@ -237,8 +237,8 @@ export function OutlinePane({
         >
           {/* Collapse/Expand Chevron */}
           <span
-            className={`w-4 h-4 flex items-center justify-center rounded hover:bg-neutral-700/30 text-neutral-400 group-hover:text-neutral-200 transition-colors ${
-              hasChildren ? "cursor-pointer" : "opacity-0 pointer-events-none"
+            className={`flex h-4 w-4 items-center justify-center rounded text-[var(--oo-text-muted,var(--text-muted))] transition-colors hover:bg-[var(--bg-hover)] group-hover:text-[var(--oo-text-secondary,var(--text-secondary))] ${
+              hasChildren ? "cursor-pointer" : "pointer-events-none opacity-0"
             }`}
             onClick={(e) => {
               if (!hasChildren) return;
@@ -270,16 +270,19 @@ export function OutlinePane({
   };
 
   return (
-    <div className="flex flex-col h-full border-l border-(--border-subtle) bg-(--bg-secondary)">
-      {/* Top Header Actions */}
-      <div className="flex items-center justify-center gap-4 py-2 border-b border-(--border-subtle) bg-(--bg-secondary) shrink-0">
+    <div className="flex h-full flex-col bg-[var(--oo-surface-1,var(--bg-secondary))]">
+      <div className="shrink-0 border-b border-[var(--oo-border-subtle,var(--border-subtle))] px-3 py-2">
+        <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.06em] text-[var(--oo-text-muted,var(--text-muted))]">
+          Outline
+        </div>
+        <div className="flex items-center justify-center gap-3">
         <button
           onClick={() => {
             setShowSearch(!showSearch);
             if (showSearch) setSearchQuery("");
           }}
-          className={`p-1 rounded hover:bg-(--bg-hover) text-(--text-muted) hover:text-(--text-primary) transition-colors ${
-            showSearch ? "text-(--text-primary) bg-(--bg-hover)" : ""
+          className={`rounded p-1 text-[var(--oo-text-muted,var(--text-muted))] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--oo-text-primary,var(--text-primary))] ${
+            showSearch ? "bg-[var(--bg-hover)] text-[var(--oo-text-primary,var(--text-primary))]" : ""
           }`}
           title="Search headings"
         >
@@ -287,39 +290,40 @@ export function OutlinePane({
         </button>
         <button
           onClick={handleCollapseAll}
-          className="p-1 rounded hover:bg-(--bg-hover) text-(--text-muted) hover:text-(--text-primary) transition-colors"
+          className="rounded p-1 text-[var(--oo-text-muted,var(--text-muted))] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--oo-text-primary,var(--text-primary))]"
           title="Collapse all"
         >
           <ListCollapse size={16} strokeWidth={1.5} />
         </button>
         <button
           onClick={handleExpandAll}
-          className="p-1 rounded hover:bg-(--bg-hover) text-(--text-muted) hover:text-(--text-primary) transition-colors"
+          className="rounded p-1 text-[var(--oo-text-muted,var(--text-muted))] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--oo-text-primary,var(--text-primary))]"
           title="Expand all"
         >
           <ChevronsUpDown size={16} strokeWidth={1.5} />
         </button>
+        </div>
       </div>
 
       {/* Dynamic Search Bar */}
       {showSearch && (
-        <div className="px-3 py-1.5 border-b border-(--border-subtle) shrink-0">
+        <div className="shrink-0 border-b border-[var(--oo-border-subtle,var(--border-subtle))] px-3 py-1.5">
           <input
             type="text"
-            placeholder="Filter headings..."
+            placeholder="Filter headings…"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full bg-(--bg-primary) border border-(--border-subtle) rounded px-2.5 py-1 text-xs text-(--text-primary) placeholder:text-(--text-muted) outline-none focus:border-(--border-strong) transition-colors"
+            className="w-full rounded-md border border-[var(--oo-border-subtle,var(--border-subtle))] bg-[var(--oo-surface-0,var(--bg-primary))] px-2.5 py-1 text-xs text-[var(--oo-text-primary,var(--text-primary))] outline-none transition-colors placeholder:text-[var(--oo-text-muted,var(--text-muted))] focus:border-[var(--oo-accent,var(--border-strong))]"
             autoFocus
           />
         </div>
       )}
 
       {/* Heading Tree Body */}
-      <div className="flex-1 overflow-y-auto px-2 py-2">
+      <div className="min-h-0 flex-1 overflow-y-auto px-2 py-2">
         {filteredTree.length === 0 ? (
-          <div className="px-4 py-6 text-center text-xs text-(--text-muted)">
-            {searchQuery ? "No matching headings" : "No headings found"}
+          <div className="mx-2 my-2 rounded-lg border border-dashed border-[var(--oo-border-subtle,var(--border-subtle))] px-4 py-6 text-center text-xs text-[var(--oo-text-muted,var(--text-muted))]">
+            {searchQuery ? "No headings match this filter" : "No headings in this note yet"}
           </div>
         ) : (
           <div className="flex flex-col gap-0.5">

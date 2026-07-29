@@ -163,11 +163,11 @@ export const getDefaultSettings = (theme: Theme): GraphSettings => {
       nodeSize = 8;
       break;
     case "custom":
-      backgroundColor = resolveThemeHexColor("--bg-primary", "#121212");
-      nodeColor = resolveThemeHexColor("--graph-node-color", "#d5d1d1");
-      connectedColor = resolveThemeHexColor("--accent-primary", "#c0c0c0");
-      edgeColor = resolveThemeHexColor("--graph-edge-color", "#5d5d5d");
-      textColor = resolveThemeHexColor("--text-primary", "#e5e5e5");
+      backgroundColor = resolveThemeHexColor("--oo-surface-0", resolveThemeHexColor("--bg-primary", "#0C0D0F"));
+      nodeColor = resolveThemeHexColor("--oo-graph-node", resolveThemeHexColor("--graph-node-color", "#E8A84A"));
+      connectedColor = resolveThemeHexColor("--oo-accent", resolveThemeHexColor("--accent-primary", "#E8A84A"));
+      edgeColor = resolveThemeHexColor("--oo-graph-edge", resolveThemeHexColor("--graph-edge-color", "#6B7380"));
+      textColor = resolveThemeHexColor("--oo-text-primary", resolveThemeHexColor("--text-primary", "#E8EAED"));
       nodeSize = 6;
       break;
     case "dark":
@@ -703,7 +703,7 @@ export function GraphView({
           },
         });
 
-        // Apply Obsidian-style colors
+        // Apply theme-driven graph colors
         renderer.setNodeStyle({
           color: hexToNumber(settings.nodeColor),
           size: settings.nodeSize,
