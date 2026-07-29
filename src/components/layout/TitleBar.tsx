@@ -1,5 +1,5 @@
 /**
- * TitleBar - Custom window title bar (Obsidian-style)
+ * TitleBar - Custom window title bar (Onyx Studio shell)
  *
  * Unified top bar with:
  *   Left: action icons aligned above the ribbon + sidebar
@@ -138,13 +138,13 @@ function cx(...classes: Array<string | false | null | undefined>) {
 }
 
 const titlebarClass =
-  "titlebar relative z-[3200] flex h-[var(--titlebar-height)] min-h-[var(--titlebar-height)] w-full shrink-0 select-none items-center bg-[var(--bg-secondary)] text-[length:var(--font-ui-small)] [-webkit-app-region:no-drag]";
+  "titlebar relative z-[3200] flex h-[var(--titlebar-height)] min-h-[var(--titlebar-height)] w-full shrink-0 select-none items-center border-b border-[var(--oo-border-subtle,var(--divider-color))] bg-[var(--oo-surface-1,var(--bg-secondary))] text-[length:var(--font-ui-small)] [-webkit-app-region:no-drag]";
 const titlebarDragHandleClass =
   "absolute inset-0 z-[1] pointer-events-none [-webkit-app-region:drag]";
 const titlebarLeftClass =
   "titlebar-left relative z-[2] flex h-full shrink-0 items-center bg-transparent pointer-events-auto [-webkit-app-region:no-drag]";
 const titlebarRibbonSlotClass =
-  "flex h-full w-[var(--ribbon-width)] shrink-0 items-center justify-center";
+  "flex h-full w-[var(--oo-rail-width,var(--ribbon-width))] shrink-0 items-center justify-center";
 const titlebarActionBtnClass =
   "titlebar-action-btn flex h-8 w-8 cursor-pointer items-center justify-center rounded border-0 bg-transparent p-0 text-[var(--text-secondary)] transition-all duration-120 pointer-events-auto [-webkit-app-region:no-drag] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]";
 const titlebarVaultActionsClass = "flex items-center gap-0.5 px-2";
@@ -165,9 +165,9 @@ const titlebarTabClass =
 const titlebarTabActiveClass =
   "active z-[4] !border-x !border-t !border-b-0 !border-[var(--border-subtle)] bg-[var(--tab-background-active)] text-[var(--tab-text-color-focused-active-current)] shadow-[inset_0_var(--tab-outline-width)_0_0_var(--tab-outline-color),inset_var(--tab-outline-width)_0_0_var(--tab-outline-color),inset_calc(var(--tab-outline-width)*-1)_0_0_var(--tab-outline-color)]";
 const titlebarTabDropLeftClass =
-  "drop-target-left !shadow-[inset_2px_0_0_var(--accent-color,#7c6ef6)]";
+  "drop-target-left !shadow-[inset_2px_0_0_var(--accent-color,var(--oo-accent,#E8A84A))]";
 const titlebarTabDropRightClass =
-  "drop-target-right !shadow-[inset_-2px_0_0_var(--accent-color,#7c6ef6)]";
+  "drop-target-right !shadow-[inset_-2px_0_0_var(--accent-color,var(--oo-accent,#E8A84A))]";
 const titlebarGroupedTabClass =
   "grouped-tab !rounded-t-[var(--radius-sm,4px)] !border-t-2 border-solid opacity-75 transition-[background-color,border-top-color,opacity] duration-75 hover:opacity-95 before:!hidden after:!hidden";
 const titlebarGroupedActiveTabClass =
@@ -298,7 +298,7 @@ const groupEditorItemClass =
 const groupEditorDangerItemClass =
   "danger text-[var(--danger,#ef4444)] hover:bg-[rgba(239,68,68,0.12)] hover:text-[var(--danger,#ef4444)]";
 const groupEditorCheckClass =
-  "group-editor-check inline-flex w-[15px] items-center justify-center text-xs font-bold text-[var(--color-accent,#3b82f6)]";
+  "group-editor-check inline-flex w-[15px] items-center justify-center text-xs font-bold text-[var(--color-accent,var(--oo-accent,#E8A84A))]";
 const contextMenuBackdropClass =
   "context-menu-backdrop fixed inset-0 z-[3300] bg-transparent pointer-events-auto";
 const contextMenuClass =

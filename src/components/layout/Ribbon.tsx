@@ -10,10 +10,14 @@ import type { PluginRibbonAction } from '../../types/plugin';
 import { setIcon } from '../../lib/obsidian-api/utils';
 import { SpacesIcon } from "../spaces/SpacesIcon";
 
-const ribbonRootClass = "ribbon flex flex-col justify-between items-center w-[var(--ribbon-width)] bg-(--bg-secondary) border-r border-(--divider-color) border-t px-1 pt-2 pb-3 shrink-0";
-const ribbonGroupClass = "flex flex-col items-center gap-1";
-const ribbonBtnClass = "flex h-8 w-8 cursor-pointer items-center justify-center rounded border-0 bg-transparent text-(--text-secondary) transition-colors duration-150 hover:bg-(--bg-hover) hover:text-(--text-primary)";
-const pluginRibbonIconClass = "flex h-5 w-5 items-center justify-center text-current [&_.svg-icon]:block [&_.svg-icon]:h-5 [&_.svg-icon]:w-5 [&_.svg-icon]:shrink-0 [&_.svg-icon]:text-current [&_.svg-icon]:[stroke-width:1.5]";
+// Keep class "ribbon" for plugin leftRibbon mounts; oo-activity-rail is host chrome.
+const ribbonRootClass =
+  "ribbon oo-activity-rail flex flex-col justify-between items-center w-[var(--oo-rail-width,var(--ribbon-width))] bg-[var(--oo-surface-1,var(--bg-secondary))] border-r border-[var(--oo-border-subtle,var(--divider-color))] border-t border-t-[var(--oo-border-subtle,var(--divider-color))] px-1.5 pt-2.5 pb-3 shrink-0";
+const ribbonGroupClass = "flex flex-col items-center gap-1.5";
+const ribbonBtnClass =
+  "oo-activity-rail-btn flex h-9 w-9 cursor-pointer items-center justify-center rounded-md border-0 bg-transparent text-[var(--oo-text-secondary,var(--text-secondary))] transition-colors duration-150 hover:bg-[var(--oo-accent-muted,var(--bg-hover))] hover:text-[var(--oo-text-primary,var(--text-primary))] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--oo-accent,var(--color-accent))]";
+const pluginRibbonIconClass =
+  "flex h-5 w-5 items-center justify-center text-current [&_.svg-icon]:block [&_.svg-icon]:h-5 [&_.svg-icon]:w-5 [&_.svg-icon]:shrink-0 [&_.svg-icon]:text-current [&_.svg-icon]:[stroke-width:1.5]";
 
 interface RibbonProps {
   onToggleExplorer?: () => void;
@@ -141,8 +145,8 @@ export function Ribbon({
           <button
             className={ribbonBtnClass}
             onClick={onSettings}
-            data-tooltip="Settings"
-            aria-label="Settings"
+            data-tooltip="Preferences"
+            aria-label="Preferences"
           >
             <Settings size={20} strokeWidth={1.5} />
           </button>
