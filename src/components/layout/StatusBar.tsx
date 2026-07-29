@@ -1,7 +1,8 @@
 /**
  * Status Bar
  *
- * Obsidian-style compact status area.
+ * Full-width inset status strip (Onyx Studio shell).
+ * Plugin status items still mount into this host container.
  */
 
 import React from "react";
@@ -18,12 +19,12 @@ import type { PluginStatusBarItem } from '../../types/plugin';
 import { VimModeIndicator } from "./VimModeIndicator";
 
 const statusBarClass =
-  "fixed bottom-0 right-0 z-[180] flex h-[30px] w-fit max-w-[calc(100vw-12px)] items-center justify-end overflow-hidden rounded-tl-[var(--radius-md)] border border-b-0 border-r-0 border-(--status-bar-border-color) bg-(--status-bar-background) text-[12px] font-medium text-(--text-primary) shadow-none";
-const statusGroupClass = "flex min-w-0 items-center justify-end gap-0.5";
+  "oo-status-strip relative z-[180] flex h-[var(--oo-status-height,28px)] w-full shrink-0 items-center justify-end overflow-hidden border-t border-[var(--oo-border-subtle,var(--status-bar-border-color,var(--divider-color)))] bg-[var(--oo-surface-1,var(--status-bar-background,var(--bg-secondary)))] text-[12px] font-medium text-[var(--oo-text-muted,var(--status-bar-text-color,var(--text-muted)))] shadow-none";
+const statusGroupClass = "flex min-w-0 items-center justify-end gap-0.5 pr-2";
 const statusItemClass =
-  "inline-flex h-[29px] shrink-0 items-center gap-1 whitespace-nowrap border-l border-[var(--border-subtle)] px-2 text-[12px] leading-none text-(--text-primary) first:border-l-0";
+  "inline-flex h-[var(--oo-status-height,28px)] shrink-0 items-center gap-1 whitespace-nowrap border-l border-[var(--oo-border-subtle,var(--border-subtle))] px-2 text-[12px] leading-none text-[var(--oo-text-secondary,var(--text-primary))] first:border-l-0";
 const statusIconItemClass =
-  "inline-flex h-[29px] w-[24px] shrink-0 items-center justify-center border-l border-[var(--border-subtle)] text-(--text-primary) first:border-l-0";
+  "inline-flex h-[var(--oo-status-height,28px)] w-[24px] shrink-0 items-center justify-center border-l border-[var(--oo-border-subtle,var(--border-subtle))] text-[var(--oo-text-secondary,var(--text-primary))] first:border-l-0";
 
 interface StatusBarProps {
   activeTab: Tab | null;

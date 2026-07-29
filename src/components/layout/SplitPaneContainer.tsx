@@ -1,5 +1,5 @@
 /**
- * SplitPaneContainer -- Obsidian-style recursive split pane system
+ * SplitPaneContainer -- recursive multi-pane split system
  *
  * Supports:
  *  - Recursive horizontal/vertical splits

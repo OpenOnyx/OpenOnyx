@@ -100,11 +100,11 @@ export function RightSidebar({
 
   return (
     <div
-      className="flex flex-col h-full bg-(--bg-secondary) border-l border-(--border-subtle) select-none overflow-hidden"
+      className="oo-inspector flex h-full flex-col select-none overflow-hidden border-l border-[var(--oo-border-subtle,var(--border-subtle))] bg-[var(--oo-surface-1,var(--bg-secondary))]"
       style={{ width: `${width}px` }}
     >
       {/* Active Tab Panel Body */}
-      <div className="flex-1 overflow-hidden relative">
+      <div className="relative min-h-0 flex-1 overflow-hidden">
         {activeTab === "outline" && (
           <OutlinePane
             content={currentContent}

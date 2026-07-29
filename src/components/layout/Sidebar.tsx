@@ -924,23 +924,23 @@ export function Sidebar({
           {processedTree.length > 0 ? (
             renderFileTree(processedTree)
           ) : filterQuery ? (
-            <div className="flex h-full flex-col items-center justify-center gap-[var(--space-3)] px-4 py-8 text-center text-[length:var(--text-sm)] text-[var(--text-muted)]">
+            <div className="flex h-full flex-col items-center justify-center gap-[var(--space-3)] px-4 py-8 text-center text-[length:var(--text-sm)] text-[var(--oo-text-muted,var(--text-muted))]">
               <div className="mb-2 opacity-30">
                 <Search size={36} strokeWidth={1} />
               </div>
               <div>
-                No files matching &ldquo;{filterQuery}&rdquo;
+                No files match &ldquo;{filterQuery}&rdquo;
               </div>
             </div>
           ) : (
-            <div className="flex h-full flex-col items-center justify-center gap-[var(--space-3)] px-4 py-8 text-center text-[length:var(--text-sm)] leading-normal text-[var(--text-muted)]">
+            <div className="flex h-full flex-col items-center justify-center gap-[var(--space-3)] px-4 py-8 text-center text-[length:var(--text-sm)] leading-normal text-[var(--oo-text-muted,var(--text-muted))]">
               <div className="mb-2 opacity-15">
                 <FolderOpen size={48} strokeWidth={1} />
               </div>
               <div className="leading-normal">
-                No files yet.
+                This vault is empty.
                 <br />
-                Create a new note to get started.
+                Create a note to get started.
               </div>
             </div>
           )}
