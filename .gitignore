@@ -38,4 +38,4 @@ __pycache__/
 venv/
 
 # Mobile (separate project)
-OOMobile/
+OOMobile/*.tsbuildinfo
