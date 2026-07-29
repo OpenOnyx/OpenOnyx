@@ -12,7 +12,7 @@ export const CANVAS_PRESET_COLORS: Record<string, string> = {
   "3": "#e0de71", // yellow
   "4": "#44cf6e", // green
   "5": "#53dfdd", // cyan
-  "6": "var(--color-accent, #3b82f6)", // theme accent
+  "6": "var(--color-accent, var(--oo-accent, #E8A84A))", // theme accent
 };
 
 export function resolveCanvasColor(color?: CanvasColor): string | undefined {

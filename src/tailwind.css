@@ -227,7 +227,7 @@ body.is-dragging svg {
 .markdown-rendered blockquote,
 .markdown-preview-view blockquote,
 .readme-content blockquote {
-  border-left: var(--blockquote-border-thickness, 3px) solid var(--blockquote-border-color, var(--interactive-accent, #3b82f6)) !important;
+  border-left: var(--blockquote-border-thickness, 3px) solid var(--blockquote-border-color, var(--interactive-accent, var(--oo-accent, #E8A84A))) !important;
   background-color: var(--bg-secondary) !important;
   color: var(--text-secondary) !important;
   padding: 0.5rem 1rem !important;

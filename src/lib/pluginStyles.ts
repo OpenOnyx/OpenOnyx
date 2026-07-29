@@ -164,14 +164,14 @@ export function injectPluginBaseCss(): void {
   --background-modifier-success: #22c55e;
   --background-modifier-box-shadow: rgba(0,0,0,0.4);
   --text-normal: var(--text-primary, #dcddde);
-  --text-accent: var(--color-accent, #7c5cfc);
-  --text-accent-hover: var(--color-accent-1, #6b55e0);
+  --text-accent: var(--color-accent, var(--oo-accent, #E8A84A));
+  --text-accent-hover: var(--color-accent-1, var(--oo-accent-hover, #F0B85C));
   --interactive-normal: var(--bg-elevated, rgba(255,255,255,0.06));
   --interactive-hover: var(--bg-hover, rgba(255,255,255,0.1));
-  --interactive-accent: var(--color-accent, #7c5cfc);
-  --interactive-accent-hover: var(--color-accent-1, #6b55e0);
-  --link-color: var(--text-link, var(--color-accent, #7c5cfc));
-  --link-color-hover: var(--color-accent-1, #6b55e0);
+  --interactive-accent: var(--color-accent, var(--oo-accent, #E8A84A));
+  --interactive-accent-hover: var(--color-accent-1, var(--oo-accent-hover, #F0B85C));
+  --link-color: var(--text-link, var(--color-accent, var(--oo-accent, #E8A84A)));
+  --link-color-hover: var(--color-accent-1, var(--oo-accent-hover, #F0B85C));
   --font-monospace: var(--font-mono, ui-monospace, SFMono-Regular, monospace);
   --cursor: pointer;
   /* Obsidian plugins place temporary editors and menus above board content. */
@@ -349,7 +349,7 @@ export function injectPluginBaseCss(): void {
 .oo-plugin-text-input:focus,
 .oo-plugin-textarea:focus,
 .oo-plugin-search-input:focus {
-  border-color: var(--accent-primary, var(--color-accent, #3b82f6));
+  border-color: var(--accent-primary, var(--color-accent, var(--oo-accent, #E8A84A)));
 }
 
 .oo-plugin-textarea { min-height: 60px; resize: vertical; }
@@ -367,7 +367,7 @@ export function injectPluginBaseCss(): void {
 
 .oo-plugin-btn:hover { background: var(--bg-active, rgba(255,255,255,0.1)); }
 .oo-plugin-btn.mod-cta {
-  background: var(--accent-primary, var(--color-accent, #3b82f6));
+  background: var(--accent-primary, var(--color-accent, var(--oo-accent, #E8A84A)));
   color: white;
   border-color: transparent;
 }
@@ -397,7 +397,7 @@ export function injectPluginBaseCss(): void {
 }
 
 .oo-plugin-toggle.is-enabled {
-  background: var(--accent-primary, var(--color-accent, #3b82f6));
+  background: var(--accent-primary, var(--color-accent, var(--oo-accent, #E8A84A)));
 }
 
 .oo-plugin-toggle.is-enabled::after {
@@ -493,7 +493,7 @@ export function injectPluginBaseCss(): void {
 }
 
 .prompt-input:focus {
-  border-color: var(--accent-primary, var(--color-accent, #7c5cfc));
+  border-color: var(--accent-primary, var(--color-accent, var(--oo-accent, #E8A84A)));
   box-shadow: 0 0 0 2px rgba(124, 92, 252, 0.15);
 }
 
@@ -717,7 +717,7 @@ body > .suggestion-container:not(.editor-suggest):not(.oo-input-suggest) {
 
 /* Suggestion text highlight (for fuzzy matching) */
 .suggestion-highlight {
-  color: var(--accent-primary, var(--color-accent, #7c5cfc));
+  color: var(--accent-primary, var(--color-accent, var(--oo-accent, #E8A84A)));
   font-weight: 600;
 }
 
@@ -880,7 +880,7 @@ input[type="range"]::-webkit-slider-thumb {
   width: 16px;
   height: 16px;
   border-radius: 50%;
-  background: var(--accent-primary, var(--color-accent, #7c5cfc));
+  background: var(--accent-primary, var(--color-accent, var(--oo-accent, #E8A84A)));
   cursor: pointer;
   border: 2px solid var(--bg-primary, #181825);
 }
