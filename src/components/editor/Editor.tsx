@@ -223,7 +223,7 @@ const editorAnnotationEmptyClass =
 const editorAnnotationEmptyTextClass =
   "text-[13px] text-[var(--text-muted)]";
 const editorAnnotationGenerateClass =
-  "flex cursor-pointer items-center gap-1.5 rounded border-0 bg-[var(--accent-color,#3b82f6)] px-3 py-1.5 text-xs font-medium text-white";
+  "flex cursor-pointer items-center gap-1.5 rounded border-0 bg-[var(--accent-color,var(--oo-accent,#E8A84A))] px-3 py-1.5 text-xs font-medium text-white";
 const editorContainerClass =
   "editor-container relative flex min-h-0 flex-1 flex-row overflow-auto";
 const editorLightboxBackdropClass =

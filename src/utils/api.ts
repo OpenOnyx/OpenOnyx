@@ -67,7 +67,7 @@ export function getAPI(): API {
     // Running in browser — use mock API
     console.log(
       "%c[OpenOnyx] Running in browser mode with mock API",
-      "color: #6c63ff; font-weight: bold;",
+      "color: #E8A84A; font-weight: bold;",
     );
     _rawApi = createMockAPI();
     _api = observeFileChanges(_rawApi);

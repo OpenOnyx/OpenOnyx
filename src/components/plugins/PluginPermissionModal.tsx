@@ -203,7 +203,7 @@ export function PluginPermissionModal({
           <button
             onClick={onApprove}
             style={{
-              background: hasHighRisk ? 'var(--danger, #ef4444)' : 'var(--accent-primary, #3b82f6)',
+              background: hasHighRisk ? 'var(--danger, #ef4444)' : 'var(--accent-primary, var(--oo-accent, #E8A84A))',
               border: 'none',
               borderRadius: '6px',
               padding: '7px 16px',

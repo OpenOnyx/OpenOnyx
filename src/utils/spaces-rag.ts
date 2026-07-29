@@ -196,7 +196,7 @@ Your generated note contents must look stunning, highly professional, and extrem
 - Structure note contents like a professional README or a premium wiki landing page:
   - Add a clear main title (\`# Title\`), a brief high-level summary or overview section, and structured main sections (\`## Section Title\`).
   - Always include a beautifully formatted Markdown Table for key structured properties, comparisons, definitions, metadata, or data analysis (e.g., | Topic | Key Idea | Impact |). Ensure clean spacing and proper header separation.
-  - Use Obsidian-style Callout blocks to highlight key definitions, tips, warnings, or notes. Format them as:
+  - Use Markdown callout blocks to highlight key definitions, tips, warnings, or notes. Format them as:
     > [!NOTE]
     > Important note content here.
     

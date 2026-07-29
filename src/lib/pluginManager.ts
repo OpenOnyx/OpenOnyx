@@ -530,7 +530,7 @@ export class PluginManager {
       const mainJs = await api().dataRead(`plugins/${pluginId}/main.js`);
       if (!mainJs) throw new Error(`No main.js found for plugin ${pluginId}`);
 
-      // ── Read and inject plugin styles.css with Obsidian-style document cascade
+      // ── Read and inject plugin styles.css with document-level cascade (compat)
       const stylesCss = await api().dataRead(`plugins/${pluginId}/styles.css`);
       if (stylesCss) injectPluginStyles(pluginId, stylesCss);
 

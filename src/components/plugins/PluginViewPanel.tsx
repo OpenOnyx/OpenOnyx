@@ -27,7 +27,7 @@ interface PluginViewPanelProps {
 
 const pluginTabsClass = "flex min-h-9 shrink-0 items-stretch overflow-hidden border-b border-(--divider-color) bg-(--bg-primary)";
 const pluginTabClass = "group relative flex min-w-0 flex-1 cursor-pointer items-center justify-center gap-2 border-0 border-r border-(--divider-color) bg-transparent px-3 text-[11px] font-medium text-(--text-muted) transition-all duration-150 last:border-r-0 hover:bg-(--bg-hover) hover:text-(--text-secondary)";
-const pluginTabActiveClass = "bg-(--bg-secondary) text-(--text-primary) after:absolute after:inset-x-0 after:top-0 after:h-0.5 after:bg-[var(--accent-color,#7c6ef6)] after:content-['']";
+const pluginTabActiveClass = "bg-(--bg-secondary) text-(--text-primary) after:absolute after:inset-x-0 after:top-0 after:h-0.5 after:bg-[var(--accent-color,var(--oo-accent,#E8A84A))] after:content-['']";
 const pluginTabTextClass = "overflow-hidden text-ellipsis whitespace-nowrap";
 const pluginTabCloseClass = "ml-0.5 text-sm leading-none opacity-30 transition-opacity duration-150 group-hover:opacity-80 hover:text-(--danger) hover:opacity-100";
 

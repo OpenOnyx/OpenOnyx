@@ -4171,7 +4171,7 @@ export function CanvasView({
         </div>
       )}
 
-      {/* ══ Right-side controls (Obsidian-style) ══ */}
+      {/* ══ Right-side canvas controls ══ */}
       <div className="cv-controls">
         {(onNewCanvas ||
           onDuplicateCanvas ||

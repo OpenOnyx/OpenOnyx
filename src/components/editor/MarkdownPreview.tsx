@@ -7,7 +7,7 @@
  * - [[note#heading]] header links
  * - #tags with click handling
  * - Clickable checkboxes that update source
- * - Obsidian-style callouts/admonitions
+ * - Markdown callouts/admonitions
  * - ![[embed]] note embeds
  * - Link preview on hover
  * - DOMPurify XSS protection
@@ -506,7 +506,7 @@ export function MarkdownPreview({
   } | null>(null);
   const hoverTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Process callouts (Obsidian-style admonitions)
+  // Process callout admonitions
   const processCallouts = (text: string): string => {
     // Match > [!type] or > [!type]+ or > [!type]- with optional title
     const calloutRegex = /^(>\s*)\[!(\w+)\]([+-]?)(?:[ \t]+(.*))?$/gm;
@@ -635,7 +635,7 @@ export function MarkdownPreview({
           </div>
         </div>
         <div class="url-preview-link-body" style="padding: 12px 16px 12px 44px; font-size: 13px;">
-          <a href="${cleanUrl}" target="_blank" rel="noopener noreferrer" style="color: var(--accent-color, #3b82f6); text-decoration: underline; word-break: break-all;">
+          <a href="${cleanUrl}" target="_blank" rel="noopener noreferrer" style="color: var(--accent-color, var(--oo-accent, #E8A84A)); text-decoration: underline; word-break: break-all;">
             ${cleanUrl}
           </a>
         </div>

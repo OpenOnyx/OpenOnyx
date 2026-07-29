@@ -507,7 +507,7 @@ export function PluginMarketplace({ onClose, onInstall, installedPluginIds }: Pl
                       fontWeight: 600,
                       border: 'none',
                       cursor: isSelectedInstalling || !selectedPlugin.repo ? 'default' : 'pointer',
-                      background: 'var(--interactive-accent, var(--color-accent, #3b82f6))',
+                      background: 'var(--interactive-accent, var(--color-accent, var(--oo-accent, #E8A84A)))',
                       color: 'var(--text-on-accent, white)',
                       opacity: isSelectedInstalling ? 0.8 : 1,
                       display: 'flex',
