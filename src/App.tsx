@@ -48,6 +48,7 @@ import {
   AppSettings,
   DEFAULT_SETTINGS,
 } from "./components/settings/SettingsPage";
+import { RAIL_WIDTH_PX } from "./styles/layoutConstants";
 import { TemplateModal } from "./components/modals/TemplateModal";
 import { UnlinkedMentionsPanel } from "./components/panels/UnlinkedMentionsPanel";
 import { AIPage } from "./components/ai/AIPage";
@@ -228,6 +229,26 @@ const getReadableTextOn = (bg: RGB): string =>
 
 const CUSTOM_THEME_VARIABLES = [
   "--accent-color",
+  "--oo-surface-0",
+  "--oo-surface-1",
+  "--oo-surface-2",
+  "--oo-surface-3",
+  "--oo-surface-float",
+  "--oo-text-primary",
+  "--oo-text-secondary",
+  "--oo-text-muted",
+  "--oo-text-faint",
+  "--oo-text-link",
+  "--oo-accent",
+  "--oo-accent-hover",
+  "--oo-accent-text",
+  "--oo-accent-muted",
+  "--oo-accent-on",
+  "--oo-border-subtle",
+  "--oo-border-medium",
+  "--oo-border-strong",
+  "--oo-graph-node",
+  "--oo-graph-edge",
   "--color-base-00",
   "--color-base-05",
   "--color-base-10",
@@ -1210,7 +1231,14 @@ export default function App() {
         if (parsed.theme === "peach-white") parsed.theme = "light";
         if (parsed.theme === "parchment") parsed.theme = "light";
         if (!APP_THEME_VALUES.has(parsed.theme)) parsed.theme = DEFAULT_SETTINGS.theme;
-        if (parsed.accentColor === "#8b5cf6") parsed.accentColor = DEFAULT_SETTINGS.accentColor;
+        // Migrate previous brand accents to Onyx Studio amber (custom user accents preserved).
+        if (
+          parsed.accentColor === "#8b5cf6" ||
+          parsed.accentColor === "#3b82f6" ||
+          parsed.accentColor === "#2563eb"
+        ) {
+          parsed.accentColor = DEFAULT_SETTINGS.accentColor;
+        }
         return { ...DEFAULT_SETTINGS, ...parsed };
       }
     } catch (e) {
@@ -1312,7 +1340,7 @@ export default function App() {
     [handlePaneDrag, stopPaneDrag],
   );
 
-  // ── Sidebar drag resizer (Obsidian-style: CSS-only during drag, no React re-renders) ──
+  // ── Sidebar drag resizer (CSS-only during drag, no React re-renders) ──
   const [sidebarWidth, setSidebarWidth] = useState(260);
   const [dragCtx, setDragCtx] = useState<DragContextData | null>(null);
   const sidebarWidthRef = useRef(260);
@@ -1376,14 +1404,14 @@ export default function App() {
       }
       const tbLeft = document.querySelector('.titlebar-left') as HTMLElement;
       if (tbLeft) {
-        const w = 44 + newWidth;
+        const w = RAIL_WIDTH_PX + newWidth;
         tbLeft.style.width = `${w}px`;
         tbLeft.style.minWidth = `${w}px`;
       }
     };
 
     const onMove = (ev: MouseEvent) => {
-      const requestedWidth = ev.clientX - 48;
+      const requestedWidth = ev.clientX - RAIL_WIDTH_PX;
       // Keep enough room for the editor while allowing wide plugin layouts.
       // Notebook Navigator's dual-pane minimum can exceed 600px when its
       // navigation pane is resized or its UI scale is increased.
@@ -1481,7 +1509,7 @@ export default function App() {
     };
 
     const onMove = (ev: MouseEvent) => {
-      const ribbonWidth = 48;
+      const ribbonWidth = RAIL_WIDTH_PX;
       const curLeftWidth = sidebarWidthRef.current;
       const leftUsed = showSidebarRef.current ? curLeftWidth : 0;
       const minCenterWidth = 40;
@@ -2178,24 +2206,47 @@ export default function App() {
 
       root.style.setProperty("--accent-color", settings.accentColor);
 
+      // Onyx Studio host tokens (single source for custom themes)
+      root.style.setProperty("--oo-surface-0", baseBg);
+      root.style.setProperty("--oo-surface-1", tone(0.04));
+      root.style.setProperty("--oo-surface-2", tone(0.08));
+      root.style.setProperty("--oo-surface-3", tone(0.12));
+      root.style.setProperty("--oo-surface-float", tone(0.14));
+      root.style.setProperty("--oo-text-primary", tone(1));
+      root.style.setProperty("--oo-text-secondary", tone(0.72));
+      root.style.setProperty("--oo-text-muted", tone(0.48));
+      root.style.setProperty("--oo-text-faint", tone(0.34));
+      root.style.setProperty("--oo-text-link", settings.accentColor);
+      root.style.setProperty("--oo-accent", settings.accentColor);
+      root.style.setProperty("--oo-accent-hover", rgbToHex(mixRgb(accent, text, 0.22)));
+      root.style.setProperty("--oo-accent-text", settings.accentColor);
+      root.style.setProperty("--oo-accent-muted", rgbToRgba(accent, 0.14));
+      root.style.setProperty("--oo-accent-on", getReadableTextOn(accent));
+      root.style.setProperty("--oo-border-subtle", rgbToRgba(text, 0.1));
+      root.style.setProperty("--oo-border-medium", rgbToRgba(text, 0.16));
+      root.style.setProperty("--oo-border-strong", rgbToRgba(text, 0.24));
+      root.style.setProperty("--oo-graph-node", settings.accentColor);
+      root.style.setProperty("--oo-graph-edge", rgbToRgba(accent, 0.35));
+
+      // Required --color-base-* ladder (derived; plugins depend on full set)
       root.style.setProperty("--color-base-00", baseBg);
       root.style.setProperty("--color-base-05", baseBg);
-      root.style.setProperty("--color-base-10", baseBg);
-      root.style.setProperty("--color-base-20", baseBg);
-      root.style.setProperty("--color-base-25", baseBg);
-      root.style.setProperty("--color-base-30", baseBg);
-      root.style.setProperty("--color-base-35", baseBg);
-      root.style.setProperty("--color-base-40", tone(0.16));
-      root.style.setProperty("--color-base-50", tone(0.34));
-      root.style.setProperty("--color-base-60", tone(0.5));
-      root.style.setProperty("--color-base-70", tone(0.68));
+      root.style.setProperty("--color-base-10", tone(0.04));
+      root.style.setProperty("--color-base-20", tone(0.08));
+      root.style.setProperty("--color-base-25", tone(0.12));
+      root.style.setProperty("--color-base-30", tone(0.16));
+      root.style.setProperty("--color-base-35", tone(0.22));
+      root.style.setProperty("--color-base-40", tone(0.28));
+      root.style.setProperty("--color-base-50", tone(0.42));
+      root.style.setProperty("--color-base-60", tone(0.56));
+      root.style.setProperty("--color-base-70", tone(0.72));
       root.style.setProperty("--color-base-100", tone(1));
 
       root.style.setProperty("--bg-primary", baseBg);
-      root.style.setProperty("--bg-secondary", baseBg);
-      root.style.setProperty("--bg-tertiary", baseBg);
-      root.style.setProperty("--bg-elevated", baseBg);
-      root.style.setProperty("--bg-input", baseBg);
+      root.style.setProperty("--bg-secondary", tone(0.04));
+      root.style.setProperty("--bg-tertiary", tone(0.08));
+      root.style.setProperty("--bg-elevated", tone(0.08));
+      root.style.setProperty("--bg-input", tone(0.1));
       root.style.setProperty("--bg-hover", rgbToRgba(text, 0.08));
       root.style.setProperty("--bg-active", rgbToRgba(text, 0.14));
       root.style.setProperty("--bg-glass", rgbToRgba(bg, 0.98));
@@ -3444,7 +3495,7 @@ export default function App() {
       type: "create",
       title: "Save Current Layout as Group",
       initialName: "",
-      initialColor: "#3b82f6",
+      initialColor: "#E8A84A",
     });
   };
 
@@ -3699,7 +3750,7 @@ export default function App() {
 
   const handleOpenPathsAsGroup = useCallback(async (paths: string[]) => {
     const name = `Group (${paths.length} notes)`;
-    const color = "#3b82f6";
+    const color = "#E8A84A";
     const newGroupId = await handleCreateGroupFromPaths(name, color, paths);
     if (newGroupId) {
       await handleRestoreGroup(newGroupId);
@@ -3712,7 +3763,7 @@ export default function App() {
       return;
     }
 
-    const newGroupId = await handleCreateGroupFromPaths(folderName, "#3b82f6", paths);
+    const newGroupId = await handleCreateGroupFromPaths(folderName, "#E8A84A", paths);
     if (newGroupId) {
       await handleRestoreGroup(newGroupId);
     }
@@ -6818,7 +6869,7 @@ export default function App() {
           void handleCreateFirstThought();
         }}
       >
-        <div className="ftux-orientation-line">Start with a thought</div>
+        <div className="ftux-orientation-line">Start with a thought in this vault</div>
 
         <div
           className={`ftux-first-thought-shell ${isFirstThoughtFocused ? "is-focused" : ""} ${hasFirstThoughtKeystroke ? "is-typed" : ""}`}
@@ -7302,7 +7353,7 @@ export default function App() {
           showSidebar={showSidebar}
           onToggleRightSidebar={() => setShowRightSidebar((s) => !s)}
           showRightSidebar={showRightSidebar}
-          leftWidth={(settings.showRibbon === false ? 0 : 44) + (showSidebar ? sidebarWidth : 0)}
+          leftWidth={(settings.showRibbon === false ? 0 : RAIL_WIDTH_PX) + (showSidebar ? sidebarWidth : 0)}
           onSearch={() => {
             setShowSidebar(true);
             setSearchInitialMode("search");
@@ -7918,8 +7969,8 @@ export default function App() {
               width: '48px',
               height: '48px',
               borderRadius: '50%',
-              border: '3px solid color-mix(in srgb, var(--color-accent, var(--accent-primary, #3b82f6)) 20%, transparent)',
-              borderTopColor: 'var(--color-accent, var(--accent-primary, #3b82f6))',
+              border: '3px solid color-mix(in srgb, var(--color-accent, var(--accent-primary, var(--oo-accent, #E8A84A))) 20%, transparent)',
+              borderTopColor: 'var(--color-accent, var(--accent-primary, var(--oo-accent, #E8A84A)))',
               animation: 'spin 1s linear infinite',
               marginBottom: '24px'
             }} />
@@ -7937,7 +7988,7 @@ export default function App() {
             }}>
               <div style={{
                 height: '100%',
-                background: 'var(--color-accent, var(--accent-primary, #3b82f6))',
+                background: 'var(--color-accent, var(--accent-primary, var(--oo-accent, #E8A84A)))',
                 width: `${collabStatus.progress.total > 0 ? Math.round((collabStatus.progress.current / collabStatus.progress.total) * 100) : 0}%`,
                 transition: 'width 0.2s ease-out',
                 borderRadius: '3px'
@@ -7975,7 +8026,7 @@ export default function App() {
         />
       )}
       {toast && (
-        <div className="fixed bottom-[var(--space-8)] right-[var(--space-8)] z-[300] flex flex-col gap-[var(--space-2)]">
+        <div className="fixed bottom-[calc(var(--oo-status-height,28px)+var(--space-8))] right-[var(--space-8)] z-[300] flex flex-col gap-[var(--space-2)]">
           <div
             className={`flex max-w-[360px] items-center gap-[var(--space-3)] rounded-[var(--radius-md)] border border-[var(--border-medium)] bg-[var(--bg-elevated)] px-[var(--space-4)] py-[var(--space-3)] text-[length:var(--text-sm)] text-[var(--text-secondary)] shadow-none ${
               toast.type === "success"
