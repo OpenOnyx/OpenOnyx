@@ -25,11 +25,11 @@ export function BookmarkModal({ path, initialTitle, groups, onClose }: BookmarkM
 
   return (
     <div
-      className="fixed inset-0 z-[5000] flex items-center justify-center bg-black/55 p-4"
+      className="oo-host-modal-overlay fixed inset-0 z-[5000] flex items-center justify-center bg-black/55 p-4 backdrop-blur-[2px]"
       onMouseDown={() => onClose(null)}
     >
       <div
-        className="w-full max-w-[544px] rounded-lg border border-[var(--border-medium)] bg-[var(--bg-elevated)] p-3 text-[var(--text-primary)] shadow-2xl"
+        className="oo-host-modal w-full max-w-[544px] rounded-xl border border-[var(--oo-border-medium,var(--border-medium))] bg-[var(--oo-surface-float,var(--bg-elevated))] p-4 text-[var(--oo-text-primary,var(--text-primary))] shadow-[0_20px_48px_rgba(0,0,0,0.4)]"
         role="dialog"
         aria-modal="true"
         aria-labelledby="bookmark-modal-title"
@@ -39,10 +39,10 @@ export function BookmarkModal({ path, initialTitle, groups, onClose }: BookmarkM
           if (event.key === "Enter") save();
         }}
       >
-        <div className="mb-2 flex items-center justify-between">
-          <h2 id="bookmark-modal-title" className="m-0 text-xl font-semibold">Add bookmark</h2>
+        <div className="mb-3 flex items-center justify-between">
+          <h2 id="bookmark-modal-title" className="m-0 text-lg font-semibold tracking-tight">Add bookmark</h2>
           <button
-            className="flex h-7 w-7 items-center justify-center rounded border-0 bg-transparent text-[var(--text-muted)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+            className="flex h-7 w-7 items-center justify-center rounded-md border-0 bg-transparent text-[var(--oo-text-muted,var(--text-muted))] hover:bg-[var(--bg-hover)] hover:text-[var(--oo-text-primary,var(--text-primary))]"
             onClick={() => onClose(null)}
             aria-label="Close"
           >
@@ -50,48 +50,48 @@ export function BookmarkModal({ path, initialTitle, groups, onClose }: BookmarkM
           </button>
         </div>
 
-        <label className="grid grid-cols-[160px_1fr] items-center gap-4 border-b border-[var(--border-subtle)] pb-2.5 text-[13px]">
-          <span>Path</span>
+        <label className="grid grid-cols-[160px_1fr] items-center gap-4 border-b border-[var(--oo-border-subtle,var(--border-subtle))] pb-2.5 text-[13px]">
+          <span className="text-[var(--oo-text-secondary,var(--text-secondary))]">Path</span>
           <input
             value={path.replace(/\.[^/.]+$/, "")}
             readOnly
-            className="min-w-0 rounded border border-[var(--border-medium)] bg-[var(--bg-tertiary)] px-2.5 py-1.5 text-[13px] text-[var(--text-secondary)] outline-none"
+            className="min-w-0 rounded-md border border-[var(--oo-border-medium,var(--border-medium))] bg-[var(--oo-surface-3,var(--bg-tertiary))] px-2.5 py-1.5 text-[13px] text-[var(--oo-text-muted,var(--text-secondary))] outline-none"
           />
         </label>
 
-        <label className="grid grid-cols-[160px_1fr] items-center gap-4 border-b border-[var(--border-subtle)] py-2.5 text-[13px]">
-          <span>Title</span>
+        <label className="grid grid-cols-[160px_1fr] items-center gap-4 border-b border-[var(--oo-border-subtle,var(--border-subtle))] py-2.5 text-[13px]">
+          <span className="text-[var(--oo-text-secondary,var(--text-secondary))]">Title</span>
           <input
             ref={titleRef}
             value={title}
             onChange={(event) => setTitle(event.target.value)}
-            className="min-w-0 rounded border border-[var(--border-medium)] bg-[var(--bg-tertiary)] px-2.5 py-1.5 text-[13px] text-[var(--text-primary)] outline-none focus:border-[var(--accent-primary)]"
+            className="min-w-0 rounded-md border border-[var(--oo-border-medium,var(--border-medium))] bg-[var(--oo-surface-3,var(--bg-tertiary))] px-2.5 py-1.5 text-[13px] text-[var(--oo-text-primary,var(--text-primary))] outline-none focus:border-[var(--oo-accent,var(--accent-primary))]"
           />
         </label>
 
         <label className="grid grid-cols-[160px_1fr] items-center gap-4 py-2.5 text-[13px]">
-          <span>Bookmark group</span>
+          <span className="text-[var(--oo-text-secondary,var(--text-secondary))]">Bookmark group</span>
           <input
             list="bookmark-groups"
             value={group}
             onChange={(event) => setGroup(event.target.value)}
             placeholder="No group"
-            className="min-w-0 rounded border border-[var(--border-medium)] bg-[var(--bg-tertiary)] px-2.5 py-1.5 text-[13px] text-[var(--text-primary)] outline-none focus:border-[var(--accent-primary)]"
+            className="min-w-0 rounded-md border border-[var(--oo-border-medium,var(--border-medium))] bg-[var(--oo-surface-3,var(--bg-tertiary))] px-2.5 py-1.5 text-[13px] text-[var(--oo-text-primary,var(--text-primary))] outline-none focus:border-[var(--oo-accent,var(--accent-primary))]"
           />
           <datalist id="bookmark-groups">
             {groups.map((name) => <option key={name} value={name} />)}
           </datalist>
         </label>
 
-        <div className="flex justify-end gap-2 pt-0.5">
+        <div className="flex justify-end gap-2 pt-1">
           <button
-            className="rounded border border-[var(--border-medium)] bg-[var(--bg-tertiary)] px-3.5 py-1.5 text-[13px] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+            className="rounded-md border border-[var(--oo-border-medium,var(--border-medium))] bg-[var(--oo-surface-3,var(--bg-tertiary))] px-3.5 py-1.5 text-[13px] text-[var(--oo-text-secondary,var(--text-secondary))] hover:bg-[var(--bg-hover)] hover:text-[var(--oo-text-primary,var(--text-primary))]"
             onClick={() => onClose(null)}
           >
             Cancel
           </button>
           <button
-            className="rounded border border-[var(--accent-primary)] bg-[var(--accent-primary)] px-3.5 py-1.5 text-[13px] text-[var(--text-on-accent)] disabled:opacity-50"
+            className="rounded-md border border-[var(--oo-accent,var(--accent-primary))] bg-[var(--oo-accent,var(--accent-primary))] px-3.5 py-1.5 text-[13px] font-medium text-[var(--oo-accent-on,var(--text-on-accent))] disabled:opacity-50"
             disabled={!title.trim()}
             onClick={save}
           >

@@ -191,11 +191,11 @@ export function TemplateModal({
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[9999]" onClick={onClose}>
-      <div className="w-full max-w-[640px] bg-(--bg-primary) border border-(--border-medium) rounded-xl shadow-none overflow-hidden" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center justify-between px-5 py-4 border-b border-(--border-subtle) bg-(--bg-secondary)">
-          <h3 className="text-sm font-semibold m-0 text-(--text-primary)">Insert Template</h3>
-          <button className="bg-transparent border-none text-(--text-muted) cursor-pointer p-1 rounded flex text-lg transition-colors duration-150 hover:bg-(--bg-hover) hover:text-(--text-primary)" onClick={onClose}>
+    <div className="oo-host-modal-overlay fixed inset-0 z-[9999] flex items-center justify-center bg-black/55 backdrop-blur-[2px]" onClick={onClose}>
+      <div className="oo-host-modal w-full max-w-[640px] overflow-hidden rounded-xl border border-[var(--oo-border-medium,var(--border-medium))] bg-[var(--oo-surface-0,var(--bg-primary))] shadow-[0_20px_48px_rgba(0,0,0,0.4)]" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between border-b border-[var(--oo-border-subtle,var(--border-subtle))] bg-[var(--oo-surface-1,var(--bg-secondary))] px-5 py-4">
+          <h3 className="m-0 text-sm font-semibold text-[var(--oo-text-primary,var(--text-primary))]">Insert template</h3>
+          <button className="flex cursor-pointer rounded-md border-none bg-transparent p-1 text-lg text-[var(--oo-text-muted,var(--text-muted))] transition-colors duration-150 hover:bg-[var(--bg-hover)] hover:text-[var(--oo-text-primary,var(--text-primary))]" onClick={onClose} aria-label="Close">
             {'\u00D7'}
           </button>
         </div>
@@ -216,7 +216,7 @@ export function TemplateModal({
               templates.map((template) => (
                 <button
                   key={template.path}
-                  className={`w-full flex items-center gap-2 px-3 py-2 rounded text-[13px] border-none cursor-pointer transition-colors duration-100 ${selectedTemplate?.path === template.path ? "bg-(--bg-active) text-(--text-primary)" : "bg-transparent text-(--text-secondary) hover:bg-(--bg-hover)"}`}
+                  className={`flex w-full cursor-pointer items-center gap-2 rounded-md border-none px-3 py-2 text-[13px] transition-colors duration-100 ${selectedTemplate?.path === template.path ? "bg-[var(--oo-accent-muted,var(--bg-active))] text-[var(--oo-text-primary,var(--text-primary))]" : "bg-transparent text-[var(--oo-text-secondary,var(--text-secondary))] hover:bg-[var(--bg-hover)]"}`}
                   onClick={() => handleSelectTemplate(template)}
                 >
                   <FileText size={16} className="shrink-0 text-(--text-muted)" />

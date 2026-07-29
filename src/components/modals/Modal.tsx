@@ -1,8 +1,6 @@
 /**
- * Custom Modal Component
- *
- * Replaces native prompt() and confirm() which are not supported in Electron.
- * Provides a unified modal interface that works in both browser and Electron environments.
+ * Host prompt/confirm modal (Electron-safe).
+ * Onyx Studio chrome — not the plugin `.modal` bridge.
  */
 
 import React, { useState, useEffect, useRef } from "react";
@@ -26,7 +24,6 @@ export function Modal({
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    // Focus input on mount for prompt type
     if (type === "prompt" && inputRef.current) {
       setTimeout(() => inputRef.current?.focus(), 100);
     }
@@ -49,10 +46,22 @@ export function Modal({
   };
 
   return (
-    <div style={styles.overlay} onClick={handleCancel}>
-      <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
-        <h2 style={styles.title}>{title}</h2>
-        <p style={styles.message}>{message}</p>
+    <div
+      className="oo-host-modal-overlay fixed inset-0 z-[1000] flex items-center justify-center bg-black/55 p-4 backdrop-blur-[2px]"
+      onClick={handleCancel}
+    >
+      <div
+        className="oo-host-modal w-full max-w-[400px] min-w-[300px] rounded-xl border border-[var(--oo-border-medium,var(--border-medium))] bg-[var(--oo-surface-float,var(--bg-secondary))] p-6 text-[var(--oo-text-primary,var(--text-primary))] shadow-[0_20px_48px_rgba(0,0,0,0.4)]"
+        role="dialog"
+        aria-modal="true"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h2 className="m-0 mb-3 text-lg font-semibold tracking-tight">
+          {title}
+        </h2>
+        <p className="m-0 mb-5 text-sm leading-relaxed text-[var(--oo-text-secondary,var(--text-secondary))]">
+          {message}
+        </p>
 
         {type === "prompt" && (
           <input
@@ -61,18 +70,27 @@ export function Modal({
             value={value}
             onChange={(e) => setValue(e.target.value)}
             onKeyDown={handleKeyDown}
-            style={styles.input}
+            className="mb-5 w-full rounded-md border border-[var(--oo-border-medium,var(--border-medium))] bg-[var(--oo-surface-3,var(--bg-tertiary))] px-3 py-2.5 text-sm text-[var(--oo-text-primary,var(--text-primary))] outline-none focus:border-[var(--oo-accent,var(--accent-primary))]"
             autoFocus
           />
         )}
 
-        <div style={styles.actions}>
-          <button onClick={handleCancel} style={styles.cancelBtn}>
+        <div className="flex justify-end gap-2.5">
+          <button
+            type="button"
+            onClick={handleCancel}
+            className="cursor-pointer rounded-md border border-[var(--oo-border-medium,var(--border-medium))] bg-[var(--oo-surface-3,var(--bg-tertiary))] px-4 py-2 text-sm text-[var(--oo-text-secondary,var(--text-secondary))] hover:bg-[var(--bg-hover)] hover:text-[var(--oo-text-primary,var(--text-primary))]"
+          >
             Cancel
           </button>
           <button
+            type="button"
             onClick={handleConfirm}
-            style={type === "confirm" ? styles.dangerBtn : styles.confirmBtn}
+            className={
+              type === "confirm"
+                ? "cursor-pointer rounded-md border border-transparent bg-[var(--oo-danger,#ef4444)] px-4 py-2 text-sm font-medium text-white hover:opacity-90"
+                : "cursor-pointer rounded-md border border-transparent bg-[var(--oo-accent,var(--accent-primary))] px-4 py-2 text-sm font-medium text-[var(--oo-accent-on,var(--text-on-accent))] hover:bg-[var(--oo-accent-hover,var(--accent-secondary))]"
+            }
           >
             {type === "confirm" ? "Delete" : "OK"}
           </button>
@@ -81,80 +99,3 @@ export function Modal({
     </div>
   );
 }
-
-const styles: Record<string, React.CSSProperties> = {
-  overlay: {
-    position: "fixed",
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: "rgba(0, 0, 0, 0.6)",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    zIndex: 1000,
-  },
-  modal: {
-    backgroundColor: "var(--bg-secondary, #1e1e2e)",
-    borderRadius: "8px",
-    padding: "24px",
-    minWidth: "300px",
-    maxWidth: "400px",
-    boxShadow: "none",
-    border: "1px solid var(--border, #3e3e50)",
-  },
-  title: {
-    margin: "0 0 16px 0",
-    fontSize: "18px",
-    color: "var(--text-primary, #ffffff)",
-  },
-  message: {
-    margin: "0 0 20px 0",
-    fontSize: "14px",
-    color: "var(--text-secondary, #a0a0b0)",
-  },
-  input: {
-    width: "100%",
-    padding: "10px 12px",
-    marginBottom: "20px",
-    borderRadius: "4px",
-    border: "1px solid var(--border-medium, #3e3e50)",
-    backgroundColor: "var(--bg-tertiary, #14141f)",
-    color: "var(--text-primary, #ffffff)",
-    fontSize: "14px",
-    outline: "none",
-  },
-  actions: {
-    display: "flex",
-    justifyContent: "flex-end",
-    gap: "10px",
-  },
-  cancelBtn: {
-    padding: "8px 16px",
-    borderRadius: "4px",
-    border: "none",
-    backgroundColor: "var(--bg-secondary, #1e1e2e)",
-    color: "var(--text-secondary, #a0a0b0)",
-    cursor: "pointer",
-    fontSize: "14px",
-  },
-  confirmBtn: {
-    padding: "8px 16px",
-    borderRadius: "4px",
-    border: "none",
-    backgroundColor: "var(--accent, #6c63ff)",
-    color: "#ffffff",
-    cursor: "pointer",
-    fontSize: "14px",
-  },
-  dangerBtn: {
-    padding: "8px 16px",
-    borderRadius: "4px",
-    border: "none",
-    backgroundColor: "#ef4444",
-    color: "#ffffff",
-    cursor: "pointer",
-    fontSize: "14px",
-  },
-};

@@ -41,7 +41,7 @@ function highlightText(value: string, query: string): React.ReactNode {
     part.toLowerCase() === trimmed.toLowerCase() ? (
       <mark
         key={`${part}-${index}`}
-        className="rounded-sm bg-[rgba(234,196,74,0.45)] px-0.5 text-[var(--text-primary)]"
+        className="rounded-sm bg-[var(--oo-accent-muted,rgba(232,168,74,0.35))] px-0.5 text-[var(--oo-text-primary,var(--text-primary))]"
       >
         {part}
       </mark>
@@ -215,27 +215,28 @@ export function SearchModal({
   );
 
   return (
-    <div className="sidebar relative flex h-full w-full min-w-0 shrink-0 flex-col overflow-hidden border-t border-[var(--divider-color)] bg-[var(--bg-secondary)] text-[var(--text-primary)]">
-      <div className="flex shrink-0 items-center gap-2 border-b border-[var(--border-subtle)] px-3 py-2">
-        <div className="flex h-8 min-w-0 flex-1 items-center gap-2 rounded-md border border-[var(--border-medium)] bg-[var(--bg-primary)] px-2.5">
-          <Search size={16} className="shrink-0 text-[var(--text-muted)]" />
+    <div className="sidebar relative flex h-full w-full min-w-0 shrink-0 flex-col overflow-hidden border-t border-[var(--oo-border-subtle,var(--divider-color))] bg-[var(--oo-surface-1,var(--bg-secondary))] text-[var(--oo-text-primary,var(--text-primary))]">
+      <div className="flex shrink-0 items-center gap-2 border-b border-[var(--oo-border-subtle,var(--border-subtle))] px-3 py-2">
+        <div className="flex h-8 min-w-0 flex-1 items-center gap-2 rounded-md border border-[var(--oo-border-medium,var(--border-medium))] bg-[var(--oo-surface-0,var(--bg-primary))] px-2.5">
+          <Search size={16} className="shrink-0 text-[var(--oo-text-muted,var(--text-muted))]" />
           <input
             ref={inputRef}
-            className="min-w-0 flex-1 border-0 bg-transparent text-sm text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)]"
+            className="min-w-0 flex-1 border-0 bg-transparent text-sm text-[var(--oo-text-primary,var(--text-primary))] outline-none placeholder:text-[var(--oo-text-muted,var(--text-muted))]"
             type="text"
-            placeholder={mode === "search" ? "Search vault..." : "Quick switch..."}
+            placeholder={mode === "search" ? "Search vault…" : "Quick open…"}
             value={query}
             onChange={(e) => handleInputChange(e.target.value)}
             onKeyDown={handleKeyDown}
           />
           {query && (
             <button
-              className="flex h-5 w-5 cursor-pointer items-center justify-center rounded-full border-0 bg-[var(--bg-hover)] text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+              className="flex h-5 w-5 cursor-pointer items-center justify-center rounded-full border-0 bg-[var(--bg-hover)] text-[var(--oo-text-muted,var(--text-muted))] hover:text-[var(--oo-text-primary,var(--text-primary))]"
               onClick={() => {
                 setQuery("");
                 setResults([]);
                 onQueryChange?.("");
               }}
+              aria-label="Clear search"
             >
               <X size={12} />
             </button>
@@ -243,13 +244,13 @@ export function SearchModal({
         </div>
       </div>
 
-      <div className="flex shrink-0 items-center justify-between px-4 pb-1 text-xs text-[var(--text-muted)]">
+      <div className="flex shrink-0 items-center justify-between px-4 pb-1 text-xs text-[var(--oo-text-muted,var(--text-muted))]">
         <span>
           {mode === "search"
             ? `${results.length} result${results.length === 1 ? "" : "s"}`
             : `${displayItems.length} item${displayItems.length === 1 ? "" : "s"}`}
         </span>
-        <span>{mode === "search" ? "File name (A to Z)" : "Quick switch"}</span>
+        <span>{mode === "search" ? "Content search" : "Quick open"}</span>
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-4">
@@ -293,14 +294,14 @@ export function SearchModal({
               key={item.path}
               className={`flex w-full cursor-pointer items-center gap-2 rounded border-0 px-2 py-1.5 text-left text-sm transition-colors ${
                 index === selectedIndex
-                  ? "bg-[var(--bg-active)] text-[var(--text-primary)]"
-                  : "bg-transparent text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+                  ? "bg-[var(--oo-accent-muted,var(--bg-active))] text-[var(--oo-text-primary,var(--text-primary))]"
+                  : "bg-transparent text-[var(--oo-text-secondary,var(--text-secondary))] hover:bg-[var(--bg-hover)] hover:text-[var(--oo-text-primary,var(--text-primary))]"
               }`}
               onClick={() => onSelect(item.path)}
               onMouseEnter={() => setSelectedIndex(index)}
               title={item.path}
             >
-              <span className="shrink-0 text-[var(--text-muted)]">
+              <span className="shrink-0 text-[var(--oo-text-muted,var(--text-muted))]">
                 {item.isStarred ? <Star size={14} /> : item.isRecent ? <Clock size={14} /> : <FileText size={14} />}
               </span>
               <span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap">
@@ -309,8 +310,8 @@ export function SearchModal({
             </button>
           ))
         ) : (
-          <div className="flex h-32 items-center justify-center text-xs text-[var(--text-muted)]">
-            {query ? "No results found" : "Start typing to find notes"}
+          <div className="flex h-32 items-center justify-center text-xs text-[var(--oo-text-muted,var(--text-muted))]">
+            {query ? "No notes match" : "Start typing to find notes"}
           </div>
         )}
       </div>

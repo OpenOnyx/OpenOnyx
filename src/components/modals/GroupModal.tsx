@@ -1,6 +1,11 @@
+/**
+ * Tab/file group create-edit modal — Onyx Studio host chrome.
+ */
+
 import React, { useState, useEffect, useRef } from "react";
 
 export const GROUP_COLORS = [
+  { name: "Amber", value: "#E8A84A" },
   { name: "Blue", value: "#3b82f6" },
   { name: "Teal", value: "#06b6d4" },
   { name: "Green", value: "#22c55e" },
@@ -22,7 +27,7 @@ interface GroupModalProps {
 export function GroupModal({
   title,
   initialName = "",
-  initialColor = "#3b82f6",
+  initialColor = "#E8A84A",
   onClose,
 }: GroupModalProps) {
   const [name, setName] = useState(initialName);
@@ -30,7 +35,6 @@ export function GroupModal({
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    // Focus input on mount
     setTimeout(() => inputRef.current?.focus(), 100);
   }, []);
 
@@ -52,21 +56,21 @@ export function GroupModal({
   };
 
   return (
-    <div style={styles.overlay} onClick={handleCancel}>
-      <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
-        <h2 style={styles.title}>{title}</h2>
+    <div
+      className="oo-host-modal-overlay fixed inset-0 z-[1000] flex items-center justify-center bg-black/55 p-4 backdrop-blur-[2px]"
+      onClick={handleCancel}
+    >
+      <div
+        className="oo-host-modal flex w-[320px] flex-col rounded-xl border border-[var(--oo-border-medium,var(--border-medium))] bg-[var(--oo-surface-float,var(--bg-secondary))] p-6 text-[var(--oo-text-primary,var(--text-primary))] shadow-[0_20px_48px_rgba(0,0,0,0.4)]"
+        role="dialog"
+        aria-modal="true"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h2 className="m-0 mb-4 text-lg font-semibold tracking-tight">{title}</h2>
 
-        <div style={{ marginBottom: "16px" }}>
-          <label
-            style={{
-              display: "block",
-              fontSize: "12px",
-              color: "var(--text-secondary, #a0a0b0)",
-              marginBottom: "6px",
-              fontWeight: 500,
-            }}
-          >
-            Group Name
+        <div className="mb-4">
+          <label className="mb-1.5 block text-xs font-medium text-[var(--oo-text-muted,var(--text-secondary))]">
+            Group name
           </label>
           <input
             ref={inputRef}
@@ -74,40 +78,33 @@ export function GroupModal({
             value={name}
             onChange={(e) => setName(e.target.value)}
             onKeyDown={handleKeyDown}
-            style={styles.input}
+            className="box-border w-full rounded-md border border-[var(--oo-border-medium,var(--border-medium))] bg-[var(--oo-surface-3,var(--bg-tertiary))] px-3 py-2.5 text-sm text-[var(--oo-text-primary,var(--text-primary))] outline-none focus:border-[var(--oo-accent,var(--accent-primary))]"
             placeholder="e.g. Research, Writing"
             autoFocus
           />
         </div>
 
-        <div style={{ marginBottom: "20px" }}>
-          <label
-            style={{
-              display: "block",
-              fontSize: "12px",
-              color: "var(--text-secondary, #a0a0b0)",
-              marginBottom: "8px",
-              fontWeight: 500,
-            }}
-          >
-            Group Color
+        <div className="mb-5">
+          <label className="mb-2 block text-xs font-medium text-[var(--oo-text-muted,var(--text-secondary))]">
+            Group color
           </label>
-          <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+          <div className="flex flex-wrap gap-2">
             {GROUP_COLORS.map((c) => (
               <button
                 key={c.value}
                 type="button"
                 onClick={() => setSelectedColor(c.value)}
+                className="h-7 w-7 cursor-pointer rounded-full border-2 p-0 transition-transform"
                 style={{
-                  width: "28px",
-                  height: "28px",
-                  borderRadius: "50%",
                   backgroundColor: c.value,
-                  border: selectedColor === c.value ? "2px solid var(--text-primary, #ffffff)" : "2px solid transparent",
-                  boxShadow: selectedColor === c.value ? "0 0 0 2px var(--bg-secondary)" : "none",
-                  cursor: "pointer",
-                  padding: 0,
-                  transition: "transform 0.1s",
+                  borderColor:
+                    selectedColor === c.value
+                      ? "var(--oo-text-primary, #ffffff)"
+                      : "transparent",
+                  boxShadow:
+                    selectedColor === c.value
+                      ? "0 0 0 2px var(--oo-surface-float, var(--bg-secondary))"
+                      : "none",
                   transform: selectedColor === c.value ? "scale(1.1)" : "scale(1)",
                 }}
                 title={c.name}
@@ -116,18 +113,19 @@ export function GroupModal({
           </div>
         </div>
 
-        <div style={styles.actions}>
-          <button onClick={handleCancel} style={styles.cancelBtn}>
+        <div className="mt-1 flex justify-end gap-2.5">
+          <button
+            type="button"
+            onClick={handleCancel}
+            className="cursor-pointer rounded-md border border-[var(--oo-border-medium,var(--border-medium))] bg-[var(--oo-surface-3,var(--bg-tertiary))] px-4 py-2 text-sm text-[var(--oo-text-secondary,var(--text-secondary))] hover:bg-[var(--bg-hover)]"
+          >
             Cancel
           </button>
           <button
+            type="button"
             onClick={handleConfirm}
             disabled={!name.trim()}
-            style={{
-              ...styles.confirmBtn,
-              opacity: name.trim() ? 1 : 0.5,
-              cursor: name.trim() ? "pointer" : "not-allowed",
-            }}
+            className="cursor-pointer rounded-md border border-transparent bg-[var(--oo-accent,var(--accent-primary))] px-4 py-2 text-sm font-medium text-[var(--oo-accent-on,var(--text-on-accent))] hover:bg-[var(--oo-accent-hover,var(--accent-secondary))] disabled:cursor-not-allowed disabled:opacity-50"
           >
             Save
           </button>
@@ -136,68 +134,3 @@ export function GroupModal({
     </div>
   );
 }
-
-const styles: Record<string, React.CSSProperties> = {
-  overlay: {
-    position: "fixed",
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: "rgba(0, 0, 0, 0.6)",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    zIndex: 1000,
-  },
-  modal: {
-    backgroundColor: "var(--bg-secondary, #1e1e2e)",
-    borderRadius: "8px",
-    padding: "24px",
-    width: "320px",
-    boxShadow: "none",
-    border: "1px solid var(--border, #3e3e50)",
-    display: "flex",
-    flexDirection: "column",
-  },
-  title: {
-    margin: "0 0 16px 0",
-    fontSize: "18px",
-    color: "var(--text-primary, #ffffff)",
-  },
-  input: {
-    width: "100%",
-    padding: "10px 12px",
-    borderRadius: "4px",
-    border: "1px solid var(--border-medium, #3e3e50)",
-    backgroundColor: "var(--bg-tertiary, #14141f)",
-    color: "var(--text-primary, #ffffff)",
-    fontSize: "14px",
-    outline: "none",
-    boxSizing: "border-box",
-  },
-  actions: {
-    display: "flex",
-    justifyContent: "flex-end",
-    gap: "10px",
-    marginTop: "8px",
-  },
-  cancelBtn: {
-    padding: "8px 16px",
-    borderRadius: "4px",
-    border: "none",
-    backgroundColor: "var(--bg-secondary, #1e1e2e)",
-    color: "var(--text-secondary, #a0a0b0)",
-    cursor: "pointer",
-    fontSize: "14px",
-  },
-  confirmBtn: {
-    padding: "8px 16px",
-    borderRadius: "4px",
-    border: "none",
-    backgroundColor: "var(--accent, #6c63ff)",
-    color: "#ffffff",
-    cursor: "pointer",
-    fontSize: "14px",
-  },
-};
