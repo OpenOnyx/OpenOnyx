@@ -16,7 +16,7 @@
   <img alt="Local first" src="https://img.shields.io/badge/local--first-yes-10B981?style=flat-square">
 </p>
 
-OpenOnyx is a professional desktop knowledge management app built around plain Markdown files, Obsidian-style workflows, graph navigation, local semantic indexing, and optional cloud collaboration. It is designed for people who want ownership of their notes while still having a modern thinking layer for search, synthesis, writing assistance, and knowledge exploration.
+OpenOnyx is a professional desktop knowledge management app built around plain Markdown vaults, graph navigation, local semantic indexing, and optional cloud collaboration. It is designed for people who want ownership of their notes while still having a modern thinking layer for search, synthesis, writing assistance, and knowledge exploration. Vault folders and community plugins that follow the public Obsidian plugin API are supported for interoperability; OpenOnyx is an independent project and is not affiliated with, endorsed by, or related to Obsidian or Dynalist Inc.
 
 The app is built with Electron, React, TypeScript, CodeMirror, D3, Tailwind CSS, Transformers.js, IndexedDB, and Supabase.
 
@@ -47,7 +47,7 @@ OpenOnyx is for writers, researchers, engineers, students, and teams who want a 
 | Markdown-native | Your writing stays portable, readable, and tool-friendly. |
 | AI where it helps | Retrieval, suggestions, summaries, and inline writing tools are grounded in your vault. |
 | Cloud when you choose | Supabase-backed sync, collaboration, and public Spaces are optional. |
-| Plugin-aware | OpenOnyx targets Obsidian plugin compatibility through a tested runtime layer. |
+| Plugin-aware | Optional community plugin support via a tested compatibility runtime (not an official Obsidian product). |
 
 ## Feature Tour
 
@@ -116,11 +116,11 @@ Key capabilities:
 
 ### 5. Canvas
 
-Create visual maps of notes, ideas, and relationships with Obsidian-style `.canvas` support. Canvas files stay portable and live beside the rest of the vault.
+Create visual maps of notes, ideas, and relationships with `.canvas` boards (compatible format). Canvas files stay portable and live beside the rest of the vault.
 
 Key capabilities:
 
-- Obsidian-style `.canvas` document support
+- `.canvas` document support (interoperable format)
 - Canvas nodes, edges, toolbar controls, and recent canvas tracking
 - Duplicate and save-as flows
 - Markdown note embedding inside visual layouts
@@ -182,13 +182,13 @@ Key capabilities:
 
 ### 9. Plugin System
 
-OpenOnyx includes an Obsidian-compatible runtime layer and a plugin management experience for community-style plugins.
+OpenOnyx includes an optional plugin compatibility runtime and a plugin management experience for community plugins that target the public plugin API.
 
 Key capabilities:
 
-- Obsidian API compatibility layer based on the official `obsidian` package
+- Compatibility layer aligned with the public API surface of the `obsidian` npm package (for interop only)
 - Plugin marketplace and local plugin management UI
-- Commands, ribbon actions, status bar items, settings tabs, custom views, and sidebars
+- Commands, activity-rail actions, status bar items, settings tabs, custom views, and sidebars
 - Markdown processors, editor extensions, lifecycle cleanup, and compatibility checks
 - Runtime isolation, permission prompts, manifest caching, and crash containment
 - Regression tests against real community plugin bundles
@@ -406,7 +406,7 @@ Core principles:
 - Async filesystem access: vault operations are routed through IPC handlers.
 - Durable local state: IndexedDB stores Spaces, chunks, vector indexes, sync metadata, and pending mutations.
 - Optional remote services: Supabase and LLM providers are used only for features that need them.
-- Plugin compatibility: the runtime exposes Obsidian-like APIs while keeping plugin execution contained.
+- Plugin compatibility: the runtime exposes a public-API-compatible surface while keeping plugin execution contained.
 
 ## Project Structure
 
@@ -418,7 +418,7 @@ Core principles:
 |   |-- context/                 # Shared React context
 |   |-- editor/                  # CodeMirror extensions
 |   |-- keybindings/             # Global keyboard behavior
-|   |-- lib/                     # Supabase, sync, local DB, plugin manager, Obsidian API
+|   |-- lib/                     # Supabase, sync, local DB, plugin manager, plugin API compatibility
 |   |-- styles/                  # Theme and generated-document style helpers
 |   |-- types/                   # TypeScript domain types
 |   `-- utils/                   # AI, embeddings, RAG, filesystem helpers, app utilities
@@ -436,16 +436,16 @@ Core principles:
 
 ## Plugin Compatibility
 
-OpenOnyx targets the public Obsidian plugin API using the official `obsidian` npm package as its baseline.
+OpenOnyx optionally supports community plugins that target the public plugin API, using the official `obsidian` npm package as an interoperability baseline. This does **not** make OpenOnyx an Obsidian product, fork, or affiliate.
 
 Current compatibility coverage includes:
 
 - Runtime export audit against `obsidian@1.13.1`
 - CodeMirror 6 and legacy CodeMirror 5 access patterns
-- Commands, ribbon icons, status bars, modals, settings tabs, sidebars, custom views, workspace leaves, Markdown processors, and cleanup lifecycles
+- Commands, activity-rail icons, status bars, modals, settings tabs, sidebars, custom views, workspace leaves, Markdown processors, and cleanup lifecycles
 - Node/Electron compatibility shims for plugins that expect desktop APIs
 - Managed Pandoc 3.10 WASM backend for export plugins
-- Regression tests for real plugin bundles including Dataview, Templater, Tasks, Calendar, Kanban, Style Settings, Advanced Tables, QuickAdd, Obsidian Git, Excalidraw, Better Export PDF, Enhancing Export, and Reading Time
+- Regression tests for real plugin bundles including Dataview, Templater, Tasks, Calendar, Kanban, Style Settings, Advanced Tables, QuickAdd, community Git plugins, Excalidraw, Better Export PDF, Enhancing Export, and Reading Time
 
 See [`docs/obsidian-plugin-compatibility.md`](docs/obsidian-plugin-compatibility.md) for the full compatibility matrix and verification flow.
 

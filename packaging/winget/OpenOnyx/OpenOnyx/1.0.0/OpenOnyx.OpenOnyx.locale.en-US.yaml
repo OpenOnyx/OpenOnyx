@@ -11,7 +11,7 @@ PackageUrl: https://github.com/OpenOnyx/OpenOnyx
 License: MIT
 LicenseUrl: https://github.com/OpenOnyx/OpenOnyx/blob/main/LICENSE
 ShortDescription: Local-first knowledge management app built around Markdown and graph navigation.
-Description: OpenOnyx is a desktop knowledge management app built around plain Markdown files, Obsidian-style workflows, graph navigation, local semantic indexing, and optional cloud collaboration.
+Description: OpenOnyx is a desktop knowledge management app built around plain Markdown vaults, graph navigation, local semantic indexing, and optional cloud collaboration. Compatible with common Markdown vault layouts; independent project, not affiliated with Obsidian.
 Tags:
   - markdown
   - notes
