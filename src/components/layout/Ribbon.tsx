@@ -120,7 +120,10 @@ export function Ribbon({
     <div
       className={ribbonRootClass}
       ref={ribbonRootRef}
-      style={isMac ? { paddingTop: '32px' } : undefined}
+      style={{
+        ...isMac ? { paddingTop: '32px' } : {},
+        backgroundColor: 'var(--bg-launcher, var(--bg-secondary))'
+      }}
     >
       <div className={ribbonGroupClass} ref={ribbonItemsRef}>
 

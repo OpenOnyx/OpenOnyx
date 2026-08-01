@@ -3387,14 +3387,28 @@ export default function App() {
     async (targetPath: string) => {
       try {
         const next = await api.removePreviouslyOpenedVault(targetPath);
-        setPreviouslyOpenedVaults(next || []);
+        const updatedNext = next || [];
+        setPreviouslyOpenedVaults(updatedNext);
+        
+        let isCurrentRemoved = false;
+        if (targetPath === vaultPath) {
+          setVaultPath(null);
+          await api.setVaultPath("");
+          isCurrentRemoved = true;
+        }
+        
         showToast("Vault removed from list", "success");
+
+        const remainingCount = updatedNext.length;
+        if (remainingCount === 0 || (isCurrentRemoved && remainingCount === 0)) {
+          setShowVaultManager(false);
+        }
       } catch (error) {
         console.error("Failed to remove vault from list:", error);
         showToast("Failed to remove vault from list.", "error");
       }
     },
-    [],
+    [vaultPath],
   );
 
   const getUniqueCanvasPath = useCallback(
@@ -7139,6 +7153,7 @@ export default function App() {
         inlineAnnotation={inlineAnnotationByPath[leafActiveTab.path] || getCachedAnnotation(leafActiveTab.path)}
         showInlineInsight={!!showInlineInsightByTab[leafActiveTab.id]}
         isFocused={isThisFocused}
+        onFocusLeaf={handleFocusLeaf}
         onTabSelect={(leafId, tabId) => handlePaneTabSelect(leafId, tabId)}
         onTabClose={closeTab}
         onLinkClick={handleLinkClick}

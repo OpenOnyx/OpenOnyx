@@ -623,6 +623,9 @@ export function TitleBar({
     <div
       className={titlebarClass}
       ref={titlebarRef}
+      style={{
+        backgroundColor: "var(--titlebar-background, var(--bg-secondary))"
+      }}
       onDoubleClick={(e) => {
         if (
           e.target === e.currentTarget ||

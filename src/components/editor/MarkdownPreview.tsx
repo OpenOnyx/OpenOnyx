@@ -661,6 +661,8 @@ export function MarkdownPreview({
     if (!debouncedContent) return "";
 
     let processed = debouncedContent;
+    // Convert ==highlight== to <mark>highlight</mark>
+    processed = processed.replace(/==([^=\n]+)==/g, "<mark>$1</mark>");
     const protectedCode = protectFencedCodeBlocks(processed);
     processed = protectedCode.text;
     processed = normalizeMarkdownTables(processed);

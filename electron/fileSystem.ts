@@ -31,6 +31,10 @@ export class FileSystemManager {
 
   /** Set the active vault directory */
   setVaultPath(vaultPath: string): boolean {
+    if (!vaultPath) {
+      this.vaultPath = null;
+      return true;
+    }
     if (!fs.existsSync(vaultPath)) {
       try {
         fs.mkdirSync(vaultPath, { recursive: true });

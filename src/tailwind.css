@@ -933,8 +933,8 @@ img.emoji {
 
 /* Folders Pane (Left column) */
 .nn-folders-pane {
-  width: 140px;
-  flex: 0 0 auto;
+  width: 100%;
+  flex: 1 1 auto;
   display: flex;
   flex-direction: column;
   height: 100%;
@@ -944,37 +944,10 @@ img.emoji {
   padding: 8px 4px;
 }
 
-/* Resizable Divider between Left/Right panes */
-.nn-pane-divider {
-  width: 4px;
-  cursor: col-resize;
-  flex-shrink: 0;
-  background-color: transparent;
-  transition: background-color 0.2s ease;
-  position: relative;
-  z-index: 10;
-}
-
-.nn-pane-divider::after {
-  content: '';
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 1px;
-  width: 1px;
-  background-color: var(--border-subtle, #2a2a2b);
-}
-
-.nn-pane-divider:hover::after,
-.nn-pane-divider:active::after {
-  background-color: var(--accent-primary);
-  width: 2px;
-  left: 1px;
-}
-
 /* Notes Pane (Right column) */
 .nn-notes-pane {
-  flex: 1;
+  width: 100%;
+  flex: 1 1 auto;
   min-width: 0;
   display: flex;
   flex-direction: column;
@@ -1026,15 +999,17 @@ img.emoji {
   text-align: left;
   transition: background-color 0.15s ease, border-color 0.15s ease;
   position: relative;
+  border-radius: 6px;
 }
 
 .nn-note-card:hover {
   background-color: var(--bg-hover);
+  border-bottom-color: transparent;
 }
 
 /* Active State matches Apple Notes premium accent exactly */
 .nn-note-card.active {
-  background-color: #2c2c2e !important;
+  background-color: var(--nav-item-background-selected, var(--bg-hover)) !important;
   border-radius: 6px;
   border-bottom-color: transparent;
 }
@@ -1088,10 +1063,6 @@ img.emoji {
   text-transform: uppercase;
 }
 
-.nn-note-card.active .nn-badge {
-  background-color: rgba(255, 255, 255, 0.2);
-  color: white;
-}
 
 /* Collapsible Date Section Headers */
 .nn-section-header {
@@ -1135,7 +1106,7 @@ img.emoji {
   display: flex;
   align-items: center;
   width: 100%;
-  padding: 8px 10px;
+  padding: 8px 8px 8px 4px;
   background-color: var(--bg-secondary, #161617);
   border-bottom: 1px solid var(--border-subtle, #2a2a2b);
   gap: 8px;
@@ -1146,21 +1117,23 @@ img.emoji {
 .nn-back-btn {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 2px;
   font-size: 13px;
   font-weight: 500;
-  color: var(--accent-primary, #e58e26);
+  color: var(--text-secondary, #8a8a8f);
   background: transparent;
   border: none;
   cursor: pointer;
-  padding: 4px 6px;
+  padding: 4px 6px 4px 0px;
   border-radius: 4px;
-  transition: background-color 0.15s ease;
+  transition: background-color 0.15s ease, color 0.15s ease;
 }
 
 .nn-back-btn:hover {
-  background-color: var(--bg-hover, #2c2c2e);
+  background-color: transparent;
+  color: var(--text-primary);
 }
+
 
 
 

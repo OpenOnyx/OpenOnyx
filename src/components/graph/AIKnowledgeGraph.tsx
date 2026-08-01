@@ -726,6 +726,28 @@ export function AIKnowledgeGraph({
     }
   }, [settingsKey, theme]);
 
+  // Reset active UX, selection, and cache states when vault path changes
+  useEffect(() => {
+    if (cachedGraph && cachedGraph.vaultPath === vaultPath) {
+      setGraphData(cachedGraph.graphData);
+      setLoading(false);
+    } else {
+      setGraphData(null);
+      setLoading(true);
+    }
+    setError(null);
+    setSelectedNodeId(null);
+    setSelectedClusterId(null);
+    setSelectedEdge(null);
+    setActiveInsight(null);
+    setInsightFocusNodeIds(null);
+    setComputedPath(null);
+    setAiExplainText(null);
+    setWritingEngineOpen(false);
+    setWritingOption(null);
+    setWritingGeneratedText(null);
+  }, [vaultPath]);
+
   // Keep semantic graph rebuild responsive while dragging sliders.
   useEffect(() => {
     const timer = window.setTimeout(() => {

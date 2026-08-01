@@ -399,13 +399,7 @@ export function Sidebar({
   onAddFileToGroup = () => {},
 }: SidebarProps) {
   const [expandedDirs, setExpandedDirs] = useState<Set<string>>(new Set());
-  const [selectedFolder, setSelectedFolder] = useState<string | null>("all");
-  const [foldersPaneWidth, setFoldersPaneWidth] = useState(140);
-  const isResizingRef = useRef(false);
-  const currentDragWidthRef = useRef(140);
-  const containerLeftRef = useRef(0);
-  const foldersPaneRef = useRef<HTMLDivElement>(null);
-  const rafIdRef = useRef(0);
+  const [selectedFolder, setSelectedFolder] = useState<string | null>("");
   const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({});
   const [isFoldersCollapsed, setIsFoldersCollapsed] = useState(false);
   const [previews, setPreviews] = useState<Record<string, string>>({});
@@ -516,13 +510,10 @@ export function Sidebar({
       if (current === "starred" && starredNotes.includes(activeFilePath)) {
         return current;
       }
-      if (current === "all") {
-        return current;
-      }
       if (current === parentPath) {
         return current;
       }
-      return parentPath || "all";
+      return parentPath;
     });
 
     if (parts.length < 2) return;
@@ -779,8 +770,6 @@ export function Sidebar({
     let filtered = allFiles;
     if (selectedFolder === "starred") {
       filtered = allFiles.filter((f) => starredNotes.includes(f.path));
-    } else if (selectedFolder === "all") {
-      filtered = allFiles;
     } else {
       const targetFolder = selectedFolder || "";
       filtered = allFiles.filter((f) => {
@@ -898,6 +887,7 @@ export function Sidebar({
             onClick={(e) => {
               e.stopPropagation();
               setSelectedFolder(entry.path);
+              setIsFoldersCollapsed(true);
             }}
             onDoubleClick={(e) => {
               e.stopPropagation();
@@ -994,7 +984,10 @@ export function Sidebar({
     <>
       <div 
         className={cx(sidebarRootClass, !visible && sidebarCollapsedClass)}
-        style={isMac ? { paddingTop: '32px' } : undefined}
+        style={{
+          ...isMac ? { paddingTop: '32px' } : {},
+          backgroundColor: 'var(--bg-tree, var(--bg-secondary))'
+        }}
       >
         {hasPrimaryPluginView ? (
           <PluginViewPanel
@@ -1136,22 +1129,24 @@ export function Sidebar({
               )}
             </div>
 
-            {/* Apple Notes Dual-Pane Content Wrapper */}
+            {/* Apple Notes Content Wrapper */}
             <div className="nn-explorer-container flex-1">
               {/* Left column: Folders, Groups */}
-              {!isFoldersCollapsed && (
+              {!isFoldersCollapsed ? (
                 <div
-                  ref={foldersPaneRef}
                   className="nn-folders-pane"
-                  style={{ width: `${foldersPaneWidth}px` }}
+                  style={{ width: "100%" }}
                 >
                   {/* Special / virtual views */}
                   <button
-                    className={cx("nn-folder-item", selectedFolder === "all" && "active")}
-                    onClick={() => setSelectedFolder("all")}
+                    className={cx("nn-folder-item", selectedFolder === "" && "active")}
+                    onClick={() => {
+                      setSelectedFolder("");
+                      setIsFoldersCollapsed(true);
+                    }}
                   >
-                    <Library size={15} className="shrink-0 opacity-70" />
-                    <span className="flex-1 overflow-hidden text-ellipsis whitespace-nowrap">All Notes</span>
+                    <Home size={15} className="shrink-0 opacity-70" />
+                    <span className="flex-1 overflow-hidden text-ellipsis whitespace-nowrap">Root Directory</span>
                   </button>
                   
                   <div className="mx-2 my-2 h-px bg-[var(--border-subtle)]" />
@@ -1225,82 +1220,30 @@ export function Sidebar({
                     </div>
                   )}
                 </div>
-              )}
-
-              {/* Vertical resizable divider line */}
-              {!isFoldersCollapsed && (
-                <div
-                  className="nn-pane-divider"
-                  onPointerDown={(e) => {
-                    e.preventDefault();
-                    const divider = e.currentTarget;
-                    const container = divider.closest('.nn-explorer-container') as HTMLElement | null;
-                    if (!container) return;
-
-                    divider.setPointerCapture(e.pointerId);
-                    isResizingRef.current = true;
-                    const containerRect = container.getBoundingClientRect();
-                    containerLeftRef.current = containerRect.left;
-                    const containerWidth = containerRect.width;
-                    container.classList.add('nn-is-resizing');
-
-                    const onPointerMove = (ev: PointerEvent) => {
-                      const rawWidth = ev.clientX - containerLeftRef.current;
-                      const maxWidth = containerWidth * 0.7;
-                      const w = rawWidth < 70 ? 0 : Math.max(70, Math.min(rawWidth, maxWidth));
-                      currentDragWidthRef.current = w;
-                      const pane = foldersPaneRef.current;
-                      if (pane) {
-                        pane.style.width = `${w}px`;
-                      }
-                    };
-
-                    const onPointerUp = (ev: PointerEvent) => {
-                      divider.releasePointerCapture(ev.pointerId);
-                      isResizingRef.current = false;
-                      container.classList.remove('nn-is-resizing');
-                      window.removeEventListener('pointermove', onPointerMove);
-                      window.removeEventListener('pointerup', onPointerUp);
-
-                      const finalWidth = currentDragWidthRef.current;
-                      if (finalWidth === 0) {
-                        setIsFoldersCollapsed(true);
-                      } else {
-                        setFoldersPaneWidth(finalWidth);
-                      }
-                    };
-
-                    window.addEventListener('pointermove', onPointerMove);
-                    window.addEventListener('pointerup', onPointerUp);
-                  }}
-                />
-              )}
-
-              {/* Right column: Notes cards */}
-              <div 
-                className="nn-notes-pane file-explorer"
-                onDragOver={(e) => handleDragOver(e, "")}
-                onDragLeave={handleDragLeave}
-                onDrop={(e) => handleDrop(e, "")}
-              >
-                {isFoldersCollapsed && (
+              ) : (
+                /* Right column: Notes cards */
+                <div 
+                  className="nn-notes-pane file-explorer"
+                  onDragOver={(e) => handleDragOver(e, "")}
+                  onDragLeave={handleDragLeave}
+                  onDrop={(e) => handleDrop(e, "")}
+                  style={{ width: "100%" }}
+                >
                   <div className="nn-compact-header">
                     <button
                       className="nn-back-btn"
                       onClick={() => {
                         setIsFoldersCollapsed(false);
-                        setFoldersPaneWidth(140);
                       }}
                       title="Back to Folders"
                     >
                       <ChevronLeft size={16} />
-                      <span>Folders</span>
+                      <span>Back</span>
                     </button>
                     <span className="text-xs font-semibold text-[var(--text-primary)] ml-auto pr-2">
-                      {selectedFolder === "all" ? "All Notes" : selectedFolder ? selectedFolder.split("/").pop() : "All Notes"}
+                      {selectedFolder === "" ? "Root Directory" : selectedFolder ? selectedFolder.split("/").pop() : "Root Directory"}
                     </span>
                   </div>
-                )}
                 {groupedNotes.length > 0 ? (
                   groupedNotes.map((section) => {
                     const isCollapsed = collapsedSections[section.id];
@@ -1367,6 +1310,7 @@ export function Sidebar({
                   </div>
                 )}
               </div>
+            )}
             </div>
           </>
         )}

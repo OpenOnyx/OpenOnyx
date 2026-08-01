@@ -67,6 +67,7 @@ interface LeafPaneEditorProps {
   onPromptInput?: (title: string, message: string, defaultValue?: string) => Promise<string | null>;
   onShowToast?: (message: string, type?: "success" | "error" | "info") => void;
   canCopyAbsolutePath?: boolean;
+  onFocusLeaf?: (leafId: string) => void;
 }
 
 export function LeafPaneEditor({
@@ -112,6 +113,7 @@ export function LeafPaneEditor({
   onPromptInput,
   onShowToast,
   canCopyAbsolutePath,
+  onFocusLeaf,
 }: LeafPaneEditorProps) {
   const [content, setContent] = useState<string>("");
   const [contentPath, setContentPath] = useState<string>(activeTab.path);
@@ -1169,7 +1171,19 @@ export function LeafPaneEditor({
   }
 
   return (
-    <div className="leaf-editor-host relative flex h-full min-h-0 flex-col">
+    <div
+      className="leaf-editor-host relative flex h-full min-h-0 flex-col"
+      onMouseDownCapture={() => {
+        if (!isFocused && onFocusLeaf) {
+          onFocusLeaf(leaf.id);
+        }
+      }}
+      onFocusCapture={() => {
+        if (!isFocused && onFocusLeaf) {
+          onFocusLeaf(leaf.id);
+        }
+      }}
+    >
       <EditorHeader
         filePath={activeTab.path}
         viewMode={viewMode}
@@ -1223,6 +1237,7 @@ export function LeafPaneEditor({
           activeTabId={activeTab.id}
           content={editorContent}
           viewMode={viewMode}
+          isFocused={isFocused}
           availableNotes={allNoteNames}
           onAdjustFontSize={onAdjustFontSize}
           onTabSelect={(id) => onTabSelect(leaf.id, id)}
