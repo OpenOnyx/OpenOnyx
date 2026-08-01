@@ -393,20 +393,27 @@ export function ClusterView({ vaultPath, onFileSelect, isActive }: ClusterViewPr
     // Calculate cluster radius proportional to member count
     const getClusterRadius = (id: string, memberCount: number) => {
       if (id === "cluster_outliers") return 0;
-      return Math.max(75, Math.min(260, 45 + Math.sqrt(memberCount) * 22));
+      // Grid-aware sizing: cols * spacing gives natural width
+      const cols = Math.ceil(Math.sqrt(memberCount));
+      const rows = Math.ceil(memberCount / cols);
+      const spacing = 22;
+      const gridWidth = (cols - 1) * spacing;
+      const gridHeight = (rows - 1) * spacing;
+      const diag = Math.sqrt(gridWidth * gridWidth + gridHeight * gridHeight) / 2;
+      return Math.max(60, diag + 28);
     };
 
-    // Initialize organic force/mesh layout for Cluster Nodes
+    // Initialize tight cluster graph layout
     const clusterPositions: Record<string, { x: number; y: number }> = {};
     activeClusterIds.forEach((id, idx) => {
       if (clusterSettings.positions[id]) {
         clusterPositions[id] = { ...clusterSettings.positions[id] };
       } else if (id === "cluster_outliers") {
-        clusterPositions[id] = { x: 950, y: -200 };
+        clusterPositions[id] = { x: 750, y: -300 };
       } else {
-        // Spiral / force seed layout
+        // Tight spiral seed — clusters start close together
         const phi = idx * 2.4;
-        const dist = (idx === 0 ? 0 : 280) + Math.sqrt(idx) * 160;
+        const dist = idx === 0 ? 0 : 120 + Math.sqrt(idx) * 110;
         clusterPositions[id] = {
           x: Math.cos(phi) * dist,
           y: Math.sin(phi) * dist,
@@ -414,9 +421,9 @@ export function ClusterView({ vaultPath, onFileSelect, isActive }: ClusterViewPr
       }
     });
 
-    // Run 15 relaxation steps so cluster spheres repel each other and don't overlap
+    // Relaxation: push apart just enough to not overlap, keep tight
     const nonOutlierIds = activeClusterIds.filter(id => id !== "cluster_outliers");
-    for (let step = 0; step < 15; step++) {
+    for (let step = 0; step < 25; step++) {
       for (let i = 0; i < nonOutlierIds.length; i++) {
         for (let j = i + 1; j < nonOutlierIds.length; j++) {
           const idA = nonOutlierIds[i];
@@ -431,7 +438,7 @@ export function ClusterView({ vaultPath, onFileSelect, isActive }: ClusterViewPr
           const dx = pB.x - pA.x || 1;
           const dy = pB.y - pA.y || 1;
           const d = Math.sqrt(dx * dx + dy * dy);
-          const minDist = rA + rB + 60;
+          const minDist = rA + rB + 30; // tight gap
 
           if (d < minDist) {
             const overlap = (minDist - d) / 2;
@@ -463,8 +470,14 @@ export function ClusterView({ vaultPath, onFileSelect, isActive }: ClusterViewPr
       const expanded = clusterSettings.expanded[id] !== false;
       const memberPositions: Array<{ x: number; y: number }> = [];
 
-      // Organic randomized inner note placement inside cluster sphere
-      const maxInnerRadius = Math.max(20, clusterRadius - 22);
+      // Grid layout inside circle — rows and columns like the concept sketch
+      const cols = Math.max(1, Math.ceil(Math.sqrt(members.length)));
+      const rows = Math.ceil(members.length / cols);
+      const spacing = 22;
+      const gridW = (cols - 1) * spacing;
+      const gridH = (rows - 1) * spacing;
+      const startX = cx - gridW / 2;
+      const startY = cy - gridH / 2;
 
       members.forEach((nodeId, idx) => {
         const node = nodeMap.get(nodeId);
@@ -479,13 +492,10 @@ export function ClusterView({ vaultPath, onFileSelect, isActive }: ClusterViewPr
           nx = cx + Math.cos(outlierAngle) * outlierDist;
           ny = cy + Math.sin(outlierAngle) * outlierDist;
         } else {
-          // Bounded pseudo-random organic distribution inside cluster sphere
-          const rRatio = Math.sqrt(pseudoRandom(nodeId + "_r") * 0.86 + 0.05);
-          const nodeAngle = pseudoRandom(nodeId + "_a") * Math.PI * 2;
-          const dist = rRatio * maxInnerRadius;
-
-          nx = cx + Math.cos(nodeAngle) * dist;
-          ny = cy + Math.sin(nodeAngle) * dist;
+          const col = idx % cols;
+          const row = Math.floor(idx / cols);
+          nx = startX + col * spacing;
+          ny = startY + row * spacing;
         }
 
         memberPositions.push({ x: nx, y: ny });
@@ -497,13 +507,13 @@ export function ClusterView({ vaultPath, onFileSelect, isActive }: ClusterViewPr
           clusterId: id,
           x: nx,
           y: ny,
-          radius: Math.max(4, Math.min(13, (node.connections || 3) * 1.4)),
+          radius: Math.max(4, Math.min(10, (node.connections || 3) * 1.2)),
           color,
         });
       });
 
       const rawHull = getConvexHull(memberPositions.length > 0 ? memberPositions : [{ x: cx, y: cy }]);
-      const organicHull = expandPolygon(rawHull, 55);
+      const organicHull = expandPolygon(rawHull, 40);
 
       newClusters.push({
         id,
@@ -605,7 +615,12 @@ export function ClusterView({ vaultPath, onFileSelect, isActive }: ClusterViewPr
         if (c.id === "cluster_outliers") return;
 
         const isHovered = hoveredClusterId === c.id;
-        const sphereRadius = Math.max(75, Math.min(260, 45 + Math.sqrt(c.members.length) * 22));
+        // Grid-aware sphere radius matching layout
+        const _cols = Math.ceil(Math.sqrt(c.members.length));
+        const _rows = Math.ceil(c.members.length / _cols);
+        const _gw = (_cols - 1) * 22;
+        const _gh = (_rows - 1) * 22;
+        const sphereRadius = Math.max(60, Math.sqrt(_gw * _gw + _gh * _gh) / 2 + 28);
 
         ctx.save();
         ctx.beginPath();
@@ -643,8 +658,18 @@ export function ClusterView({ vaultPath, onFileSelect, isActive }: ClusterViewPr
             const count = clusterPairWeights.get(pairKey) || 1;
             const isHoveredArc = hoveredClusterId === cA.id || hoveredClusterId === cB.id;
 
-            const rA = Math.max(75, Math.min(260, 45 + Math.sqrt(cA.members.length) * 22));
-            const rB = Math.max(75, Math.min(260, 45 + Math.sqrt(cB.members.length) * 22));
+            // Grid-aware radii for bridge line boundary points
+            const _cA = Math.ceil(Math.sqrt(cA.members.length));
+            const _rA_rows = Math.ceil(cA.members.length / _cA);
+            const _gwA = (_cA - 1) * 22;
+            const _ghA = (_rA_rows - 1) * 22;
+            const rA = Math.max(60, Math.sqrt(_gwA * _gwA + _ghA * _ghA) / 2 + 28);
+
+            const _cB = Math.ceil(Math.sqrt(cB.members.length));
+            const _rB_rows = Math.ceil(cB.members.length / _cB);
+            const _gwB = (_cB - 1) * 22;
+            const _ghB = (_rB_rows - 1) * 22;
+            const rB = Math.max(60, Math.sqrt(_gwB * _gwB + _ghB * _ghB) / 2 + 28);
 
             const angle = Math.atan2(cB.cy - cA.cy, cB.cx - cA.cx);
 
