@@ -24,6 +24,7 @@ import { LeafPaneEditor } from "./components/layout/LeafPaneEditor";
 import { NewTabView } from "./components/layout/NewTabView";
 import { GraphView } from "./components/graph/GraphView";
 import { AIKnowledgeGraph } from "./components/graph/AIKnowledgeGraph";
+import { ClusterView } from "./components/graph/ClusterView";
 import { CanvasView } from "./components/canvas/CanvasView";
 import { SearchModal } from "./components/modals/SearchModal";
 import { BookmarkModal } from "./components/modals/BookmarkModal";
@@ -355,7 +356,7 @@ const isStandaloneExcalidrawFile = (path: string) => {
 };
 const isHostEditableMarkdownPath = (path: string | null | undefined): path is string => {
   if (!path) return false;
-  if (path === "__new_tab__" || path === GRAPH_TAB_PATH || path === SPACES_TAB_PATH) return false;
+  if (path === "__new_tab__" || path === GRAPH_TAB_PATH || path === SPACES_TAB_PATH || path === CLUSTER_TAB_PATH) return false;
   if (path.startsWith("__")) return false;
   if (isCanvasFile(path) || isExcalidrawFile(path)) return false;
   return path.toLowerCase().endsWith(".md");
@@ -365,6 +366,7 @@ const isKanbanBoard = (frontmatter: Record<string, unknown> | undefined) =>
   && frontmatter['kanban-plugin'].replace(/["']/g, '').toLowerCase() === 'board';
 const GRAPH_TAB_PATH = "__graph__.view";
 const SPACES_TAB_PATH = "__spaces__.view";
+const CLUSTER_TAB_PATH = "__cluster__.view";
 
 const TRANSITION_STOP_WORDS = new Set([
   "the", "and", "for", "with", "from", "that", "this", "into", "while", "where",
@@ -402,14 +404,14 @@ type FirstThoughtNonExpandableIntent =
 
 type FirstThoughtIntentClassification =
   | {
-      kind: "expandable";
-      intent: FirstThoughtExpandableIntent;
-      semantic: FirstThoughtSemanticIntent;
-    }
+    kind: "expandable";
+    intent: FirstThoughtExpandableIntent;
+    semantic: FirstThoughtSemanticIntent;
+  }
   | {
-      kind: "non_expandable";
-      intent: FirstThoughtNonExpandableIntent;
-    };
+    kind: "non_expandable";
+    intent: FirstThoughtNonExpandableIntent;
+  };
 
 type FirstThoughtIntentType =
   | "learn"
@@ -1235,7 +1237,7 @@ export default function App() {
   const [pluginSettingTabs, setPluginSettingTabs] = useState<PluginSettingTabRegistration[]>([]);
   const pluginManagerRef = useRef<PluginManager | null>(null);
   const ooAppRef = useRef<OOApp | null>(null);
-  const openFileRef = useRef<(path: string, mode?: ViewMode) => Promise<void>>(async () => {});
+  const openFileRef = useRef<(path: string, mode?: ViewMode) => Promise<void>>(async () => { });
   const pluginFileOpenQueueRef = useRef<Promise<void>>(Promise.resolve());
   const renameRedirectsRef = useRef<Map<string, string>>(new Map());
   const collabSubRef = useRef<{
@@ -1430,7 +1432,7 @@ export default function App() {
     const iconsWidth = numIcons * 32 + (numIcons - 1) * 2 + 8; // button: 32px, gap: 2px, padding-left: 8px
     const isMac = navigator.platform.includes("Mac");
     const controlsWidth = isMac ? 0 : 138; // 3 buttons of 46px
-    
+
     let avatarsWidth = 0;
     if (activeUsersList && activeUsersList.length > 0) {
       const visibleCount = Math.min(activeUsersList.length, 3);
@@ -1440,7 +1442,7 @@ export default function App() {
       }
       avatarsWidth += 16; // margin-right
     }
-    
+
     const computedMinWidth = iconsWidth + avatarsWidth + controlsWidth + 16; // 16px safety margin
     return Math.max(200, computedMinWidth);
   }, []);
@@ -1598,7 +1600,7 @@ export default function App() {
 
   const [viewMode, setViewMode] = useState<ViewMode>("editor");
   const [backlinks, setBacklinks] = useState<string[]>([]);
-  
+
   // Toast notifications state
   const [toast, setToast] = useState<{ message: string; type: "success" | "error" | "info" } | null>(null);
   const showToast = useCallback((message: string, type: "success" | "error" | "info" = "info") => {
@@ -1751,7 +1753,7 @@ export default function App() {
       setHasUnsavedChanges(false);
       return;
     }
-    
+
     localDB.getGroups(vaultPath)
       .then((g) => {
         setGroups(g);
@@ -2079,7 +2081,7 @@ export default function App() {
           setFileTree(tree);
           // Initializing background services for the auto-loaded vault
           runVaultInit(tree);
-          
+
           try {
             const workspaceData = await readData<{ paneTree: PaneNode; activeTabId: string | null; focusedLeafId: string }>("workspace.json");
             if (settings.defaultFileToOpen !== "new-tab" && workspaceData && workspaceData.paneTree) {
@@ -2136,7 +2138,7 @@ export default function App() {
   useEffect(() => {
     // Apply theme
     document.documentElement.setAttribute("data-theme", theme);
-    
+
     // Determine and apply base theme mode (dark/light) for embeds and components
     const isDark = isDarkTheme(theme, settings);
     document.documentElement.setAttribute("data-theme-mode", isDark ? "dark" : "light");
@@ -2693,7 +2695,7 @@ export default function App() {
         setShowFirstThoughtExpansionHint(false);
         return;
       }
-      
+
       const llmPlan = await generateFirstThoughtExpansion(draft);
       let mappedPlan: FirstThoughtExpansionPlan | null = null;
 
@@ -2803,7 +2805,7 @@ export default function App() {
         try {
           const ooApp = new OOApp();
           ooAppRef.current = ooApp;
-          
+
           const pm = new PluginManager(ooApp, {
             onCommandsChanged: setPluginCommands,
             onRibbonChanged: setPluginRibbonActions,
@@ -2826,7 +2828,7 @@ export default function App() {
               // Let React commit each tab before the next call reads tab state.
               await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
             });
-            pluginFileOpenQueueRef.current = queuedOpen.catch(() => {});
+            pluginFileOpenQueueRef.current = queuedOpen.catch(() => { });
             return queuedOpen;
           };
 
@@ -2906,7 +2908,7 @@ export default function App() {
     const loadPlugins = async () => {
       const pm = pluginManagerRef.current;
       const ooApp = ooAppRef.current;
-      
+
       if (pm && ooApp) {
         try {
           // Initialize ooApp (now that we have a path)
@@ -3029,14 +3031,14 @@ export default function App() {
         if (tabs.length <= 1) return;
         const currentIndex = tabs.findIndex((t) => t.id === activeTabId);
         if (currentIndex === -1) return;
-        
+
         let nextIndex;
         if (shift) {
           nextIndex = (currentIndex - 1 + tabs.length) % tabs.length;
         } else {
           nextIndex = (currentIndex + 1) % tabs.length;
         }
-        
+
         const nextTab = tabs[nextIndex];
         if (nextTab) {
           handleTabSelect(nextTab.id);
@@ -3052,9 +3054,9 @@ export default function App() {
     };
 
     window.addEventListener("keydown", handleKeyDown);
-    
+
     // Listen for custom events
-    const handleOpenDatabase = (e: CustomEvent<{path: string}>) => {
+    const handleOpenDatabase = (e: CustomEvent<{ path: string }>) => {
       const tabId = `__database__.${e.detail.path}`;
       const existingLeaf = findLeafWithTab(paneTree, tabId);
       if (existingLeaf) {
@@ -3082,9 +3084,9 @@ export default function App() {
       });
       setActiveTabId(tabId);
     };
-    
+
     window.addEventListener('oo:open-database', handleOpenDatabase as EventListener);
-    
+
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener('oo:open-database', handleOpenDatabase as EventListener);
@@ -3100,7 +3102,7 @@ export default function App() {
     setFileTree(tree);
     // Trigger background vault initialization for new vault
     runVaultInit(tree);
-    
+
     try {
       const workspaceData = await readData<{ paneTree: PaneNode; activeTabId: string | null; focusedLeafId: string }>("workspace.json");
       if (settings.defaultFileToOpen !== "new-tab" && workspaceData && workspaceData.paneTree) {
@@ -3154,28 +3156,44 @@ export default function App() {
 
   const handleCreateVault = async (): Promise<boolean> => {
     try {
-      let defaultPath: string | undefined;
+      let selectedPath: string | null = null;
+
       try {
-        const documentsPath = await api.getSystemPath("documents");
-        defaultPath = documentsPath
-          ? `${documentsPath}/Untitled vault`
-          : undefined;
+        const result = await api.showOpenDialog({
+          title: "Create or Select Vault Directory",
+          buttonLabel: "Select Vault Folder",
+          properties: ["openDirectory", "createDirectory"],
+        });
+
+        if (!result.canceled && result.filePaths && result.filePaths.length > 0) {
+          selectedPath = result.filePaths[0];
+        }
       } catch {
-        defaultPath = undefined;
+        selectedPath = null;
       }
 
-      const result = await api.showSaveDialog({
-        title: "Create new vault",
-        buttonLabel: "Create",
-        defaultPath,
-        properties: ["createDirectory"],
-      } as any);
+      if (!selectedPath) {
+        selectedPath = await api.openVaultDialog();
+      }
 
-      if (result.canceled || !result.filePath) {
+      if (!selectedPath) {
         return false;
       }
 
-      await loadVaultData(result.filePath);
+      await loadVaultData(selectedPath);
+
+      // If new vault is empty, create an initial Welcome note
+      try {
+        const tree = await api.getFileTree();
+        if (!tree || tree.length === 0) {
+          await api.writeFile("Welcome.md", "# Welcome to your new Vault\n\nStart creating and linking your thoughts!");
+          await refreshFileTree();
+          await openFile("Welcome.md");
+        }
+      } catch (err) {
+        console.warn("Failed to create default welcome note in new vault:", err);
+      }
+
       return true;
     } catch (e) {
       console.error("Failed to create vault:", e);
@@ -3389,9 +3407,9 @@ export default function App() {
       const currentTab = tabs.find((tab) => tab.id === activeTabId);
       const activeFolder =
         settings.canvasDefaultLocation === "same-folder" &&
-        currentTab?.path &&
-        !currentTab.path.startsWith("__") &&
-        currentTab.path.includes("/")
+          currentTab?.path &&
+          !currentTab.path.startsWith("__") &&
+          currentTab.path.includes("/")
           ? currentTab.path.slice(0, currentTab.path.lastIndexOf("/") + 1)
           : "";
       const basePath = canonical.includes("/") ? canonical : `${activeFolder}${canonical}`;
@@ -3476,12 +3494,12 @@ export default function App() {
       const fileTab = existingTab
         ? { ...existingTab, groupId: newGroupId }
         : {
-            id: generateId(),
-            path: filePath,
-            name: getNoteName(filePath),
-            isModified: false,
-            groupId: newGroupId,
-          };
+          id: generateId(),
+          path: filePath,
+          name: getNoteName(filePath),
+          isModified: false,
+          groupId: newGroupId,
+        };
 
       if (existingTab) {
         const assignGroup = (node: PaneNode): PaneNode => {
@@ -3602,7 +3620,7 @@ export default function App() {
       setActiveTabId(targetTabId);
       const tabObj = allRestoredTabs.find((t) => t.id === targetTabId);
       if (tabObj) {
-        if (tabObj.path !== "__new_tab__" && tabObj.path !== GRAPH_TAB_PATH && tabObj.path !== SPACES_TAB_PATH && !tabObj.path.startsWith('__plugin__.')) {
+        if (tabObj.path !== "__new_tab__" && tabObj.path !== GRAPH_TAB_PATH && tabObj.path !== SPACES_TAB_PATH && tabObj.path !== CLUSTER_TAB_PATH && !tabObj.path.startsWith('__plugin__.')) {
           if (isCanvasFile(tabObj.path)) {
             setCanvasFilePath(tabObj.path);
             setCurrentContent("");
@@ -3645,7 +3663,7 @@ export default function App() {
     if (!vaultPath) return null;
 
     const newGroupId = "group-" + generateId();
-    
+
     // Construct tabs list
     const groupTabs: Tab[] = paths.map((path) => ({
       id: "tab-" + generateId(),
@@ -3895,7 +3913,7 @@ export default function App() {
 
             const tabObj = remainingGroupTabs.find((t) => t.id === nextActiveTabId);
             if (tabObj) {
-              if (tabObj.path !== "__new_tab__" && tabObj.path !== GRAPH_TAB_PATH && tabObj.path !== SPACES_TAB_PATH && !tabObj.path.startsWith('__plugin__.')) {
+              if (tabObj.path !== "__new_tab__" && tabObj.path !== GRAPH_TAB_PATH && tabObj.path !== SPACES_TAB_PATH && tabObj.path !== CLUSTER_TAB_PATH && !tabObj.path.startsWith('__plugin__.')) {
                 try {
                   const content = (await api.readFile(tabObj.path)) || "";
                   setCurrentContent(content);
@@ -3942,7 +3960,7 @@ export default function App() {
       // Shifting a tab into an inactive/collapsed group splits tree
       const group = groups.find((g) => g.id === groupId);
       const tabObj = tabs.find((t) => t.id === tabId);
-      
+
       if (group && tabObj && group.layout_state) {
         const updatedTab: Tab = { ...tabObj, groupId };
 
@@ -3975,7 +3993,7 @@ export default function App() {
 
         try {
           await localDB.putGroup(updatedGroup);
-          
+
           // Update the groups state
           setGroups((prev) =>
             prev.map((g) => (g.id === groupId ? updatedGroup : g))
@@ -4389,7 +4407,7 @@ export default function App() {
       setShowCanvas(false);
       setCanvasFullScreen(false);
       setCanvasFilePath(filePath);
-      
+
       const existingCanvasTab = baseTabs.find((t) => t.path === filePath);
       if (existingCanvasTab) {
         setTabs(baseTabs); // Apply the removal of New Tab if it happened
@@ -4478,7 +4496,7 @@ export default function App() {
   }, [activeTabId, pluginList, tabs]);
 
 
-  const openGraphAsTab = (mode: GraphMode = "manual") => {
+  const openGraphAsTab = (mode: "manual" | "ai" = "manual") => {
     setGraphMode(mode);
     setShowThoughtModel(false);
     setShowCanvas(false);
@@ -4490,6 +4508,7 @@ export default function App() {
       const leaf = findLeafWithTab(paneTree, existingGraphTab.id);
       if (leaf) {
         setFocusedLeafId(leaf.id);
+        setPaneTree((prev) => setActiveTabInLeaf(prev, leaf.id, existingGraphTab.id));
       }
     } else {
       const graphTab: Tab = {
@@ -4500,6 +4519,38 @@ export default function App() {
       };
       setTabs((prev) => [...prev, graphTab]);
       setActiveTabId(graphTab.id);
+      setPaneTree((prev) => {
+        const targetLeafId = focusedLeafId || findFirstLeaf(prev)?.id;
+        if (!targetLeafId) return prev;
+        return insertTabIntoLeaf(prev, targetLeafId, graphTab);
+      });
+    }
+
+    setCurrentContent("");
+    setBacklinks([]);
+  };
+
+  const openClusterAsTab = () => {
+    setShowThoughtModel(false);
+    setShowCanvas(false);
+    setShowGraph(false);
+
+    const existingClusterTab = tabs.find((t) => t.path === CLUSTER_TAB_PATH);
+    if (existingClusterTab) {
+      setActiveTabId(existingClusterTab.id);
+      const leaf = findLeafWithTab(paneTree, existingClusterTab.id);
+      if (leaf) {
+        setFocusedLeafId(leaf.id);
+      }
+    } else {
+      const clusterTab: Tab = {
+        id: generateId(),
+        path: CLUSTER_TAB_PATH,
+        name: "Cluster",
+        isModified: false,
+      };
+      setTabs((prev) => [...prev, clusterTab]);
+      setActiveTabId(clusterTab.id);
     }
 
     setCurrentContent("");
@@ -4722,9 +4773,9 @@ export default function App() {
           : `${trimmed}.md`;
         const activeFolder =
           settings.defaultNoteLocation === "same-folder" &&
-          activeTab?.path &&
-          !activeTab.path.startsWith("__") &&
-          activeTab.path.includes("/")
+            activeTab?.path &&
+            !activeTab.path.startsWith("__") &&
+            activeTab.path.includes("/")
             ? activeTab.path.slice(0, activeTab.path.lastIndexOf("/") + 1)
             : "";
         const targetPath = fileName.includes("/") ? fileName : `${activeFolder}${fileName}`;
@@ -4915,7 +4966,7 @@ export default function App() {
           const sessionIntentOverlap =
             sessionIntentTokens.length > 0
               ? candidateTokens.filter((token) => sessionIntentTokens.includes(token)).length /
-                sessionIntentTokens.length
+              sessionIntentTokens.length
               : 0;
 
           const guidanceScore =
@@ -5404,7 +5455,7 @@ export default function App() {
     }
 
     setActiveTabId(id);
-    
+
     // Sync with pane tree
     const targetLeaf = findLeafWithTab(paneTree, id);
     if (targetLeaf) {
@@ -5475,9 +5526,9 @@ export default function App() {
         setActiveTabId(lastTab.id);
         if (
           lastTab.path === "__new_tab__" ||
-          isCanvasFile(lastTab.path) || 
-          lastTab.path === GRAPH_TAB_PATH || 
-          lastTab.path === SPACES_TAB_PATH || 
+          isCanvasFile(lastTab.path) ||
+          lastTab.path === GRAPH_TAB_PATH ||
+          lastTab.path === SPACES_TAB_PATH ||
           lastTab.path.startsWith('__plugin__.')
         ) {
           setCurrentContent("");
@@ -6985,7 +7036,7 @@ export default function App() {
   useEffect(() => {
     const currentTypes = rightPluginViews.map(v => v.viewType);
     const prevTypes = prevRightViewsRef.current;
-    
+
     // Find if there's any new viewType that was not in prevTypes
     const added = currentTypes.find(t => !prevTypes.includes(t));
     if (added) {
@@ -7023,7 +7074,7 @@ export default function App() {
 
     if (leafActiveTab.path.startsWith("__database__.")) {
       const folderPath = leafActiveTab.path.split("__database__.")[1];
-      
+
       const findNodeByPath = (nodes: FileEntry[], targetPath: string): FileEntry | undefined => {
         for (const node of nodes) {
           if (node.path === targetPath) return node;
@@ -7221,15 +7272,17 @@ export default function App() {
 
     const spacesTab = leaf.tabs.find((t) => t.path === SPACES_TAB_PATH);
     const graphTab = leaf.tabs.find((t) => t.path === GRAPH_TAB_PATH);
+    const clusterTab = leaf.tabs.find((t) => t.path === CLUSTER_TAB_PATH);
 
     const activePath = leafActiveTab.path;
     const activeIsSpaces = activePath === SPACES_TAB_PATH;
     const activeIsGraph = activePath === GRAPH_TAB_PATH;
+    const activeIsCluster = activePath === CLUSTER_TAB_PATH;
 
     return (
       <div style={{ width: "100%", height: "100%", position: "relative" }}>
         {/* Render active tab content (only if not special persistent tabs) */}
-        {!activeIsSpaces && !activeIsGraph && (
+        {!activeIsSpaces && !activeIsGraph && !activeIsCluster && (
           <div style={{ width: "100%", height: "100%" }}>
             {renderActiveTabContent(leafActiveTab, leaf)}
           </div>
@@ -7281,6 +7334,27 @@ export default function App() {
             })}
           </div>
         )}
+
+        {/* Keep-Alive: Keep Cluster View mounted in the DOM if it's open */}
+        {clusterTab && (
+          <div
+            style={{
+              display: activeIsCluster ? "flex" : "none",
+              flexDirection: "column",
+              width: "100%",
+              height: "100%",
+              flex: 1,
+              position: "relative",
+              overflow: "hidden",
+            }}
+          >
+            <ClusterView
+              vaultPath={vaultPath}
+              onFileSelect={(path) => handleLinkClick(path)}
+              isActive={activeIsCluster}
+            />
+          </div>
+        )}
       </div>
     );
   }, [
@@ -7290,7 +7364,7 @@ export default function App() {
 
   return (
     <DragCtx.Provider value={{ dragCtx, setDragCtx }}>
-      <div 
+      <div
         className="app"
         style={{
           "--sidebar-width": `${sidebarWidth}px`,
@@ -7298,151 +7372,154 @@ export default function App() {
         } as any}
       >
         <div className="flex flex-row flex-1 min-h-0 overflow-hidden">
-        {vaultPath && !isFTUXZeroState && settings.showRibbon !== false && (
-          <Ribbon
-            onToggleExplorer={() => {
-              setShowSidebar((s) => {
-                const next = !s;
-                if (next) {
-                  setShowSearch(false);
-                  setShowBookmarks(false);
+          {vaultPath && !isFTUXZeroState && settings.showRibbon !== false && (
+            <Ribbon
+              onToggleExplorer={() => {
+                setShowSidebar((s) => {
+                  const next = !s;
+                  if (next) {
+                    setShowSearch(false);
+                    setShowBookmarks(false);
+                  }
+                  return next;
+                });
+              }}
+              onSearch={() => {
+                setShowSidebar(true);
+                setSearchInitialMode("search");
+                setShowBookmarks(false);
+                setShowSearch(true);
+              }}
+              onBookmarks={() => {
+                setShowSidebar(true);
+                setShowSearch(false);
+                setShowBookmarks(true);
+              }}
+              onGraph={() => {
+                openGraphAsTab();
+              }}
+              onCluster={() => {
+                openClusterAsTab();
+              }}
+              onSettings={() => setShowSettings(true)}
+              onDailyNote={() => {
+                if (settings.coreDailyNotes !== false) void handleCreateDailyNote();
+              }}
+              onThoughtModel={() => {
+                if (showRightSidebar && rightSidebarTab === "ai") {
+                  setShowRightSidebar(false);
+                } else {
+                  setRightSidebarTab("ai");
+                  setShowRightSidebar(true);
                 }
-                return next;
-              });
-            }}
-            onSearch={() => {
-              setShowSidebar(true);
-              setSearchInitialMode("search");
-              setShowBookmarks(false);
-              setShowSearch(true);
-            }}
-            onBookmarks={() => {
-              setShowSidebar(true);
-              setShowSearch(false);
-              setShowBookmarks(true);
-            }}
-            onGraph={() => {
-              openGraphAsTab();
-            }}
-            onSettings={() => setShowSettings(true)}
-            onDailyNote={() => {
-              if (settings.coreDailyNotes !== false) void handleCreateDailyNote();
-            }}
-            onThoughtModel={() => {
-              if (showRightSidebar && rightSidebarTab === "ai") {
-                setShowRightSidebar(false);
-              } else {
-                setRightSidebarTab("ai");
-                setShowRightSidebar(true);
-              }
-            }}
-            onSpaces={() => {
-              openSpacesAsTab();
-            }}
-            onCanvas={() => {
-              if (settings.coreCanvas !== false) void handleToggleCanvas();
-            }}
-            pluginRibbonActions={pluginRibbonActions}
-            showSettingsButton
-          />
-        )}
-        {vaultPath && !isFTUXZeroState && (
-          <div
-            ref={leftSidebarShellRef}
-            className="relative h-full min-w-0 shrink-0 overflow-hidden transition-[width] duration-150 ease-out will-change-[width]"
-            style={{ width: showSidebar ? "var(--sidebar-width)" : 0 }}
-          >
-            <div className="h-full w-full">
-              {showBookmarks ? (
-                <BookmarksPanel
-                  bookmarks={bookmarks}
-                  activeFilePath={activeTab?.path || null}
-                  onOpen={(path) => void openFile(path)}
-                  onRemove={removeBookmark}
-                />
-              ) : showSearch ? (
-                <SearchModal
-                  onClose={() => {
-                    setShowSearch(false);
+              }}
+              onSpaces={() => {
+                openSpacesAsTab();
+              }}
+              onCanvas={() => {
+                if (settings.coreCanvas !== false) void handleToggleCanvas();
+              }}
+              pluginRibbonActions={pluginRibbonActions}
+              showSettingsButton
+            />
+          )}
+          {vaultPath && !isFTUXZeroState && (
+            <div
+              ref={leftSidebarShellRef}
+              className="relative h-full min-w-0 shrink-0 overflow-hidden transition-[width] duration-150 ease-out will-change-[width]"
+              style={{ width: showSidebar ? "var(--sidebar-width)" : 0 }}
+            >
+              <div className="h-full w-full">
+                {showBookmarks ? (
+                  <BookmarksPanel
+                    bookmarks={bookmarks}
+                    activeFilePath={activeTab?.path || null}
+                    onOpen={(path) => void openFile(path)}
+                    onRemove={removeBookmark}
+                  />
+                ) : showSearch ? (
+                  <SearchModal
+                    onClose={() => {
+                      setShowSearch(false);
+                    }}
+                    onSelect={(path) => {
+                      setShowSearch(false);
+                      openFile(path);
+                    }}
+                    recentFiles={recentFiles}
+                    starredNotes={starredNotes}
+                    fileTree={fileTree}
+                    initialQuery={searchInitialQuery}
+                    initialMode={searchInitialMode}
+                    onQueryChange={setSearchInitialQuery}
+                    onModeChange={setSearchInitialMode}
+                  />
+                ) : (
+                  <Sidebar
+                    visible={true}
+                    fileTree={fileTree}
+                    showAllFileTypes={settings.showAllFileTypes}
+                    activeFilePath={activeTab?.path || null}
+                    starredNotes={starredNotes}
+                    onFileSelect={openFile}
+                    onNewNote={handleNewNote}
+                    onNewFolder={handleCreateFolder}
+                    onDeleteFile={handleDeleteFile}
+                    onRenameFile={handleRenameFile}
+                    onMoveFile={handleMoveFile}
+                    onRefresh={refreshFileTree}
+                    onCollapse={() => setShowSidebar(false)}
+                    onToggleStar={(path) => {
+                      setStarredNotes((prev) =>
+                        prev.includes(path)
+                          ? prev.filter((p) => p !== path)
+                          : [...prev, path],
+                      );
+                    }}
+                    vaultPath={vaultPath}
+                    onOpenVault={handleOpenVault}
+                    onManageVaults={() => {
+                      void handleShowVaultManager();
+                    }}
+                    previouslyOpenedVaults={previouslyOpenedVaults}
+                    onSwitchVault={handleSwitchVault}
+                    onSettings={() => setShowSettings(true)}
+                    pluginViews={activeLeftPluginViews}
+                    onClosePluginView={(viewType) => {
+                      const app = ooAppRef.current;
+                      if (app) app.workspace.detachLeavesOfType(viewType);
+                    }}
+                    groups={groups}
+                    activeGroupId={activeGroupId}
+                    onCreateGroup={handleOpenCreateGroupModal}
+                    onCreateGroupFromFile={handleCreateGroupFromFile}
+                    onCreateGroupFromFolder={handleCreateGroupFromFolder}
+                    onBookmarkFile={setBookmarkModalPath}
+                    onRestoreGroup={handleRestoreGroup}
+                    onRenameGroup={handleRenameGroup}
+                    onChangeGroupColor={handleChangeGroupColor}
+                    onDeleteGroup={handleDeleteGroup}
+                    onDuplicateGroup={handleDuplicateGroup}
+                    onToggleGroupAutoSave={handleToggleGroupAutoSave}
+                    onAddFileToGroup={handleAddFileToGroup}
+                  />
+                )}
+              </div>
+              {showSidebar && (
+                <div
+                  className={resizerClass}
+                  onMouseDown={startSidebarDrag}
+                  style={{
+                    position: "absolute",
+                    top: 0,
+                    right: 0,
+                    height: "100%",
+                    zIndex: 100,
                   }}
-                  onSelect={(path) => {
-                    setShowSearch(false);
-                    openFile(path);
-                  }}
-                  recentFiles={recentFiles}
-                  starredNotes={starredNotes}
-                  fileTree={fileTree}
-                  initialQuery={searchInitialQuery}
-                  initialMode={searchInitialMode}
-                  onQueryChange={setSearchInitialQuery}
-                  onModeChange={setSearchInitialMode}
-                />
-              ) : (
-                <Sidebar
-                  visible={true}
-                  fileTree={fileTree}
-                  showAllFileTypes={settings.showAllFileTypes}
-                  activeFilePath={activeTab?.path || null}
-                  starredNotes={starredNotes}
-                  onFileSelect={openFile}
-                  onNewNote={handleNewNote}
-                  onNewFolder={handleCreateFolder}
-                  onDeleteFile={handleDeleteFile}
-                  onRenameFile={handleRenameFile}
-                  onMoveFile={handleMoveFile}
-                  onRefresh={refreshFileTree}
-                  onCollapse={() => setShowSidebar(false)}
-                  onToggleStar={(path) => {
-                    setStarredNotes((prev) =>
-                      prev.includes(path)
-                        ? prev.filter((p) => p !== path)
-                        : [...prev, path],
-                    );
-                  }}
-                  vaultPath={vaultPath}
-                  onOpenVault={handleOpenVault}
-                  onManageVaults={() => {
-                    void handleShowVaultManager();
-                  }}
-                  previouslyOpenedVaults={previouslyOpenedVaults}
-                  onSwitchVault={handleSwitchVault}
-                  onSettings={() => setShowSettings(true)}
-                  pluginViews={activeLeftPluginViews}
-                  onClosePluginView={(viewType) => {
-                    const app = ooAppRef.current;
-                    if (app) app.workspace.detachLeavesOfType(viewType);
-                  }}
-                  groups={groups}
-                  activeGroupId={activeGroupId}
-                  onCreateGroup={handleOpenCreateGroupModal}
-                  onCreateGroupFromFile={handleCreateGroupFromFile}
-                  onCreateGroupFromFolder={handleCreateGroupFromFolder}
-                  onBookmarkFile={setBookmarkModalPath}
-                  onRestoreGroup={handleRestoreGroup}
-                  onRenameGroup={handleRenameGroup}
-                  onChangeGroupColor={handleChangeGroupColor}
-                  onDeleteGroup={handleDeleteGroup}
-                  onDuplicateGroup={handleDuplicateGroup}
-                  onToggleGroupAutoSave={handleToggleGroupAutoSave}
-                  onAddFileToGroup={handleAddFileToGroup}
                 />
               )}
             </div>
-            {showSidebar && (
-              <div
-                className={resizerClass}
-                onMouseDown={startSidebarDrag}
-                style={{
-                  position: "absolute",
-                  top: 0,
-                  right: 0,
-                  height: "100%",
-                  zIndex: 100,
-                }}
-              />
-            )}
-          </div>
-        )}
+          )}
 
           <div
             className="app-body flex flex-col flex-1 min-w-0 overflow-hidden"
@@ -7481,7 +7558,7 @@ export default function App() {
               onTabReorder={handleTabReorder}
               tabScrollRef={tabScrollRef}
               activeUsers={activeUsers}
-              
+
               groups={groups}
               activeGroupId={activeGroupId}
               hasUnsavedChanges={hasUnsavedChanges}
@@ -7523,498 +7600,497 @@ export default function App() {
                 <div
                   className="main-content flex min-w-0 flex-1 overflow-hidden bg-[var(--bg-primary)]"
                   ref={mainContentRef}
-          style={{
-            display: "flex",
-            flexDirection: "row",
-            width: "100%",
-            height: "100%",
-          }}
-        >
-          {showVaultEntryTransitionScene ? (
-            <div
-              className={`vault-entry-transition-scene phase-${vaultEntryTransitionPhase}`}
-            >
-              <div className="vault-entry-layer vault-entry-layer-welcome">
-                <WelcomeScreen
-                  onOpenVault={handleWelcomeVaultAction}
-                  transitionPhase={vaultEntryTransitionPhase}
-                  theme={theme}
-                  settings={settings}
-                />
+                  style={{
+                    display: "flex",
+                    flexDirection: "row",
+                    width: "100%",
+                    height: "100%",
+                  }}
+                >
+                  {showVaultEntryTransitionScene ? (
+                    <div
+                      className={`vault-entry-transition-scene phase-${vaultEntryTransitionPhase}`}
+                    >
+                      <div className="vault-entry-layer vault-entry-layer-welcome">
+                        <WelcomeScreen
+                          onOpenVault={handleWelcomeVaultAction}
+                          transitionPhase={vaultEntryTransitionPhase}
+                          theme={theme}
+                          settings={settings}
+                        />
+                      </div>
+
+                      {isFTUXZeroState && (
+                        <div className="vault-entry-layer vault-entry-layer-thought">
+                          {renderFTUXZeroState()}
+                        </div>
+                      )}
+                    </div>
+                  ) : !vaultPath ? (
+                    <WelcomeScreen
+                      onOpenVault={handleWelcomeVaultAction}
+                      transitionPhase="idle"
+                      theme={theme}
+                      settings={settings}
+                    />
+                  ) : isFTUXZeroState ? (
+                    renderFTUXZeroState()
+                  ) : (
+                    <>
+                      {/* Split Pane System -- replaces the single editor pane */}
+                      {shouldShowEditorPane && (
+                        <div
+                          style={{
+                            flex: hasAuxPane ? `0 0 ${editorPaneWidth}%` : 1,
+                            height: "100%",
+                            overflow: "hidden",
+                            display: "flex",
+                            flexDirection: "column",
+                            minWidth: 0,
+                          }}
+                        >
+
+                          <SplitPaneContainer
+                            paneTree={paneTree}
+                            onPaneTreeChange={handlePaneTreeChange}
+                            renderContent={renderPaneContent}
+                            onNewTab={handleNewNote}
+                            onTabClose={closeTab}
+                            onTabSelect={handlePaneTabSelect}
+                            focusedLeafId={focusedLeafId}
+                            onFocusLeaf={handleFocusLeaf}
+                          />
+                        </div>
+                      )}
+
+                      {/* Resizer for Graph/Canvas */}
+                      {shouldShowPaneResizer && (
+                        <div className={resizerClass} onMouseDown={startPaneDrag} />
+                      )}
+
+                      {/* Graph View pane (legacy side pane mode) */}
+                      {showGraph && !activeTabIsGraph && (
+                        <div
+                          style={{
+                            flex:
+                              graphFullScreen || !shouldShowEditorPane
+                                ? 1
+                                : `0 0 calc(${100 - editorPaneWidth}% - 4px)`,
+                            height: "100%",
+                            display: "flex",
+                            flexDirection: "column",
+                            overflow: "hidden",
+                            minWidth: 0,
+                          }}
+                        >
+                          {renderGraphShell({
+                            onNodeClick: async (
+                              linkName: string,
+                              heading?: string,
+                              notePath?: string,
+                            ) => {
+                              setViewMode("preview");
+                              if (graphFullScreen) {
+                                setGraphFullScreen(false);
+                              }
+                              if (notePath) {
+                                await openFile(notePath, "preview");
+                                return;
+                              }
+                              await handleLinkClick(linkName, heading);
+                            },
+                            onClose: () => setShowGraph(false),
+                            isFullScreen: graphFullScreen,
+                            localNodePath: activeTab?.path,
+                          })}
+                        </div>
+                      )}
+                      {/* Canvas View pane */}
+                      {showCanvas && (
+                        <div
+                          style={{
+                            flex:
+                              canvasFullScreen || !shouldShowEditorPane
+                                ? 1
+                                : `0 0 calc(${100 - editorPaneWidth}% - 4px)`,
+                            height: "100%",
+                            display: "flex",
+                            flexDirection: "column",
+                            overflow: "hidden",
+                            minWidth: 0,
+                          }}
+                        >
+                          <CanvasView
+                            onClose={() => setShowCanvas(false)}
+                            isFullScreen={canvasFullScreen}
+                            onToggleFullScreen={() => setCanvasFullScreen((f) => !f)}
+                            theme={theme}
+                            vaultPath={vaultPath}
+                            fileTree={fileTree}
+                            canvasFilePath={canvasFilePath}
+                            onOpenFile={(path) => openFile(path)}
+                            onNewCanvas={() => {
+                              void handleToggleCanvas();
+                            }}
+                            onDuplicateCanvas={() => {
+                              void handleDuplicateCanvas();
+                            }}
+                            onSaveCanvasAs={() => {
+                              void handleSaveCanvasAs();
+                            }}
+                            recentCanvasFiles={recentCanvasFiles}
+                            onOpenRecentCanvas={(path) => {
+                              void openFile(path, "preview");
+                            }}
+                          />
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
               </div>
 
-              {isFTUXZeroState && (
-                <div className="vault-entry-layer vault-entry-layer-thought">
-                  {renderFTUXZeroState()}
-                </div>
-              )}
-            </div>
-          ) : !vaultPath ? (
-            <WelcomeScreen
-              onOpenVault={handleWelcomeVaultAction}
-              transitionPhase="idle"
-              theme={theme}
-              settings={settings}
-            />
-          ) : isFTUXZeroState ? (
-            renderFTUXZeroState()
-          ) : (
-            <>
-              {/* Split Pane System -- replaces the single editor pane */}
-              {shouldShowEditorPane && (
+              {/* Thought Model Panel - independent of graph */}
+              {/* Right Sidebar Container */}
+              {showRightSidebar && !isFTUXZeroState && (
                 <div
-                  style={{
-                    flex: hasAuxPane ? `0 0 ${editorPaneWidth}%` : 1,
-                    height: "100%",
-                    overflow: "hidden",
-                    display: "flex",
-                    flexDirection: "column",
-                    minWidth: 0,
-                  }}
+                  ref={rightSidebarShellRef}
+                  className="relative flex h-full min-w-0 shrink-0 flex-row overflow-hidden transition-[width] duration-150 ease-out will-change-[width]"
+                  style={{ width: showRightSidebar ? "var(--right-sidebar-width)" : 0 }}
                 >
-
-                  <SplitPaneContainer
-                    paneTree={paneTree}
-                    onPaneTreeChange={handlePaneTreeChange}
-                    renderContent={renderPaneContent}
-                    onNewTab={handleNewNote}
-                    onTabClose={closeTab}
-                    onTabSelect={handlePaneTabSelect}
-                    focusedLeafId={focusedLeafId}
-                    onFocusLeaf={handleFocusLeaf}
-                  />
-                </div>
-              )}
-
-              {/* Resizer for Graph/Canvas */}
-              {shouldShowPaneResizer && (
-                <div className={resizerClass} onMouseDown={startPaneDrag} />
-              )}
-
-              {/* Graph View pane (legacy side pane mode) */}
-              {showGraph && !activeTabIsGraph && (
-                <div
-                  style={{
-                    flex:
-                      graphFullScreen || !shouldShowEditorPane
-                        ? 1
-                        : `0 0 calc(${100 - editorPaneWidth}% - 4px)`,
-                    height: "100%",
-                    display: "flex",
-                    flexDirection: "column",
-                    overflow: "hidden",
-                    minWidth: 0,
-                  }}
-                >
-                  {renderGraphShell({
-                    onNodeClick: async (
-                      linkName: string,
-                      heading?: string,
-                      notePath?: string,
-                    ) => {
-                      setViewMode("preview");
-                      if (graphFullScreen) {
-                        setGraphFullScreen(false);
-                      }
-                      if (notePath) {
-                        await openFile(notePath, "preview");
-                        return;
-                      }
-                      await handleLinkClick(linkName, heading);
-                    },
-                    onClose: () => setShowGraph(false),
-                    isFullScreen: graphFullScreen,
-                    localNodePath: activeTab?.path,
-                  })}
-                </div>
-              )}
-              {/* Canvas View pane */}
-              {showCanvas && (
-                <div
-                  style={{
-                    flex:
-                      canvasFullScreen || !shouldShowEditorPane
-                        ? 1
-                        : `0 0 calc(${100 - editorPaneWidth}% - 4px)`,
-                    height: "100%",
-                    display: "flex",
-                    flexDirection: "column",
-                    overflow: "hidden",
-                    minWidth: 0,
-                  }}
-                >
-                  <CanvasView
-                    onClose={() => setShowCanvas(false)}
-                    isFullScreen={canvasFullScreen}
-                    onToggleFullScreen={() => setCanvasFullScreen((f) => !f)}
-                    theme={theme}
-                    vaultPath={vaultPath}
-                    fileTree={fileTree}
-                    canvasFilePath={canvasFilePath}
-                    onOpenFile={(path) => openFile(path)}
-                    onNewCanvas={() => {
-                      void handleToggleCanvas();
-                    }}
-                    onDuplicateCanvas={() => {
-                      void handleDuplicateCanvas();
-                    }}
-                    onSaveCanvasAs={() => {
-                      void handleSaveCanvasAs();
-                    }}
-                    recentCanvasFiles={recentCanvasFiles}
-                    onOpenRecentCanvas={(path) => {
-                      void openFile(path, "preview");
+                  <div
+                    className={rightResizerClass}
+                    onMouseDown={startRightSidebarDrag}
+                    style={{
+                      position: "absolute",
+                      top: 0,
+                      left: 0,
+                      height: "100%",
+                      zIndex: 100,
                     }}
                   />
+                  <div className="flex h-full min-w-0 w-full flex-row overflow-hidden">
+                    <RightSidebar
+                      activeTab={rightSidebarTab}
+                      currentContent={currentContent}
+                      allNoteNames={allNoteNames}
+                      handleLinkClick={handleLinkClick}
+                      backlinks={backlinks}
+                      openFile={openFile}
+                      activeFilePath={activeTab?.path || null}
+                      activeFileName={activeTab?.name || ""}
+                      showUnlinkedMentions={settings.backlinksShowUnlinked !== false}
+                      width={rightSidebarWidth}
+                      vaultPath={vaultPath}
+                      theme={theme}
+                      fileTree={fileTree}
+                      onClose={() => setShowRightSidebar(false)}
+                      rightPluginViews={rightPluginViews}
+                      onClosePluginView={(viewType) => {
+                        const app = ooAppRef.current;
+                        if (app) {
+                          app.workspace.detachLeavesOfType(viewType);
+                        }
+                      }}
+                    />
+                  </div>
                 </div>
               )}
-            </>
-          )}
-        </div>
-      </div>
-
-        {/* Thought Model Panel - independent of graph */}
-        {/* Right Sidebar Container */}
-        {showRightSidebar && !isFTUXZeroState && (
-          <div
-            ref={rightSidebarShellRef}
-            className="relative flex h-full min-w-0 shrink-0 flex-row overflow-hidden transition-[width] duration-150 ease-out will-change-[width]"
-            style={{ width: showRightSidebar ? "var(--right-sidebar-width)" : 0 }}
-          >
-            <div
-              className={rightResizerClass}
-              onMouseDown={startRightSidebarDrag}
-              style={{
-                position: "absolute",
-                top: 0,
-                left: 0,
-                height: "100%",
-                zIndex: 100,
-              }}
-            />
-            <div className="flex h-full min-w-0 w-full flex-row overflow-hidden">
-              <RightSidebar
-                activeTab={rightSidebarTab}
-                currentContent={currentContent}
-                allNoteNames={allNoteNames}
-                handleLinkClick={handleLinkClick}
-                backlinks={backlinks}
-                openFile={openFile}
-                activeFilePath={activeTab?.path || null}
-                activeFileName={activeTab?.name || ""}
-                showUnlinkedMentions={settings.backlinksShowUnlinked !== false}
-                width={rightSidebarWidth}
-                vaultPath={vaultPath}
-                theme={theme}
-                fileTree={fileTree}
-                onClose={() => setShowRightSidebar(false)}
-                rightPluginViews={rightPluginViews}
-                onClosePluginView={(viewType) => {
-                  const app = ooAppRef.current;
-                  if (app) {
-                    app.workspace.detachLeavesOfType(viewType);
-                  }
-                }}
-              />
             </div>
           </div>
+        </div>
+
+        {!isFTUXZeroState && !activeTabIsSpaces && (
+          <StatusBar
+            activeTab={activeTab || null}
+            content={currentContent}
+            theme={theme}
+            viewMode={viewMode}
+            fileTree={fileTree}
+            queueStatus={queueStatus}
+            pluginStatusBarItems={pluginStatusBarItems}
+            vimEnabled={settings.vimMode}
+            showEditingMode={settings.showEditingModeStatusBar !== false}
+            backlinkCount={backlinks.length}
+          />
         )}
-            </div>
-          </div>
-        </div>
 
-      {!isFTUXZeroState && !activeTabIsSpaces && (
-        <StatusBar
-          activeTab={activeTab || null}
-          content={currentContent}
-          theme={theme}
-          viewMode={viewMode}
-          fileTree={fileTree}
-          queueStatus={queueStatus}
-          pluginStatusBarItems={pluginStatusBarItems}
-          vimEnabled={settings.vimMode}
-          showEditingMode={settings.showEditingModeStatusBar !== false}
-          backlinkCount={backlinks.length}
-        />
-      )}
+        {showCommandPalette && (
+          <CommandPalette
+            commands={[
+              ...commands,
+              ...pluginCommands.map(pc => ({
+                id: pc.id,
+                label: pc.name,
+                action: () => {
+                  const activeEditor = ooAppRef.current?.workspace.activeEditor;
+                  if (pc.editorCallback && activeEditor?.editor) {
+                    pc.editorCallback(activeEditor.editor, activeEditor);
+                  } else if (pc.editorCheckCallback && activeEditor?.editor) {
+                    pc.editorCheckCallback(false, activeEditor.editor, activeEditor);
+                  } else if (pc.callback) {
+                    pc.callback();
+                  } else if (pc.checkCallback) {
+                    pc.checkCallback(false);
+                  }
+                },
+                category: pc.pluginId,
+              })),
+            ]}
+            onClose={() => setShowCommandPalette(false)}
+          />
+        )}
 
-      {showCommandPalette && (
-        <CommandPalette
-          commands={[
-            ...commands,
-            ...pluginCommands.map(pc => ({
-              id: pc.id,
-              label: pc.name,
-              action: () => {
-                const activeEditor = ooAppRef.current?.workspace.activeEditor;
-                if (pc.editorCallback && activeEditor?.editor) {
-                  pc.editorCallback(activeEditor.editor, activeEditor);
-                } else if (pc.editorCheckCallback && activeEditor?.editor) {
-                  pc.editorCheckCallback(false, activeEditor.editor, activeEditor);
-                } else if (pc.callback) {
-                  pc.callback();
-                } else if (pc.checkCallback) {
-                  pc.checkCallback(false);
+        {showSettings && (
+          <SettingsPage
+            settings={settings}
+            onSettingsChange={setSettings}
+            onClose={() => setShowSettings(false)}
+            initialSection={settingsSection as any}
+            commands={[
+              ...commands,
+              ...pluginCommands.map(pc => ({
+                id: pc.id,
+                label: pc.name,
+                shortcut: pc.hotkeys?.map((hotkey: any) => hotkey.modifiers?.concat(hotkey.key).join("+")).join(", "),
+                action: () => { },
+                category: pc.pluginId,
+              })),
+            ]}
+            plugins={pluginList}
+            pluginSettingTabs={pluginSettingTabs}
+            onEnablePlugin={async (id) => { await pluginManagerRef.current?.enablePlugin(id); }}
+            onDisablePlugin={async (id) => { await pluginManagerRef.current?.disablePlugin(id); }}
+            onRefreshPlugins={async () => {
+              await pluginManagerRef.current?.discoverPlugins();
+            }}
+            onReloadPlugin={async (id) => { await pluginManagerRef.current?.reloadPlugin(id); }}
+            onUninstallPlugin={async (id) => {
+              const pluginManager = pluginManagerRef.current;
+              if (!pluginManager) return false;
+              return pluginManager.uninstallPlugin(id);
+            }}
+            onInstallPlugin={async (repo, id, version) => {
+              const pm = pluginManagerRef.current;
+              if (!pm) {
+                throw new Error('Plugin manager not initialized. Try restarting the app.');
+              }
+              try {
+                const result = await pm.installFromGithubRepo(repo, id, version);
+                return result;
+              } catch (e: any) {
+                console.error('[App] Plugin install error:', e);
+                throw e;
+              }
+            }}
+            collaborators={displayCollaborators}
+            invitesSent={invitesSent}
+            invitesReceived={invitesReceived}
+            onInviteUser={handleInviteUser}
+            onRemoveCollaborator={handleRemoveCollaborator}
+            onAcceptInvite={handleAcceptInvite}
+            onRejectInvite={handleRejectInvite}
+            currentUserEmail={authManager.getUser()?.email}
+            vaultPath={vaultPath || undefined}
+            onVaultReconstructed={async (newPath) => {
+              await api.setVaultPath(newPath);
+              setVaultPath(newPath);
+              (window as any).__oo_vault_path = newPath;
+              setShowSidebar(true);
+              const tree = await api.getFileTree();
+              setFileTree(tree);
+              runVaultInit(tree);
+
+              try {
+                const workspaceData = await readData<{ paneTree: PaneNode; activeTabId: string | null; focusedLeafId: string }>("workspace.json");
+                if (workspaceData && workspaceData.paneTree) {
+                  setPaneTree(workspaceData.paneTree);
+                  setTabs(collectAllTabs(workspaceData.paneTree));
+                  if (workspaceData.activeTabId) setActiveTabId(workspaceData.activeTabId);
+                  if (workspaceData.focusedLeafId) setFocusedLeafId(workspaceData.focusedLeafId);
+                } else {
+                  handleOpenNewTab();
                 }
-              },
-              category: pc.pluginId,
-            })),
-          ]}
-          onClose={() => setShowCommandPalette(false)}
-        />
-      )}
-
-      {showSettings && (
-        <SettingsPage
-          settings={settings}
-          onSettingsChange={setSettings}
-          onClose={() => setShowSettings(false)}
-          initialSection={settingsSection as any}
-          commands={[
-            ...commands,
-            ...pluginCommands.map(pc => ({
-              id: pc.id,
-              label: pc.name,
-              shortcut: pc.hotkeys?.map((hotkey: any) => hotkey.modifiers?.concat(hotkey.key).join("+")).join(", "),
-              action: () => {},
-              category: pc.pluginId,
-            })),
-          ]}
-          plugins={pluginList}
-          pluginSettingTabs={pluginSettingTabs}
-          onEnablePlugin={async (id) => { await pluginManagerRef.current?.enablePlugin(id); }}
-          onDisablePlugin={async (id) => { await pluginManagerRef.current?.disablePlugin(id); }}
-          onRefreshPlugins={async () => {
-            await pluginManagerRef.current?.discoverPlugins();
-          }}
-          onReloadPlugin={async (id) => { await pluginManagerRef.current?.reloadPlugin(id); }}
-          onUninstallPlugin={async (id) => {
-            const pluginManager = pluginManagerRef.current;
-            if (!pluginManager) return false;
-            return pluginManager.uninstallPlugin(id);
-          }}
-          onInstallPlugin={async (repo, id, version) => {
-            const pm = pluginManagerRef.current;
-            if (!pm) {
-              throw new Error('Plugin manager not initialized. Try restarting the app.');
-            }
-            try {
-              const result = await pm.installFromGithubRepo(repo, id, version);
-              return result;
-            } catch (e: any) {
-              console.error('[App] Plugin install error:', e);
-              throw e;
-            }
-          }}
-          collaborators={displayCollaborators}
-          invitesSent={invitesSent}
-          invitesReceived={invitesReceived}
-          onInviteUser={handleInviteUser}
-          onRemoveCollaborator={handleRemoveCollaborator}
-          onAcceptInvite={handleAcceptInvite}
-          onRejectInvite={handleRejectInvite}
-          currentUserEmail={authManager.getUser()?.email}
-          vaultPath={vaultPath || undefined}
-          onVaultReconstructed={async (newPath) => {
-            await api.setVaultPath(newPath);
-            setVaultPath(newPath);
-            (window as any).__oo_vault_path = newPath;
-            setShowSidebar(true);
-            const tree = await api.getFileTree();
-            setFileTree(tree);
-            runVaultInit(tree);
-
-            try {
-              const workspaceData = await readData<{ paneTree: PaneNode; activeTabId: string | null; focusedLeafId: string }>("workspace.json");
-              if (workspaceData && workspaceData.paneTree) {
-                setPaneTree(workspaceData.paneTree);
-                setTabs(collectAllTabs(workspaceData.paneTree));
-                if (workspaceData.activeTabId) setActiveTabId(workspaceData.activeTabId);
-                if (workspaceData.focusedLeafId) setFocusedLeafId(workspaceData.focusedLeafId);
-              } else {
+              } catch (err) {
                 handleOpenNewTab();
               }
-            } catch (err) {
-              handleOpenNewTab();
-            }
 
-            setShowSettings(false); // Close settings
-          }}
+              setShowSettings(false); // Close settings
+            }}
 
-        />
-      )}
+          />
+        )}
 
-      {permissionModalData && (
-        <PluginPermissionModal
-          manifest={permissionModalData.manifest}
-          permissions={permissionModalData.permissions}
-          onApprove={() => {
-            permissionModalData.resolve(true);
-            setPermissionModalData(null);
-          }}
-          onDeny={() => {
-            permissionModalData.resolve(false);
-            setPermissionModalData(null);
-          }}
-        />
-      )}
+        {permissionModalData && (
+          <PluginPermissionModal
+            manifest={permissionModalData.manifest}
+            permissions={permissionModalData.permissions}
+            onApprove={() => {
+              permissionModalData.resolve(true);
+              setPermissionModalData(null);
+            }}
+            onDeny={() => {
+              permissionModalData.resolve(false);
+              setPermissionModalData(null);
+            }}
+          />
+        )}
 
-      {showTemplateModal && (
-        <TemplateModal
-          onClose={() => setShowTemplateModal(false)}
-          onInsert={handleTemplateInsert}
-          currentNoteName={activeTab?.name}
-          templatesFolder={settings.templatesFolder}
-          dateFormat={settings.templateDateFormat}
-          timeFormat={settings.templateTimeFormat}
-        />
-      )}
+        {showTemplateModal && (
+          <TemplateModal
+            onClose={() => setShowTemplateModal(false)}
+            onInsert={handleTemplateInsert}
+            currentNoteName={activeTab?.name}
+            templatesFolder={settings.templatesFolder}
+            dateFormat={settings.templateDateFormat}
+            timeFormat={settings.templateTimeFormat}
+          />
+        )}
 
-      {bookmarkModalPath && (
-        <BookmarkModal
-          path={bookmarkModalPath}
-          initialTitle={
-            bookmarks.find((bookmark) => bookmark.path === bookmarkModalPath)?.title
+        {bookmarkModalPath && (
+          <BookmarkModal
+            path={bookmarkModalPath}
+            initialTitle={
+              bookmarks.find((bookmark) => bookmark.path === bookmarkModalPath)?.title
               || getNoteName(bookmarkModalPath)
-          }
-          groups={bookmarkGroups}
-          onClose={(result) => {
-            const path = bookmarkModalPath;
-            setBookmarkModalPath(null);
-            if (result) saveBookmark(path, result.title, result.group);
-          }}
-        />
-      )}
+            }
+            groups={bookmarkGroups}
+            onClose={(result) => {
+              const path = bookmarkModalPath;
+              setBookmarkModalPath(null);
+              if (result) saveBookmark(path, result.title, result.group);
+            }}
+          />
+        )}
 
-      {groupModalData && (
-        <GroupModal
-          title={groupModalData.title}
-          initialName={groupModalData.initialName}
-          initialColor={groupModalData.initialColor}
-          onClose={handleGroupModalClose}
-        />
-      )}
+        {groupModalData && (
+          <GroupModal
+            title={groupModalData.title}
+            initialName={groupModalData.initialName}
+            initialColor={groupModalData.initialColor}
+            onClose={handleGroupModalClose}
+          />
+        )}
 
-      {modal && (
-        <Modal
-          type={modal.type}
-          title={modal.title}
-          message={modal.message}
-          defaultValue={modal.defaultValue}
-          onClose={(result) => {
-            setModal(null);
-            modal.onConfirm?.(result);
-          }}
-        />
-      )}
+        {modal && (
+          <Modal
+            type={modal.type}
+            title={modal.title}
+            message={modal.message}
+            defaultValue={modal.defaultValue}
+            onClose={(result) => {
+              setModal(null);
+              modal.onConfirm?.(result);
+            }}
+          />
+        )}
 
-      {collabStatus.state === 'bootstrapping' && (
-        <div style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          background: 'rgba(10, 10, 12, 0.75)',
-          backdropFilter: 'blur(16px)',
-          WebkitBackdropFilter: 'blur(16px)',
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          justifyContent: 'center',
-          zIndex: 99999,
-          color: '#ffffff',
-          fontFamily: 'system-ui, -apple-system, sans-serif'
-        }}>
+        {collabStatus.state === 'bootstrapping' && (
           <div style={{
-            background: 'rgba(25, 25, 30, 0.85)',
-            border: '1px solid rgba(255, 255, 255, 0.08)',
-            borderRadius: '16px',
-            padding: '40px',
-            width: '450px',
-            maxWidth: '90%',
-            boxShadow: 'none',
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: 'rgba(10, 10, 12, 0.75)',
+            backdropFilter: 'blur(16px)',
+            WebkitBackdropFilter: 'blur(16px)',
             display: 'flex',
             flexDirection: 'column',
             alignItems: 'center',
-            textAlign: 'center'
+            justifyContent: 'center',
+            zIndex: 99999,
+            color: '#ffffff',
+            fontFamily: 'system-ui, -apple-system, sans-serif'
           }}>
             <div style={{
-              width: '48px',
-              height: '48px',
-              borderRadius: '50%',
-              border: '3px solid color-mix(in srgb, var(--color-accent, var(--accent-primary, #3b82f6)) 20%, transparent)',
-              borderTopColor: 'var(--color-accent, var(--accent-primary, #3b82f6))',
-              animation: 'spin 1s linear infinite',
-              marginBottom: '24px'
-            }} />
-            <h2 style={{ margin: '0 0 8px 0', fontSize: '20px', fontWeight: 600 }}>Reconstructing Vault</h2>
-            <p style={{ margin: '0 0 24px 0', fontSize: '14px', color: 'rgba(255, 255, 255, 0.6)', minHeight: '20px' }}>
-              {collabStatus.progress.message}
-            </p>
-            <div style={{
-              width: '100%',
-              height: '6px',
-              background: 'rgba(255, 255, 255, 0.08)',
-              borderRadius: '3px',
-              overflow: 'hidden',
-              marginBottom: '12px'
+              background: 'rgba(25, 25, 30, 0.85)',
+              border: '1px solid rgba(255, 255, 255, 0.08)',
+              borderRadius: '16px',
+              padding: '40px',
+              width: '450px',
+              maxWidth: '90%',
+              boxShadow: 'none',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              textAlign: 'center'
             }}>
               <div style={{
-                height: '100%',
-                background: 'var(--color-accent, var(--accent-primary, #3b82f6))',
-                width: `${collabStatus.progress.total > 0 ? Math.round((collabStatus.progress.current / collabStatus.progress.total) * 100) : 0}%`,
-                transition: 'width 0.2s ease-out',
-                borderRadius: '3px'
+                width: '48px',
+                height: '48px',
+                borderRadius: '50%',
+                border: '3px solid color-mix(in srgb, var(--color-accent, var(--accent-primary, #3b82f6)) 20%, transparent)',
+                borderTopColor: 'var(--color-accent, var(--accent-primary, #3b82f6))',
+                animation: 'spin 1s linear infinite',
+                marginBottom: '24px'
               }} />
+              <h2 style={{ margin: '0 0 8px 0', fontSize: '20px', fontWeight: 600 }}>Reconstructing Vault</h2>
+              <p style={{ margin: '0 0 24px 0', fontSize: '14px', color: 'rgba(255, 255, 255, 0.6)', minHeight: '20px' }}>
+                {collabStatus.progress.message}
+              </p>
+              <div style={{
+                width: '100%',
+                height: '6px',
+                background: 'rgba(255, 255, 255, 0.08)',
+                borderRadius: '3px',
+                overflow: 'hidden',
+                marginBottom: '12px'
+              }}>
+                <div style={{
+                  height: '100%',
+                  background: 'var(--color-accent, var(--accent-primary, #3b82f6))',
+                  width: `${collabStatus.progress.total > 0 ? Math.round((collabStatus.progress.current / collabStatus.progress.total) * 100) : 0}%`,
+                  transition: 'width 0.2s ease-out',
+                  borderRadius: '3px'
+                }} />
+              </div>
+              <div style={{ fontSize: '13px', color: 'rgba(255, 255, 255, 0.4)', fontWeight: 500 }}>
+                {collabStatus.progress.current} of {collabStatus.progress.total} files
+              </div>
             </div>
-            <div style={{ fontSize: '13px', color: 'rgba(255, 255, 255, 0.4)', fontWeight: 500 }}>
-              {collabStatus.progress.current} of {collabStatus.progress.total} files
-            </div>
-          </div>
-          <style>{`
+            <style>{`
             @keyframes spin {
               0% { transform: rotate(0deg); }
               100% { transform: rotate(360deg); }
             }
           `}</style>
-        </div>
-      )}
-      {showVaultManager && (
-        <VaultManager
-          currentVaultPath={vaultPath}
-          previouslyOpenedVaults={previouslyOpenedVaults}
-          theme={theme}
-          settings={settings}
-          onCreateVault={handleCreateVault}
-          onOpenVault={handleOpenVault}
-          onSwitchVault={handleSwitchVault}
-          onRevealVault={(path) => {
-            void api.showItemInFolder(path);
-          }}
-          onCopyVaultId={handleCopyVaultId}
-          onRenameVault={handleRenameVault}
-          onMoveVault={handleMoveVault}
-          onRemoveVaultFromList={handleRemoveVaultFromList}
-          onClose={() => setShowVaultManager(false)}
-        />
-      )}
-      {toast && (
-        <div className="fixed bottom-[var(--space-8)] right-[var(--space-8)] z-[300] flex flex-col gap-[var(--space-2)]">
-          <div
-            className={`flex max-w-[360px] items-center gap-[var(--space-3)] rounded-[var(--radius-md)] border border-[var(--border-medium)] bg-[var(--bg-elevated)] px-[var(--space-4)] py-[var(--space-3)] text-[length:var(--text-sm)] text-[var(--text-secondary)] shadow-none ${
-              toast.type === "success"
-                ? "border-l-[3px] border-l-[var(--success)]"
-                : toast.type === "error"
-                  ? "border-l-[3px] border-l-[var(--danger)]"
-                  : "border-l-[3px] border-l-[var(--info)]"
-            }`}
-          >
-            {toast.message}
           </div>
-        </div>
-      )}
-    </div>
+        )}
+        {showVaultManager && (
+          <VaultManager
+            currentVaultPath={vaultPath}
+            previouslyOpenedVaults={previouslyOpenedVaults}
+            theme={theme}
+            settings={settings}
+            onCreateVault={handleCreateVault}
+            onOpenVault={handleOpenVault}
+            onSwitchVault={handleSwitchVault}
+            onRevealVault={(path) => {
+              void api.showItemInFolder(path);
+            }}
+            onCopyVaultId={handleCopyVaultId}
+            onRenameVault={handleRenameVault}
+            onMoveVault={handleMoveVault}
+            onRemoveVaultFromList={handleRemoveVaultFromList}
+            onClose={() => setShowVaultManager(false)}
+          />
+        )}
+        {toast && (
+          <div className="fixed bottom-[var(--space-8)] right-[var(--space-8)] z-[300] flex flex-col gap-[var(--space-2)]">
+            <div
+              className={`flex max-w-[360px] items-center gap-[var(--space-3)] rounded-[var(--radius-md)] border border-[var(--border-medium)] bg-[var(--bg-elevated)] px-[var(--space-4)] py-[var(--space-3)] text-[length:var(--text-sm)] text-[var(--text-secondary)] shadow-none ${toast.type === "success"
+                  ? "border-l-[3px] border-l-[var(--success)]"
+                  : toast.type === "error"
+                    ? "border-l-[3px] border-l-[var(--danger)]"
+                    : "border-l-[3px] border-l-[var(--info)]"
+                }`}
+            >
+              {toast.message}
+            </div>
+          </div>
+        )}
+      </div>
     </DragCtx.Provider>
   );
 }

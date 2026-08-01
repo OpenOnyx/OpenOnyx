@@ -227,24 +227,154 @@ function buildFileTree(): any[] {
   return tree;
 }
 
+async function readDirectoryRecursive(dirHandle: any, relativePath: string = ""): Promise<Record<string, string>> {
+  const result: Record<string, string> = {};
+  try {
+    for await (const entry of dirHandle.values()) {
+      const entryPath = relativePath ? `${relativePath}/${entry.name}` : entry.name;
+      if (entry.kind === "file" && entry.name.endsWith(".md")) {
+        const file = await entry.getFile();
+        const text = await file.text();
+        result[entryPath] = text;
+      } else if (entry.kind === "directory" && !entry.name.startsWith(".") && entry.name !== "node_modules") {
+        const sub = await readDirectoryRecursive(entry, entryPath);
+        Object.assign(result, sub);
+      }
+    }
+  } catch (e) {
+    console.error("Error reading directory recursively:", e);
+  }
+  return result;
+}
+
+async function selectFolderViaBrowser(): Promise<string | null> {
+  if (typeof window === "undefined") return "/mock-vault";
+
+  // 1. Try File System Access API (Chrome, Edge, Opera, Brave)
+  if ("showDirectoryPicker" in window) {
+    try {
+      const handle = await (window as any).showDirectoryPicker();
+      if (handle && handle.name) {
+        const loaded = await readDirectoryRecursive(handle);
+        if (Object.keys(loaded).length > 0) {
+          for (const k of Object.keys(mockFiles)) delete mockFiles[k];
+          Object.assign(mockFiles, loaded);
+        }
+        return `/${handle.name}`;
+      }
+    } catch (e: any) {
+      if (e.name === "AbortError") return null;
+    }
+  }
+
+  // 2. Fallback: Trigger browser folder file input
+  return new Promise((resolve) => {
+    const input = document.createElement("input");
+    input.type = "file";
+    (input as any).webkitdirectory = true;
+    input.onchange = async (e: any) => {
+      const files = e.target.files;
+      if (files && files.length > 0) {
+        const loaded: Record<string, string> = {};
+        const firstPath = files[0].webkitRelativePath || "";
+        const folderName = firstPath.split("/")[0] || files[0].name;
+
+        for (let i = 0; i < files.length; i++) {
+          const f = files[i];
+          if (f.name.endsWith(".md")) {
+            const parts = f.webkitRelativePath.split("/");
+            parts.shift(); // remove root directory name
+            const relPath = parts.join("/") || f.name;
+            const text = await f.text();
+            loaded[relPath] = text;
+          }
+        }
+
+        if (Object.keys(loaded).length > 0) {
+          for (const k of Object.keys(mockFiles)) delete mockFiles[k];
+          Object.assign(mockFiles, loaded);
+        }
+
+        resolve(folderName ? `/${folderName}` : "/mock-vault");
+      } else {
+        resolve(null);
+      }
+    };
+    input.oncancel = () => resolve(null);
+    input.click();
+  });
+}
+
+function populateMockVault(path: string) {
+  // If files were already loaded from a real folder selection, preserve them!
+  if (Object.keys(mockFiles).length > 0) return;
+
+  const vaultBasename = path.split(/[/\\]/).filter(Boolean).pop() || "Vault";
+  
+  if (path.includes("OO-Test-Vault") || vaultBasename.includes("OO-Test")) {
+    Object.assign(mockFiles, {
+      "OO-Test-Overview.md": `# OO-Test Vault Overview\n\nTesting graph and linking in [[OO-Test-Architecture]] and [[Integration-Suite]].`,
+      "OO-Test-Architecture.md": `# System Architecture\n\nModular design for [[OO-Test-Overview]] and [[UI-Components]].`,
+      "Integration-Suite.md": `# Integration Testing\n\nAutomated tests for [[OO-Test-Architecture]] and [[API-Contracts]].`,
+      "UI-Components.md": `# UI Components\n\nReact components linked from [[OO-Test-Overview]].`,
+      "API-Contracts.md": `# API Contracts\n\nSchema definitions for [[Integration-Suite]].`,
+      "Unlinked Scratchpad.md": `# Unlinked Scratchpad\n\nOutlier note with standalone thoughts and scratch notes.`,
+      "Raw Ideas Snippet.md": `# Raw Ideas\n\nIsolated brainstorming notes without wikilinks.`,
+      "Standalone Thoughts.md": `# Standalone Thoughts\n\nAnother unclustered outlier note.`,
+      "Meeting Notes 2026.md": `# Meeting Notes 2026\n\nStandalone meeting notes for project discussion.`
+    });
+  } else if (path.toLowerCase().includes("deepfake")) {
+    Object.assign(mockFiles, {
+      "Deepfake-Detection-Overview.md": `# Deepfake Detection Pipeline\n\nMulti-modal architecture using [[CNN-Feature-Extractor]] and [[Temporal-LSTM]].`,
+      "CNN-Feature-Extractor.md": `# CNN Extractor\n\nExtracts spatial features for [[Deepfake-Detection-Overview]] and [[ResNet-Backbone]].`,
+      "ResNet-Backbone.md": `# ResNet Model\n\nPretrained backbone for [[CNN-Feature-Extractor]].`,
+      "Temporal-LSTM.md": `# Temporal Sequence Analysis\n\nSequence modeling linked to [[Deepfake-Detection-Overview]].`
+    });
+  } else if (path.toLowerCase().includes("devdash")) {
+    Object.assign(mockFiles, {
+      "DevDash-Overview.md": `# DevDash System\n\nMetrics dashboard linked to [[Widget-Registry]] and [[Analytics-Stream]].`,
+      "Widget-Registry.md": `# Widget Registry\n\nComponent definitions for [[DevDash-Overview]].`,
+      "Analytics-Stream.md": `# Analytics Stream\n\nData pipelines for [[DevDash-Overview]].`
+    });
+  } else {
+    Object.assign(mockFiles, {
+      "Welcome.md": `# Welcome to ${vaultBasename}\n\nThis is your vault for ${vaultBasename}. Learn more in [[Getting Started]].`,
+      "Getting Started.md": `# Getting Started in ${vaultBasename}\n\nCore notes and backlinks to [[Knowledge Management]] and [[Project Ideas]].`,
+      "Knowledge Management.md": `# Knowledge Management\n\nPersonal knowledge base linked from [[Getting Started]] and [[Wiki Links]].`,
+      "Project Ideas.md": `# Project Ideas\n\nIdeas overview linked from [[Getting Started]] and [[Markdown Guide]].`,
+      "Markdown Guide.md": `# Markdown Guide\n\nFormatting guide linked to [[Project Ideas]].`,
+      "Wiki Links.md": `# Wiki Links\n\nHow to link notes in [[Knowledge Management]].`
+    });
+  }
+}
+
 export function createMockAPI(): ElectronAPI {
-  // Initialize with sample notes
   Object.assign(mockFiles, SAMPLE_NOTES);
 
   const mockAPI: ElectronAPI = {
     // Vault
     openVaultDialog: async () => {
-      mockVaultPath = "/mock-vault";
-      return "/mock-vault";
+      const selected = await selectFolderViaBrowser();
+      if (!selected) return null;
+      mockVaultPath = selected;
+      const stored = localStorage.getItem("mock-previously-opened-vaults");
+      const list = stored ? JSON.parse(stored) : [];
+      if (!list.includes(selected)) {
+        list.unshift(selected);
+        localStorage.setItem("mock-previously-opened-vaults", JSON.stringify(list));
+      }
+      populateMockVault(selected);
+      return selected;
     },
     setVaultPath: async (path: string) => {
       mockVaultPath = path;
       const stored = localStorage.getItem("mock-previously-opened-vaults");
       const list = stored ? JSON.parse(stored) : [];
       if (!list.includes(path)) {
-        list.push(path);
+        list.unshift(path);
         localStorage.setItem("mock-previously-opened-vaults", JSON.stringify(list));
       }
+      populateMockVault(path);
       return true;
     },
     getVaultPath: async () => mockVaultPath,
@@ -260,8 +390,24 @@ export function createMockAPI(): ElectronAPI {
       localStorage.setItem("mock-previously-opened-vaults", JSON.stringify(next));
       return next;
     },
-    showOpenDialog: async () => ({ canceled: true, filePaths: [] }),
-    showSaveDialog: async () => ({ canceled: true, filePath: "" }),
+    showOpenDialog: async () => {
+      const selected = await selectFolderViaBrowser();
+      if (!selected) return { canceled: true, filePaths: [] };
+      mockVaultPath = selected;
+      const stored = localStorage.getItem("mock-previously-opened-vaults");
+      const list = stored ? JSON.parse(stored) : [];
+      if (!list.includes(selected)) {
+        list.unshift(selected);
+        localStorage.setItem("mock-previously-opened-vaults", JSON.stringify(list));
+      }
+      return { canceled: false, filePaths: [selected] };
+    },
+    showSaveDialog: async () => {
+      const selected = await selectFolderViaBrowser();
+      if (!selected) return { canceled: true, filePath: "" };
+      mockVaultPath = selected;
+      return { canceled: false, filePath: selected };
+    },
     openPath: async () => "",
     showItemInFolder: async () => {},
     renamePath: async (_oldPath: string, newPath: string) => {

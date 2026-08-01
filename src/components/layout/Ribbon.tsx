@@ -57,6 +57,7 @@ const pluginRibbonIconClass =
 interface RibbonProps {
   onToggleExplorer?: () => void;
   onGraph: () => void;
+  onCluster?: () => void;
   onSettings: () => void;
   onDailyNote?: () => void;
   onThoughtModel?: () => void;
@@ -70,6 +71,7 @@ interface RibbonProps {
 
 export function Ribbon({
   onGraph,
+  onCluster,
   onToggleExplorer,
   onSettings,
   onDailyNote,
@@ -160,6 +162,16 @@ export function Ribbon({
         >
           <Network size={18} strokeWidth={1.6} />
         </button>
+
+        {onCluster && (
+          <button
+            className={ribbonBtnClass}
+            onClick={onCluster}
+            data-tooltip="Cluster View"
+          >
+            <Sparkles size={18} strokeWidth={1.6} />
+          </button>
+        )}
 
         {onThoughtModel && (
           <button

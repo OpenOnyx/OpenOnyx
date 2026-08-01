@@ -259,6 +259,7 @@ function createWindow(): void {
     backgroundColor: '#0f0f14',
     titleBarStyle: 'hiddenInset',
     frame: process.platform === 'darwin' ? true : false,
+    show: true,
     icon: process.platform === 'win32'
       ? path.join(__dirname, '../build/icon.ico')
       : path.join(__dirname, '../build/icon.png'),
@@ -269,6 +270,15 @@ function createWindow(): void {
       sandbox: false,
       plugins: true,
     },
+  });
+
+  mainWindow.once('ready-to-show', () => {
+    mainWindow?.show();
+    mainWindow?.focus();
+    if (process.platform === 'win32') {
+      mainWindow?.setAlwaysOnTop(true);
+      mainWindow?.setAlwaysOnTop(false);
+    }
   });
 
   // In development, load from Vite dev server
