@@ -7771,7 +7771,7 @@ export default function App() {
                 <div
                   ref={rightSidebarShellRef}
                   className="relative flex h-full min-w-0 shrink-0 flex-row overflow-hidden transition-[width] duration-150 ease-out will-change-[width]"
-                  style={{ width: showRightSidebar ? "var(--right-sidebar-width)" : 0 }}
+                  style={{ width: "var(--right-sidebar-width)" }}
                 >
                   <div
                     className={rightResizerClass}

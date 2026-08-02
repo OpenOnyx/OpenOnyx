@@ -383,12 +383,6 @@ export function ClusterView({ vaultPath, onFileSelect, isActive }: ClusterViewPr
     const nodeMap = new Map<string, GraphNode>();
     graphData.nodes.forEach(n => nodeMap.set(n.id, n));
 
-    // Seeded pseudo-random generator for stable organic inner node placement
-    const pseudoRandom = (seedStr: string) => {
-      let h = 0;
-      for (let k = 0; k < seedStr.length; k++) h = (Math.imul(31, h) + seedStr.charCodeAt(k)) | 0;
-      return (h >>> 0) / 4294967296;
-    };
 
     // Calculate cluster radius proportional to member count
     const getClusterRadius = (id: string, memberCount: number) => {
@@ -455,7 +449,6 @@ export function ClusterView({ vaultPath, onFileSelect, isActive }: ClusterViewPr
       const id = activeClusterIds[i];
       const members = finalMembersMap[id] || [];
       const { x: cx, y: cy } = clusterPositions[id];
-      const clusterRadius = getClusterRadius(id, members.length);
       const color = coloredMap[id] || PALETTE[i % PALETTE.length];
       
       let name = clusterSettings.names[id];
@@ -684,7 +677,7 @@ export function ClusterView({ vaultPath, onFileSelect, isActive }: ClusterViewPr
             ctx.moveTo(startX, startY);
             ctx.lineTo(endX, endY);
 
-            ctx.lineWidth = isHoveredArc ? 3.5 : 2.0;
+            ctx.lineWidth = isHoveredArc ? 3.8 : Math.min(3.0, 1.6 + count * 0.2);
             ctx.strokeStyle = isHoveredArc ? `${cA.color}ff` : `${cA.color}bb`;
 
             if (isHoveredArc) {
