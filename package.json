@@ -104,7 +104,7 @@
     "@types/uuid": "^10.0.0",
     "@vitejs/plugin-react": "^4.4.1",
     "concurrently": "^9.1.2",
-    "electron": "^41.2.0",
+    "electron": "^41.10.3",
     "electron-builder": "^26.15.3",
     "fake-indexeddb": "^6.2.4",
     "jsdom": "^26.1.0",
@@ -229,5 +229,9 @@
     "dmg": {
       "backgroundColor": "#121212"
     }
+  },
+  "allowScripts": {
+    "electron@41.2.0": true,
+    "esbuild@0.25.12": true
   }
 }
