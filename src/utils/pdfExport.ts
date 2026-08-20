@@ -1,6 +1,7 @@
 import { marked } from "marked";
 import markedKatex from "marked-katex-extension";
 import DOMPurify from "dompurify";
+import { resolveVaultImageSrc } from "./resolveImageSrc";
 
 marked.use(markedKatex({ throwOnError: false }));
 
@@ -26,14 +27,26 @@ function toFileUri(vaultPath: string | undefined, src: string): string {
   return `file://${joined.split("/").map((part, index) => index === 0 ? part : encodeURIComponent(part)).join("/")}`;
 }
 
+function isImageEmbedPath(src: string): boolean {
+  return /\.(png|jpe?g|gif|webp|svg|avif|bmp)(?:[?#].*)?$/i.test(src.trim());
+}
+
 function preprocessMarkdown(markdown: string, vaultPath?: string): string {
   let processed = stripFrontmatter(markdown);
 
   processed = processed.replace(
     /!\[\[([^\]|#]+)(?:#([^\]|]+))?(?:\|([^\]]+))?\]\]/g,
     (_match, noteName, heading, displayText) => {
-      const label = displayText || noteName;
-      return `<div class="embed-missing">${escapeHtml(label)}${heading ? ` / ${escapeHtml(heading)}` : ""}</div>`;
+      const src = String(noteName).trim();
+      const label = displayText || src;
+
+      if (isImageEmbedPath(src)) {
+        const resolvedSrc = resolveVaultImageSrc(src);
+        return `<img src="${escapeHtml(resolvedSrc)}" alt="${escapeHtml(label)}">`;
+      }
+
+      const labelText = displayText || src;
+      return `<div class="embed-missing">${escapeHtml(labelText)}${heading ? ` / ${escapeHtml(heading)}` : ""}</div>`;
     },
   );
 
@@ -86,7 +99,7 @@ export function buildMarkdownPdfHtml({
     ADD_TAGS: ["input", "math", "semantics", "mrow", "mi", "mo", "mn", "msup", "mspace", "msqrt", "mfrac", "annotation"],
     ADD_ATTR: ["checked", "disabled", "type", "style", "viewBox", "fill", "stroke", "stroke-width", "stroke-linecap", "stroke-linejoin"],
     ADD_DATA_URI_TAGS: ["img"],
-    ALLOWED_URI_REGEXP: /^(?:(?:(?:f|ht)tps?|file|data|mailto):|[^a-z]|[a-z+.\-]+(?:[^a-z+.\-:]|$))/i,
+    ALLOWED_URI_REGEXP: /^(?:(?:(?:f|ht)tps?|file|data|mailto|vault):|[^a-z]|[a-z+.\-]+(?:[^a-z+.\-:]|$))/i,
   });
 
   const safeTitle = escapeHtml(title || notePath.replace(/\.md$/i, ""));
