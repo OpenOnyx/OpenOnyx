@@ -1224,7 +1224,7 @@ export function LeafPaneEditor({
 
   return (
     <div
-      className="leaf-editor-host relative flex h-full min-h-0 flex-col"
+      className="leaf-editor-host relative flex h-full min-h-0 min-w-0 flex-col overflow-hidden"
       onMouseDownCapture={() => {
         if (!isFocused && onFocusLeaf) {
           onFocusLeaf(leaf.id);

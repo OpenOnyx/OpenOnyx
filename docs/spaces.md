@@ -72,12 +72,12 @@ Before pushing, `dedupeQueue()` runs to clean up redundant actions:
 ### B. Push Synchronization (Local → Cloud)
 1. **Intelligent Batching**: Rather than executing one HTTP request per change, the engine groups queued mutations by table and operation, executing bulk `.upsert()` or `.delete().in()` requests.
 2. **Local-Only Protection**: The engine detects if resources belong to a space marked `visibility: 'local'`. If so, it purges them from the queue without uploading.
-3. **Retry Mechanics & Backoff**: If an upload fails (e.g., due to database locks), the items remain in the queue. Their `retry_count` increments up to 3 times. If an item fails 3 consecutive times, it is logged and dropped to prevent infinite loops.
+3. **Retry Mechanics & Conflict Preservation**: If an upload fails due to temporary network issues, the items remain in the queue. Unlike simple assistant items, offline edits are preserved indefinitely until connectivity is restored. To handle push conflicts without losing user changes, if a local edit is rejected (due to a newer version or content-hash mismatch on the remote server), the SyncEngine saves a local conflict copy named `Note (conflict).md`, commits it to IndexedDB and the sync queue, and removes the original rejected item from the queue.
 4. **Offline Awareness**: The engine monitors `navigator.onLine`. If offline, it pauses sync operations immediately without destroying the transaction queue.
 
 ### C. Pull Synchronization (Cloud → Local)
 1. **Delta Fetching**: Pull cycles rely on a persisted `last_sync_time` metadata flag. The engine queries only records modified (`updated_at >= last_sync_time`) since the last successful sync.
-2. **Last-Write-Wins (LWW) Resolution**: When merging remote records into IndexedDB, the engine compares timestamps via `applyRemoteChanges()`. A remote change will only overwrite local data if `remote.updated_at >= local.updated_at`.
+2. **Last-Write-Wins (LWW) Resolution**: When merging remote records into IndexedDB, the engine compares timestamps. A remote change will only overwrite local data if `remote.updated_at >= local.updated_at`. For collaborative notes managed under Yjs (real-time collaboration), Yjs serves as the source of truth. The LWW pull engine does not overwrite notes that have active Yjs documents (open Y.Docs or local Yjs snapshots in IndexedDB). Changes to these notes are merged and synced peer-to-peer using Yjs updates instead of Postgres LWW.
 3. **Cascading Deletions**: When a note is soft-deleted on another client, the pull engine detects `deleted: true` and cascades the deletion down to IndexedDB, dropping all local vector chunks associated with that note.
 
 ---

@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { SyncEngine, normalizeSyncPath } from '../src/lib/syncEngine';
 import { localDB, getLocalDB } from '../src/lib/localdb';
 import { authManager } from '../src/lib/auth';
+import { sha256Hex } from '../src/utils/collabDocument';
 
 // ── Mock Supabase Client ──
 let remoteNotesForMock: any[] = [];
@@ -113,6 +114,16 @@ vi.mock('../src/lib/privateCrypto', () => {
   };
 });
 
+// ── Mock YDoc Manager ──
+export const mockHasDoc = vi.fn((notePath?: string, spaceId?: string) => false);
+vi.mock('../src/lib/yDocManager', () => {
+  return {
+    yDocManager: {
+      hasDoc: (notePath: string, spaceId: string) => mockHasDoc(notePath, spaceId),
+    },
+  };
+});
+
 // Helper to clear IndexedDB stores
 async function clearDatabase() {
   const db = await getLocalDB();
@@ -139,6 +150,10 @@ describe('SyncEngine Tests', () => {
 
     // Set window configurations
     (window as any).__oo_vault_path = '/vault';
+    if (!(window as any).indexedDB) {
+      (window as any).indexedDB = {};
+    }
+    (window as any).indexedDB.databases = vi.fn(async () => []);
     (window as any).electronAPI = {
       getVaultPath: vi.fn(async () => '/vault'),
       getFileTree: vi.fn(async () => fileTreeMock),
@@ -235,6 +250,7 @@ describe('SyncEngine Tests', () => {
       title: 'Conflict Note',
       path: 'Conflict.md',
       content: 'Old Local Edit',
+      content_hash: 'same-hash',
       pinned: false,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
@@ -247,6 +263,7 @@ describe('SyncEngine Tests', () => {
       space_id: 'test-space-id',
       version: 3,
       content: 'Newer Remote Edit',
+      content_hash: await sha256Hex('Old Local Edit'),
       updated_at: new Date().toISOString(),
     }];
 
@@ -380,5 +397,146 @@ describe('SyncEngine Tests', () => {
     expect(queue.length).toBe(1);
     expect(queue[0].record_id).toBe('offline-note');
     expect(queue[0].payload.content).toBe('Updated Content Offline');
+  });
+
+  it('skips LWW overwrite on pull when Yjs hasDoc is active', async () => {
+    await localDB.setMeta('lastSync_test-space-id', new Date(0).toISOString());
+
+    mockHasDoc.mockReturnValue(true);
+
+    await localDB.putNote({
+      id: 'yjs-note-pull',
+      space_id: 'test-space-id',
+      vault_id: null,
+      last_client_id: 'client-1',
+      version: 1,
+      title: 'Yjs Pull Note',
+      path: 'notes/yjs.md',
+      content: 'Original Local Content',
+      pinned: false,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      deleted: false,
+    }, false);
+
+    fileMock['notes/yjs.md'] = 'Original Local Content';
+
+    remoteNotesForMock = [{
+      id: 'yjs-note-pull',
+      space_id: 'test-space-id',
+      version: 2,
+      title: 'Yjs Pull Note',
+      path: 'notes/yjs.md',
+      content: 'Newer Remote Content',
+      updated_at: new Date().toISOString(),
+      deleted: false,
+    }];
+
+    const pulledCount = await engine.pullChanges();
+    expect(pulledCount).toBe(0);
+
+    const localNote = await localDB.getNote('yjs-note-pull');
+    expect(localNote?.content).toBe('Original Local Content');
+    expect(fileMock['notes/yjs.md']).toBe('Original Local Content');
+
+    mockHasDoc.mockReturnValue(false);
+  });
+
+  it('skips LWW overwrite on pull when Yjs snapshot exists in IndexedDB', async () => {
+    await localDB.setMeta('lastSync_test-space-id', new Date(0).toISOString());
+
+    (window as any).indexedDB.databases.mockResolvedValue([
+      { name: 'yjs-test-space-id-notes_yjs_db.md' }
+    ]);
+
+    await localDB.putNote({
+      id: 'yjs-note-snapshot',
+      space_id: 'test-space-id',
+      vault_id: null,
+      last_client_id: 'client-1',
+      version: 1,
+      title: 'Yjs Snapshot Note',
+      path: 'notes/yjs_db.md',
+      content: 'Original Local Content',
+      pinned: false,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      deleted: false,
+    }, false);
+
+    fileMock['notes/yjs_db.md'] = 'Original Local Content';
+
+    remoteNotesForMock = [{
+      id: 'yjs-note-snapshot',
+      space_id: 'test-space-id',
+      version: 2,
+      title: 'Yjs Snapshot Note',
+      path: 'notes/yjs_db.md',
+      content: 'Newer Remote Content',
+      updated_at: new Date().toISOString(),
+      deleted: false,
+    }];
+
+    const pulledCount = await engine.pullChanges();
+    expect(pulledCount).toBe(0);
+
+    const localNote = await localDB.getNote('yjs-note-snapshot');
+    expect(localNote?.content).toBe('Original Local Content');
+    expect(fileMock['notes/yjs_db.md']).toBe('Original Local Content');
+  });
+
+  it('creates conflict copy on push conflict instead of dropping the local edit', async () => {
+    await localDB.putSpace({
+      id: 'test-space-id',
+      owner_id: 'test-user-id',
+      title: 'Test Space',
+      description: null,
+      helps_with: null,
+      is_public: false,
+      visibility: 'public',
+      forked_from: null,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    }, false);
+
+    await localDB.putNote({
+      id: 'note-conflict-copy',
+      space_id: 'test-space-id',
+      vault_id: null,
+      last_client_id: 'client-1',
+      version: 2,
+      title: 'Conflict Copy Note',
+      path: 'ConflictCopy.md',
+      content: 'My Divergent Local Edit',
+      pinned: false,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      deleted: false,
+    }, true);
+
+    fileMock['ConflictCopy.md'] = 'My Divergent Local Edit';
+
+    remoteNotesForMock = [{
+      id: 'note-conflict-copy',
+      space_id: 'test-space-id',
+      version: 3,
+      content: 'Newer Remote Edit',
+      content_hash: 'different-remote-hash',
+      updated_at: new Date().toISOString(),
+    }];
+
+    const pushedCount = await engine.pushChanges();
+    expect(pushedCount).toBe(1);
+
+    expect(fileMock['ConflictCopy (conflict).md']).toBe('My Divergent Local Edit');
+
+    const allNotes = await localDB.getNotes('test-space-id');
+    const conflictNote = allNotes.find(n => n.path === 'ConflictCopy (conflict).md');
+    expect(conflictNote).toBeDefined();
+    expect(conflictNote?.content).toBe('My Divergent Local Edit');
+
+    const queue = await localDB.getSyncQueue();
+    expect(queue.length).toBe(1);
+    expect(queue[0].record_id).toBe(conflictNote?.id);
   });
 });

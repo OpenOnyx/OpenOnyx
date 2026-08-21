@@ -226,7 +226,7 @@ const editorAnnotationEmptyTextClass =
 const editorAnnotationGenerateClass =
   "flex cursor-pointer items-center gap-1.5 rounded border-0 bg-[var(--accent-color,#3b82f6)] px-3 py-1.5 text-xs font-medium text-white";
 const editorContainerClass =
-  "editor-container relative flex min-h-0 flex-1 flex-row overflow-auto";
+  "editor-container relative flex min-h-0 flex-1 flex-row overflow-hidden";
 const editorLightboxBackdropClass =
   "fixed inset-0 z-[9999] flex items-center justify-center bg-[color-mix(in_srgb,var(--bg-primary)_45%,transparent)] backdrop-blur-[3px]";
 const editorLightboxModalClass =
@@ -6236,6 +6236,7 @@ export function Editor({
               onContextMenu={handleContextMenu}
               style={{
                 flex: viewMode === "split" ? `0 0 ${editorWidth}%` : 1,
+                minWidth: 0,
                 height: "100%",
                 overflow: "auto",
                 display:
@@ -6259,6 +6260,7 @@ export function Editor({
                     viewMode === "split"
                       ? `0 0 calc(${100 - editorWidth}% - 4px)`
                       : 1,
+                  minWidth: 0,
                   overflow: "auto",
                   height: "100%",
                   ...(settings?.backgroundImage ? {} : { backgroundColor: "var(--bg-primary)" }),

@@ -56,6 +56,23 @@ export function normalizeSyncPath(filePath: string): string {
 }
 
 /**
+ * Check if a Yjs snapshot exists in IndexedDB for the given space and note path.
+ */
+export async function hasYjsSnapshot(spaceId: string | null, cleanPath: string): Promise<boolean> {
+  if (!spaceId) return false;
+  if (typeof window === 'undefined' || !window.indexedDB || !window.indexedDB.databases) {
+    return false;
+  }
+  const dbName = `yjs-${spaceId}-${cleanPath.replace(/[/\\:]/g, '_')}`;
+  try {
+    const dbs = await window.indexedDB.databases();
+    return dbs.some(db => db.name === dbName);
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Get the active Supabase client -- either the user's own instance
  * or the default OpenOnyx instance.
  */
@@ -316,6 +333,56 @@ export class SyncEngine {
     return { pushed, pulled };
   }
 
+  private async saveConflictCopy(payload: any) {
+    try {
+      if (!payload.path || !payload.content) return;
+      const ext = payload.path.endsWith('.canvas') ? '.canvas' : '.md';
+      const basePath = payload.path.slice(0, -ext.length);
+      const conflictPath = `${basePath} (conflict)${ext}`;
+
+      const api = getAPI();
+      if (conflictPath.includes('/')) {
+        const parentDir = conflictPath.split('/').slice(0, -1).join('/');
+        try { await api.createDirectory(parentDir); } catch { /* exists */ }
+      }
+
+      await api.writeFile(conflictPath, payload.content);
+
+      const conflictId = uuidv4();
+      const conflictTitle = conflictPath.split('/').pop()?.replace(/\.(md|canvas)$/, '') || conflictPath;
+      const now = new Date().toISOString();
+
+      const conflictNote = {
+        id: conflictId,
+        space_id: payload.space_id,
+        vault_id: null,
+        last_client_id: this.clientId,
+        version: 1,
+        last_modified: now,
+        client_id: this.clientId,
+        content_hash: await sha256Hex(payload.content),
+        title: conflictTitle,
+        path: conflictPath,
+        content: payload.content,
+        pinned: false,
+        created_at: now,
+        updated_at: now,
+        deleted: false,
+        is_canvas: payload.is_canvas,
+      };
+
+      await localDB.putNote(conflictNote, true);
+
+      window.dispatchEvent(new CustomEvent('openonyx:file-written', {
+        detail: { path: conflictPath, content: payload.content }
+      }));
+
+      console.info(`[SyncEngine] Preserved rejected edit as conflict copy: ${conflictPath}`);
+    } catch (err) {
+      console.error('[SyncEngine] Failed to save conflict copy:', err);
+    }
+  }
+
   // ── Push (Local -> Cloud) ──────────────────────────────────────────────────
 
   public async pushChanges(): Promise<number> {
@@ -415,6 +482,9 @@ export class SyncEngine {
                   const localVersion = normalizeVersion(payload.version);
                   if (remoteVersion > localVersion) {
                     console.warn(`[SyncEngine][push_rejected_version] Note ID: ${payload.id} | Remote: v${remoteVersion} | Local: v${localVersion}`);
+                    if (remote.content_hash !== payload.content_hash) {
+                      await this.saveConflictCopy(payload);
+                    }
                     await localDB.removeSyncItem(originalItem.id);
                     count++;
                     continue;
@@ -428,6 +498,7 @@ export class SyncEngine {
                     (remote as any).client_id !== payload.client_id
                   ) {
                     console.warn(`[SyncEngine][push_rejected_equal_version_hash_conflict] Note ID: ${payload.id} | Version: ${localVersion}`);
+                    await this.saveConflictCopy(payload);
                     await localDB.removeSyncItem(originalItem.id);
                     count++;
                     continue;
@@ -436,6 +507,9 @@ export class SyncEngine {
                   const localTime = new Date(payload.updated_at).getTime();
                   if (remoteVersion === 0 && remoteTime > localTime) {
                     console.warn(`[SyncEngine] Conflict detected for note ${payload.id}: remote is newer (${remote.updated_at} > ${payload.updated_at}). Skipping push to let pull take precedence.`);
+                    if (remote.content_hash !== payload.content_hash) {
+                      await this.saveConflictCopy(payload);
+                    }
                     // Remove from sync queue so we can pull the newer version
                     await localDB.removeSyncItem(originalItem.id);
                     count++;
@@ -530,6 +604,15 @@ export class SyncEngine {
     if (notes) {
       for (const remote of notes) {
         const cleanPath = normalizeSyncPath(remote.path);
+
+        const { yDocManager } = await import('./yDocManager');
+        const hasActiveYjs = yDocManager.hasDoc(cleanPath, this.activeSpaceId) ||
+          await hasYjsSnapshot(this.activeSpaceId, cleanPath);
+        if (hasActiveYjs) {
+          console.info(`[SyncEngine] Skipping LWW overwrite for Yjs-managed note: ${cleanPath}`);
+          continue;
+        }
+
         let remoteNote: LocalNote;
         try {
           remoteNote = await toLocalNote(remote, isPrivateSpace ? this.activeSpaceId : undefined);
