@@ -27,6 +27,8 @@ const statusItemClass =
   "inline-flex h-[26px] shrink-0 items-center gap-1.5 whitespace-nowrap px-1.5 text-[12px] leading-none text-[var(--status-bar-text-color)]";
 const crumbClass =
   "inline-flex max-w-[160px] items-center gap-1 overflow-hidden text-ellipsis whitespace-nowrap text-[12px] text-[var(--text-secondary)]";
+const crumbButtonClass =
+  `${crumbClass} h-[22px] cursor-pointer rounded-[4px] border-0 bg-transparent px-1 transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] focus-visible:outline focus-visible:outline-1 focus-visible:outline-[var(--accent-primary)]`;
 const crumbSepClass = "mx-0.5 text-[var(--text-faint)] opacity-70";
 
 interface StatusBarProps {
@@ -41,6 +43,7 @@ interface StatusBarProps {
   showEditingMode?: boolean;
   backlinkCount?: number;
   syncStatus?: SyncStatus | null;
+  onRevealFolder?: (path: string) => void;
 }
 
 export function StatusBar({
@@ -53,6 +56,7 @@ export function StatusBar({
   showEditingMode = true,
   backlinkCount = 0,
   syncStatus = null,
+  onRevealFolder,
 }: StatusBarProps) {
   const wordCount = content ? countWords(content) : 0;
   const charCount = content ? countCharacters(content) : 0;
@@ -65,27 +69,54 @@ export function StatusBar({
     pathParts.length > 0
       ? pathParts[pathParts.length - 1].replace(/\.md$/, "").replace(/\.canvas$/, "")
       : activeTab?.name || "";
+  const canNavigateBreadcrumbs = Boolean(onRevealFolder && activeTab && pathParts.length > 0);
+  const copyActivePath = () => {
+    if (!activeTab?.path || activeTab.path.startsWith("__")) return;
+    void navigator.clipboard?.writeText(activeTab.path);
+  };
 
   return (
     <div className={statusBarClass}>
       <div className={statusGroupClass} aria-label="Breadcrumbs">
-        <span className={statusItemClass} title="Root">
+        <button
+          type="button"
+          className={`${statusItemClass} cursor-pointer rounded-[4px] border-0 bg-transparent hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]`}
+          title="Reveal root folder"
+          aria-label="Reveal root folder"
+          onClick={() => onRevealFolder?.("")}
+          disabled={!canNavigateBreadcrumbs}
+        >
           <Home size={13} strokeWidth={1.75} />
-        </span>
-        {pathParts.slice(0, -1).map((part, i) => (
-          <React.Fragment key={`${part}-${i}`}>
-            <span className={crumbSepClass}>›</span>
-            <span className={crumbClass} title={part}>
-              {part}
-            </span>
-          </React.Fragment>
-        ))}
+        </button>
+        {pathParts.slice(0, -1).map((part, i) => {
+          const folderPath = pathParts.slice(0, i + 1).join("/");
+          return (
+            <React.Fragment key={folderPath}>
+              <span className={crumbSepClass}>›</span>
+              <button
+                type="button"
+                className={crumbButtonClass}
+                title={`Reveal ${folderPath}`}
+                aria-label={`Reveal ${folderPath}`}
+                onClick={() => onRevealFolder?.(folderPath)}
+              >
+                {part}
+              </button>
+            </React.Fragment>
+          );
+        })}
         {noteName && (
           <>
             <span className={crumbSepClass}>›</span>
-            <span className={`${crumbClass} font-medium text-[var(--text-primary)]`}>
+            <button
+              type="button"
+              className={`${crumbButtonClass} font-medium text-[var(--text-primary)]`}
+              title="Copy note path"
+              aria-label="Copy note path"
+              onClick={copyActivePath}
+            >
               {noteName}
-            </span>
+            </button>
           </>
         )}
       </div>
