@@ -9,7 +9,7 @@ interface NewTabViewProps {
 
 export function NewTabView({ onNewNote, onSearch }: NewTabViewProps) {
   return (
-    <div className="flex items-center justify-center h-full w-full bg-[var(--bg-primary)] select-none">
+    <div className="onyx-new-tab-view flex items-center justify-center h-full w-full bg-[var(--bg-primary)] select-none">
       <div className="flex flex-col items-center gap-6">
         <div className="flex flex-col gap-2.5 w-full max-w-[280px]">
           <button

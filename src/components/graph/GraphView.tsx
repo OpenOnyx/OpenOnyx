@@ -497,9 +497,13 @@ export function GraphView({
 
   // Load graph data from API
   useEffect(() => {
-    if (!vaultPath) return;
+    if (!vaultPath) {
+      setGraphData(null);
+      return;
+    }
 
     const loadGraph = async () => {
+      setGraphData(null);
       setLoading(true);
       try {
         const data = await api.getGraphData();

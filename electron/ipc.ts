@@ -8,8 +8,8 @@
 import { app, IpcMain, BrowserWindow, clipboard, dialog, shell } from 'electron';
 import * as fs from 'fs/promises';
 import * as nodePath from 'path';
-import { FileSystemManager } from './fileSystem';
-import { SearchEngine } from './search';
+import { FileSystemManager } from './fileSystem.js';
+import { SearchEngine } from './search.js';
 
 export function registerIpcHandlers(
   ipcMain: IpcMain,

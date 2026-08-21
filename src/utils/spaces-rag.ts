@@ -373,7 +373,34 @@ export interface RetrievedChunk {
   similarity: number;
 }
 
-function isComprehensiveSpaceQuery(query: string): boolean {
+export function mapCloudRpcChunk(
+  rc: {
+    id: string;
+    note_title?: string;
+    content?: string;
+    similarity?: number;
+    path?: string;
+    note_path?: string;
+  },
+  spaceId: string,
+): RetrievedChunk {
+  return {
+    chunk: {
+      id: rc.id,
+      spaceId,
+      notePath: rc.path || rc.note_path || "",
+      noteTitle: rc.note_title || "Unknown Note",
+      chunkText: rc.content || "",
+      vector: [],
+      startOffset: 0,
+      endOffset: 0,
+    },
+    similarity: rc.similarity ?? 0,
+  };
+}
+
+export function isComprehensiveSpaceQuery(query: string): boolean {
+
   const normalized = query.trim().toLowerCase();
   if (!normalized) return false;
 
@@ -386,7 +413,7 @@ function isComprehensiveSpaceQuery(query: string): boolean {
   return overviewQuery || wholeVaultTask;
 }
 
-function getTopLevelFolder(notePath: string): string {
+export function getTopLevelFolder(notePath: string): string {
   const normalized = notePath.replace(/\\/g, "/").replace(/^\/+/, "");
   const firstSegment = normalized.split("/")[0]?.trim();
   if (!firstSegment || firstSegment === normalized) return "(root)";
@@ -512,19 +539,7 @@ export async function retrieveChunks(
       if (cloudChunks && cloudChunks.length > 0) {
         console.log(`[SpacesRAG] Semantic cloud search returned ${cloudChunks.length} chunks.`);
         for (const rc of cloudChunks) {
-          results.push({
-            chunk: {
-              id: rc.id,
-              spaceId,
-              notePath: "", // Cloud notes don't have local paths
-              noteTitle: rc.note_title || "Unknown Note",
-              chunkText: rc.content,
-              vector: [],
-              startOffset: 0,
-              endOffset: 0,
-            },
-            similarity: rc.similarity,
-          });
+          results.push(mapCloudRpcChunk(rc, spaceId));
         }
         
         return options?.diversify

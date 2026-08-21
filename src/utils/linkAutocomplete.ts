@@ -12,6 +12,7 @@ import {
   Completion,
 } from "@codemirror/autocomplete";
 import { EditorView } from "@codemirror/view";
+import { filterWikiLinkNotes } from "./wikiLinks";
 
 interface NoteInfo {
   name: string;
@@ -54,31 +55,7 @@ function wikiLinkCompletion(
   const query = before.text.slice(2).trim().toLowerCase(); // Remove [[
   const from = before.from + 2; // Position after [[
 
-  // Filter and sort notes by relevance matching name or path
-  let matches = availableNotes
-    .filter((note) => {
-      if (!query) return true; // Show all notes when query is empty
-      const lowerName = note.name.toLowerCase();
-      const lowerPath = note.path.toLowerCase();
-      return lowerName.includes(query) || lowerPath.includes(query);
-    })
-    .map((note) => {
-      const lowerName = note.name.toLowerCase();
-      const lowerPath = note.path.toLowerCase();
-      let score = 4;
-      if (!query) score = 0;
-      else if (lowerName === query) score = 0;
-      else if (lowerName.startsWith(query)) score = 1;
-      else if (lowerName.includes(query)) score = 2;
-      else if (lowerPath.includes(query)) score = 3;
-
-      return { note, score };
-    })
-    .sort((a, b) => {
-      if (a.score !== b.score) return a.score - b.score;
-      return a.note.name.localeCompare(b.note.name);
-    })
-    .slice(0, 30); // Limit results
+  let matches = filterWikiLinkNotes(availableNotes, query).map((note) => ({ note }));
 
   if (matches.length === 0 && query.length > 0) {
     // Offer to create a new note

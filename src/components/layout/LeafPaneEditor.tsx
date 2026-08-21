@@ -11,7 +11,7 @@ import { type LinkType } from "../ai/SuggestionBanner";
 import type { EnrichedSuggestion } from "../../utils/suggestion-enrichment";
 import { authManager } from "../../lib/auth";
 import { collaborationEngine, type RemoteDocumentMeta } from "../../lib/collaborationEngine";
-import { syncEngine } from "../../lib/syncEngine";
+import { syncEngine, normalizeSyncPath } from "../../lib/syncEngine";
 import { localDB } from "../../lib/localdb";
 import { supabase } from "../../lib/supabase";
 import type { CollabOperation, CursorPresence } from "../../utils/collabOperations";
@@ -19,7 +19,9 @@ import { operationToChangeSpec, clampOperation } from "../../utils/collabOperati
 import { setCursorsEffect } from "../../utils/remoteCursorsPlugin";
 import { normalizeVersion, sha256Hex } from "../../utils/collabDocument";
 import { Transaction } from "@codemirror/state";
+import type { Extension } from "@codemirror/state";
 import type { EditorView } from "@codemirror/view";
+import { yDocManager, type OpenDocResult } from "../../lib/yDocManager";
 
 const api = getAPI();
 
@@ -67,6 +69,7 @@ interface LeafPaneEditorProps {
   onPromptInput?: (title: string, message: string, defaultValue?: string) => Promise<string | null>;
   onShowToast?: (message: string, type?: "success" | "error" | "info") => void;
   canCopyAbsolutePath?: boolean;
+  onFocusLeaf?: (leafId: string) => void;
 }
 
 export function LeafPaneEditor({
@@ -112,6 +115,7 @@ export function LeafPaneEditor({
   onPromptInput,
   onShowToast,
   canCopyAbsolutePath,
+  onFocusLeaf,
 }: LeafPaneEditorProps) {
   const [content, setContent] = useState<string>("");
   const [contentPath, setContentPath] = useState<string>(activeTab.path);
@@ -144,6 +148,71 @@ export function LeafPaneEditor({
   // Ref to the CodeMirror EditorView -- needed to apply remote operations
   // directly without going through React state (which would cause full-doc replace).
   const editorViewRef = useRef<EditorView | null>(null);
+
+  // ── Yjs CRDT Feature Flag ───────────────────────────────────────────────────
+  // Enabled by default for all collaborative spaces. Can be disabled only if
+  // explicitly set to 'false' in localStorage.
+  const useCRDT = typeof localStorage !== 'undefined'
+    && localStorage.getItem('experimentalCRDT') !== 'false'
+    && !!collaborationEngine.activeSpaceId
+    && !collaborationEngine.collabPaused;
+
+  const [yCollabExtension, setYCollabExtension] = useState<Extension | undefined>(undefined);
+  const yDocResultRef = useRef<OpenDocResult | null>(null);
+
+  // Open/close Y.Doc when CRDT mode activates/deactivates or tab changes
+  useEffect(() => {
+    if (!useCRDT || activeTab.path === '__new_tab__') {
+      setYCollabExtension(undefined);
+      return;
+    }
+
+    const spaceId = collaborationEngine.activeSpaceId;
+    if (!spaceId) {
+      setYCollabExtension(undefined);
+      return;
+    }
+
+    let cancelled = false;
+
+    (async () => {
+      try {
+        // Dynamically import y-codemirror.next to keep bundle size down
+        // when CRDT is not active.
+        const [{ yCollab, yUndoManagerKeymap }, { keymap }] = await Promise.all([
+          import('y-codemirror.next'),
+          import('@codemirror/view'),
+        ]);
+
+        const result = await yDocManager.openDoc(activeTab.path, spaceId);
+        if (cancelled) {
+          yDocManager.closeDoc(activeTab.path, spaceId);
+          return;
+        }
+
+        yDocResultRef.current = result;
+
+        const ext: Extension = [
+          yCollab(result.text, result.awareness, { undoManager: result.undoManager }),
+          keymap.of(yUndoManagerKeymap),
+        ];
+        console.log(`[YJS] Bound CodeMirror for note: ${activeTab.path} (guid: ${result.doc.guid})`);
+        setYCollabExtension(ext);
+      } catch (err) {
+        console.error('[CRDT] Failed to open Y.Doc:', err);
+        setYCollabExtension(undefined);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      if (yDocResultRef.current && spaceId) {
+        yDocManager.closeDoc(activeTab.path, spaceId);
+        yDocResultRef.current = null;
+      }
+      setYCollabExtension(undefined);
+    };
+  }, [useCRDT, activeTab.path]);
 
   const handleEditorViewReady = useCallback((view: EditorView | null) => {
     editorViewRef.current = view;
@@ -621,7 +690,7 @@ export function LeafPaneEditor({
   // ── Receive Remote Operations ───────────────────────────────────────────────
 
   useEffect(() => {
-    if (activeTab.path === "__new_tab__") return;
+    if (useCRDT || activeTab.path === "__new_tab__") return;
 
     const unsub = collaborationEngine.onRemoteOperation((path, ops) => {
       if (path !== activeTab.path) return;
@@ -662,18 +731,6 @@ export function LeafPaneEditor({
       const lastOp = ops[ops.length - 1];
       void sha256Hex(nextContent).then((hash) => {
         docHashRef.current = hash;
-        if (lastOp?.content_hash && lastOp.content_hash !== hash) {
-          // Log for debugging but do NOT enter fail-safe -- during concurrent
-          // edits the local doc will differ from the sender's snapshot. Schedule
-          // a background resync to eventually converge.
-          console.info("[Collab][hash_drift_after_ops]", {
-            path,
-            expected: lastOp.content_hash,
-            actual: hash,
-            version: docVersionRef.current,
-          });
-          void collaborationEngine.triggerSafeResync(path, docVersionRef.current);
-        }
         setContent(nextContent);
         latestContentRef.current = nextContent;
         latestContentPathRef.current = activeTab.path;
@@ -785,7 +842,7 @@ export function LeafPaneEditor({
   // ── Full-Content Fallback (DB-level sync via postgres_changes) ──────────────
 
   useEffect(() => {
-    if (activeTab.path === "__new_tab__") return;
+    if (useCRDT || activeTab.path === "__new_tab__") return;
 
     const unsub = collaborationEngine.onRemoteDocumentUpdate((path, remoteContent, _senderClientId, isBroadcast, meta) => {
       if (path !== activeTab.path) return;
@@ -807,15 +864,6 @@ export function LeafPaneEditor({
         return;
       }
 
-      if (dbSyncTimer.current !== null) {
-        console.warn("[Collab][full_doc_delayed_local_pending]", {
-          path,
-          incomingVersion,
-          currentVersion,
-        });
-        void collaborationEngine.triggerSafeResync(path, currentVersion);
-        return;
-      }
 
       void sha256Hex(remoteContent).then((hash) => {
         if (meta?.content_hash && meta.content_hash !== hash) {
@@ -1117,13 +1165,17 @@ export function LeafPaneEditor({
   const currentUserId = currentUser?.id;
   const isCollabSpace = !!collaborationEngine.activeSpaceId && !collaborationEngine.collabPaused && !collabFailSafe;
 
-  const activeEditors = [...(activeUsers || []).filter(u => u.activeNoteId === activeTab.path && u.isEditing)];
+  const normalizedActivePath = normalizeSyncPath(activeTab.path);
+  const activeEditors = [...(activeUsers || []).filter(u => {
+    if (!u.activeNoteId) return true;
+    return normalizeSyncPath(u.activeNoteId) === normalizedActivePath;
+  })];
   const editorContent =
     contentPath === activeTab.path
       ? content
       : contentCacheRef.current.get(activeTab.path) ?? "";
   
-  if (isCollabSpace && currentUser && activeTab.path !== "__new_tab__" && isSelfTyping) {
+  if (isCollabSpace && currentUser && activeTab.path !== "__new_tab__") {
     const hasSelf = activeEditors.some(u => u.id === currentUserId);
     if (!hasSelf) {
       const username = currentUser.email?.split('@')[0] || 'Guest';
@@ -1132,7 +1184,7 @@ export function LeafPaneEditor({
         email: currentUser.email || '',
         name: `You (${username})`,
         color: '#10b981',
-        isEditing: true,
+        isEditing: isSelfTyping,
         activeNoteId: activeTab.path,
       });
     }
@@ -1169,7 +1221,19 @@ export function LeafPaneEditor({
   }
 
   return (
-    <div className="leaf-editor-host relative flex h-full min-h-0 flex-col">
+    <div
+      className="leaf-editor-host relative flex h-full min-h-0 min-w-0 flex-col overflow-hidden"
+      onMouseDownCapture={() => {
+        if (!isFocused && onFocusLeaf) {
+          onFocusLeaf(leaf.id);
+        }
+      }}
+      onFocusCapture={() => {
+        if (!isFocused && onFocusLeaf) {
+          onFocusLeaf(leaf.id);
+        }
+      }}
+    >
       <EditorHeader
         filePath={activeTab.path}
         viewMode={viewMode}
@@ -1223,6 +1287,7 @@ export function LeafPaneEditor({
           activeTabId={activeTab.id}
           content={editorContent}
           viewMode={viewMode}
+          isFocused={isFocused}
           availableNotes={allNoteNames}
           onAdjustFontSize={onAdjustFontSize}
           onTabSelect={(id) => onTabSelect(leaf.id, id)}
@@ -1243,15 +1308,16 @@ export function LeafPaneEditor({
           theme={theme}
           settings={settings}
           onCollabOperations={isCollabSpace ? handleCollabOperations : undefined}
-          onCursorChange={isCollabSpace ? handleCursorChange : undefined}
-          remoteCursors={isCollabSpace ? remoteCursors : undefined}
-          localClientId={isCollabSpace ? collaborationEngine.currentClientId : undefined}
+          onCursorChange={isCollabSpace && !useCRDT ? handleCursorChange : undefined}
+          remoteCursors={isCollabSpace && !useCRDT ? remoteCursors : undefined}
+          localClientId={isCollabSpace && !useCRDT ? collaborationEngine.currentClientId : undefined}
           onEditorViewReady={handleEditorViewReady}
           getViewState={getViewState}
           onViewStateChange={onViewStateChange}
           readOnly={collabFailSafe}
           onGenerateInsight={onGenerateInsight}
           isGeneratingInsight={isGeneratingInsight}
+          yCollabExtension={yCollabExtension}
         />
         {isLoading && (
           <div

@@ -10,10 +10,16 @@ env.NODE_ENV = env.NODE_ENV || 'development';
 env.VITE_DEV_SERVER_URL = env.VITE_DEV_SERVER_URL || 'http://localhost:5173';
 
 const electronMainPath = path.join(process.cwd(), 'dist-electron', 'main.js');
+const electronMainMjsPath = path.join(process.cwd(), 'dist-electron', 'main.mjs');
 if (!fs.existsSync(electronMainPath)) {
-  console.error(`Electron entry file not found: ${electronMainPath}`);
-  console.error('Run "npm run build:electron" or "bun run build:electron" and try again.');
-  process.exit(1);
+  if (fs.existsSync(electronMainMjsPath)) {
+    fs.copyFileSync(electronMainMjsPath, electronMainPath);
+  } else {
+    console.error(`Electron entry file not found: ${electronMainPath}`);
+    console.error(`Electron entry file not found: ${electronMainMjsPath}`);
+    console.error('Run "npm run build:electron" or "bun run build:electron" and try again.');
+    process.exit(1);
+  }
 }
 
 function findElectronInstallScript() {

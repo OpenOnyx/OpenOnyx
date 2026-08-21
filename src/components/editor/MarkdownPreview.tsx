@@ -460,7 +460,23 @@ function protectFencedCodeBlocks(text: string): {
       value.replace(/\uE000CODE_BLOCK_(\d+)\uE000/g, (_, index) => blocks[Number(index)] || ""),
   };
 }
+function protectInlineCode(text: string): {
+  text: string;
+  restore: (value: string) => string;
+} {
+  const blocks: string[] = [];
+  const protectedText = text.replace(/`[^`\n]+`/g, (match) => {
+    const token = `\uE001INLINE_CODE_${blocks.length}\uE001`;
+    blocks.push(match);
+    return token;
+  });
 
+  return {
+    text: protectedText,
+    restore: (value: string) =>
+      value.replace(/\uE001INLINE_CODE_(\d+)\uE001/g, (_, index) => blocks[Number(index)] || ""),
+  };
+}
 export function MarkdownPreview({
   content,
   onLinkClick,
@@ -661,18 +677,35 @@ export function MarkdownPreview({
     if (!debouncedContent) return "";
 
     let processed = debouncedContent;
+    // Protect fenced code blocks first
     const protectedCode = protectFencedCodeBlocks(processed);
     processed = protectedCode.text;
-    processed = normalizeMarkdownTables(processed);
 
-    // Convert url to preview (iframe) - standalone URLs or markdown links to ANY URL
+    // Protect inline code blocks next
+    const protectedInline = protectInlineCode(processed);
+    processed = protectedInline.text;
+
+    // Convert ==highlight== to <mark>highlight</mark> (multiline and boundary-aware)
     processed = processed.replace(
-      /^(?:[ \t]*)(https?:\/\/[^\s]+)(?:[ \t]*)$/gm,
-      (match, url) => `<div class="url-preview-placeholder" data-url="${url.trim()}"></div>`
+      /(^|\s)==([^\s=](?:(?:[^\n=]|\n(?!\n))*?[^\s=])?)==(?=\s|[.,;:!?\x27\x22]|$)/g,
+      "$1<mark>$2</mark>"
     );
 
+    // Restore inline and fenced code blocks
+    processed = protectedInline.restore(processed);
+    processed = protectedCode.restore(processed);
+
+    // Swap block markdown markers and opening HTML tags to ensure correct rendering (e.g. <span style="...">## Heading</span> -> ## <span style="...">Heading</span>)
     processed = processed.replace(
-      /^(?:[ \t]*)\[[^\]]*\]\((https?:\/\/[^\s)]+)\)(?:[ \t]*)$/gm,
+      /^([ \t]*)(<[a-zA-Z]+[^>]*>)(#{1,6}\s+|[-*+]\s+|\d+\.\s+|>\s+)/gm,
+      "$1$3$2"
+    );
+
+    processed = normalizeMarkdownTables(processed);
+
+    // Convert url to preview (iframe) - standalone URLs to ANY URL
+    processed = processed.replace(
+      /^(?:[ \t]*)(https?:\/\/[^\s]+)(?:[ \t]*)$/gm,
       (match, url) => `<div class="url-preview-placeholder" data-url="${url.trim()}"></div>`
     );
 
@@ -704,10 +737,16 @@ export function MarkdownPreview({
       },
     );
 
-    // Process tags
+    // Process tags (ignoring hex color codes)
     processed = processed.replace(
-      /(?:^|\s)(#[a-zA-Z][a-zA-Z0-9_/-]*)/gm,
-      ' <span class="tag" data-tag="$1">$1</span>',
+      /(^|\s)(#[a-zA-Z][a-zA-Z0-9_/-]*)/g,
+      (match, prefix, tag) => {
+        const hexColorRegex = /^#[a-fA-F0-9]{3,4}$|^#[a-fA-F0-9]{6}$|^#[a-fA-F0-9]{8}$/;
+        if (hexColorRegex.test(tag)) {
+          return match;
+        }
+        return `${prefix}<span class="tag" data-tag="${tag}">${tag}</span>`;
+      }
     );
 
     // Render markdown image metadata controls

@@ -1,7 +1,7 @@
 # OpenOnyx
 
 <p align="center">
-  <img width="1600" alt="OpenOnyx desktop workspace" src="docs/images/banner.png" />
+  <img width="1600" alt="OpenOnyx desktop workspace" src="docs/images/banner.webp" />
 </p>
 
 <p align="center">
@@ -20,22 +20,6 @@ OpenOnyx is a professional desktop knowledge management app built around plain M
 
 The app is built with Electron, React, TypeScript, CodeMirror, D3, Tailwind CSS, Transformers.js, IndexedDB, and Supabase.
 
-## Contents
-
-- [Why OpenOnyx](#why-openonyx)
-- [Feature Tour](#feature-tour)
-- [Quick Start](#quick-start)
-- [Configuration](#configuration)
-- [Development](#development)
-- [Testing](#testing)
-- [Architecture](#architecture)
-- [Project Structure](#project-structure)
-- [Plugin Compatibility](#plugin-compatibility)
-- [Privacy and Security](#privacy-and-security)
-- [Keyboard Shortcuts](#keyboard-shortcuts)
-- [Documentation](#documentation)
-- [Contributing](#contributing)
-- [License](#license)
 
 ## Why OpenOnyx
 
@@ -63,6 +47,7 @@ Key capabilities:
 - Backlinks, outgoing links, unlinked mentions, tags, outline, and properties panels
 - Split panes, multi-tab workspaces, tab groups, and recent vault history
 - Vim mode support with editor commands for common workflows
+- Interactive WYSIWYG table editor that replaces raw pipe-syntax markdown with an inline-editable table, complete with row/column insertion tools and cell caret synchronization.
 
 <p align="center">
   <img width="1200" alt="Markdown workspace" src="docs/images/markdown-workspace.png" />
@@ -209,7 +194,27 @@ Key capabilities:
 - Command palette, modals, settings pages, and status bar
 - Logo and icon assets in `public/`
 
-### 11. Export and Compatibility Tooling
+<p align="center">
+  <img width="1200" alt="Plugin marketplace" src="docs/images/themes.png" />
+</p>
+
+
+### 11. Custom Wallpaper Backgrounds
+
+Customize your environment by uploading any custom image to serve as the application-level wallpaper. Panel translucency overlays automatically adjust to blend with your background.
+
+Key capabilities:
+
+- Upload and apply any custom image files as the application background
+- Adjustable background blur controller to soften the wallpaper details
+- Adjustable background opacity controller to maintain perfect typography contrast
+- Fully translucent panel options for the editor, left sidebar, and right sidebar panels
+
+<p align="center">
+  <img width="1200" alt="Wallpaper Background" src="docs/images/wallpaper-background.png" />
+</p>
+
+### 12. Export and Compatibility Tooling
 
 OpenOnyx includes compatibility infrastructure for export plugins and plugin runtimes that expect desktop APIs.
 
@@ -344,19 +349,28 @@ Useful development environment variables:
 
 ## Testing
 
+### All-in-One Verification
+Contributors can verify their changes against compilation, API definitions, document processors, unit tests, integration sandboxes, and build integrity configurations using a single command. This command automatically sets up any missing prerequisites (like Pandoc WASM and plugin fixtures) to ensure execution succeeds:
+
 ```bash
-npm run lint
-npm run test:canvas-compat
-npm run test:obsidian-api
-npm run test:plugin-runtime
-npm run test:plugin-compat
+npm run test:all-checks
 ```
 
-Plugin compatibility tests can fetch real plugin fixtures:
+### Running Specific Tests
+You can also trigger individual test runs manually:
 
 ```bash
-npm run fetch:plugin-fixtures
-npm run test:plugin-bundles
+# Compilation check / Type check
+npm run lint
+
+# Test the settings and build installer packaging configuration
+npx vitest run tests/build-integrity.test.ts
+
+# Test general features (tab groups, embedding cache, etc.)
+npx vitest run tests/tab-groups.test.ts tests/embedding-cache.test.ts
+
+# Test Obsidian API sandbox compatibility runtime layer
+npm run test:plugin-runtime
 ```
 
 Pandoc-backed export compatibility:
@@ -486,14 +500,19 @@ See [`docs/obsidian-plugin-compatibility.md`](docs/obsidian-plugin-compatibility
 
 ## Contributing
 
-1. Fork the repository.
-2. Create a focused feature branch.
-3. Install dependencies with `npm install`.
-4. Make the change using the existing architecture and style.
-5. Run the relevant checks, at minimum `npm run lint`.
-6. Open a pull request with a clear description of the behavior changed and the verification performed.
+We welcome community contributions! Please read our [Contributing Guide](CONTRIBUTING.md) for details on setting up your local environment, development workflows, and pull request guidelines.
 
-For changes that touch plugins, Spaces, sync, AI retrieval, filesystem behavior, or Electron IPC, include the matching compatibility or integration tests where practical.
+Please review our [Code of Conduct](CODE_OF_CONDUCT.md) before participating in our community.
+
+For security concerns, please read our [Security Policy](SECURITY.md).
+
+### Quick Contribution Steps:
+
+1. Fork the repository.
+2. Create a focused feature branch (`git checkout -b feature/my-feature`).
+3. Install dependencies with `npm install`.
+4. Make changes and verify compilation with `npm run lint`.
+5. Open a pull request against `main`.
 
 ## License
 

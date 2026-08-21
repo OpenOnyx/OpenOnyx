@@ -12,7 +12,7 @@
 
 import React, { useEffect, useRef, useCallback, useState, useMemo } from "react";
 import { createPortal } from "react-dom";
-import { X, Lightbulb, BookOpen, Pen, RefreshCw, Sparkles } from "lucide-react";
+import { X, Lightbulb, BookOpen, Pen, RefreshCw, Sparkles, ZoomIn, ZoomOut, RotateCcw } from "lucide-react";
 import { Compartment, EditorState, Transaction, StateEffect, StateField, EditorSelection } from "@codemirror/state";
 import {
   EditorView,
@@ -39,6 +39,7 @@ import { tags as t } from "@lezer/highlight";
 import { Tab, ViewMode } from "../../types";
 import { MarkdownPreview } from "./MarkdownPreview";
 import { SearchReplace } from "./SearchReplace";
+import { getDisplayDomain } from "../../utils/urlHelper";
 import {
   Editor as ObsidianEditor,
   MarkdownView,
@@ -225,7 +226,7 @@ const editorAnnotationEmptyTextClass =
 const editorAnnotationGenerateClass =
   "flex cursor-pointer items-center gap-1.5 rounded border-0 bg-[var(--accent-color,#3b82f6)] px-3 py-1.5 text-xs font-medium text-white";
 const editorContainerClass =
-  "editor-container relative flex min-h-0 flex-1 flex-row overflow-auto";
+  "editor-container relative flex min-h-0 flex-1 flex-row overflow-hidden";
 const editorLightboxBackdropClass =
   "fixed inset-0 z-[9999] flex items-center justify-center bg-[color-mix(in_srgb,var(--bg-primary)_45%,transparent)] backdrop-blur-[3px]";
 const editorLightboxModalClass =
@@ -278,6 +279,15 @@ interface EditorProps {
   readOnly?: boolean;
   onGenerateInsight?: () => void;
   isGeneratingInsight?: boolean;
+  isFocused?: boolean;
+  /**
+   * When provided, the editor uses Yjs CRDT collaboration instead of the legacy
+   * operation-based system. This Extension array should contain the output of
+   * yCollab() and yUndoManagerKeymap from y-codemirror.next.
+   * When set, history() and remoteCursorsExtension() are omitted, and
+   * extractOperations / onCollabOperations are not called.
+   */
+  yCollabExtension?: import("@codemirror/state").Extension;
 }
 
 function getEditorSettingsExtensions(settings?: AppSettings) {
@@ -351,6 +361,88 @@ const toggleItalic = toggleFormat("*");
 const toggleCode = toggleFormat("`");
 const toggleStrikethrough = toggleFormat("~~");
 
+const handleBackspace = (view: EditorView): boolean => {
+  const { state, dispatch } = view;
+  if (state.readOnly) return false;
+
+  let changes: { from: number; to: number; insert: string }[] = [];
+  let selectionUpdated = false;
+
+  const newRanges = state.selection.ranges.map((range) => {
+    if (!range.empty) {
+      return range;
+    }
+    const pos = range.head;
+    const line = state.doc.lineAt(pos);
+
+    const regex = new RegExp(MARKDOWN_IMAGE_GLOBAL_REGEX.source, "g");
+    let match: RegExpExecArray | null;
+    while ((match = regex.exec(line.text)) !== null) {
+      const from = line.from + match.index;
+      const to = from + match[0].length;
+
+      if (pos === to) {
+        changes.push({ from, to, insert: "" });
+        selectionUpdated = true;
+        return EditorSelection.cursor(from);
+      }
+    }
+    return range;
+  });
+
+  if (selectionUpdated) {
+    dispatch(state.update({
+      changes,
+      selection: EditorSelection.create(newRanges),
+      userEvent: "delete.backward"
+    }));
+    return true;
+  }
+
+  return false;
+};
+
+const handleDelete = (view: EditorView): boolean => {
+  const { state, dispatch } = view;
+  if (state.readOnly) return false;
+
+  let changes: { from: number; to: number; insert: string }[] = [];
+  let selectionUpdated = false;
+
+  const newRanges = state.selection.ranges.map((range) => {
+    if (!range.empty) {
+      return range;
+    }
+    const pos = range.head;
+    const line = state.doc.lineAt(pos);
+
+    const regex = new RegExp(MARKDOWN_IMAGE_GLOBAL_REGEX.source, "g");
+    let match: RegExpExecArray | null;
+    while ((match = regex.exec(line.text)) !== null) {
+      const from = line.from + match.index;
+      const to = from + match[0].length;
+
+      if (pos === from) {
+        changes.push({ from, to, insert: "" });
+        selectionUpdated = true;
+        return EditorSelection.cursor(from);
+      }
+    }
+    return range;
+  });
+
+  if (selectionUpdated) {
+    dispatch(state.update({
+      changes,
+      selection: EditorSelection.create(newRanges),
+      userEvent: "delete.forward"
+    }));
+    return true;
+  }
+
+  return false;
+};
+
 function getEditorKeymapExtensions(settings?: AppSettings) {
   return keymap.of([
     { key: "Mod-b", run: toggleBold },
@@ -358,6 +450,8 @@ function getEditorKeymapExtensions(settings?: AppSettings) {
     { key: "Mod-e", run: toggleCode },
     { key: "Mod-`", run: toggleCode },
     { key: "Mod-Shift-x", run: toggleStrikethrough },
+    { key: "Backspace", run: handleBackspace },
+    { key: "Delete", run: handleDelete },
     ...defaultKeymap,
     ...historyKeymap,
     ...(settings?.indentUsingTabs === false ? [] : [indentWithTab]),
@@ -473,6 +567,13 @@ function tagPlugin() {
           let match;
 
           while ((match = regex.exec(line.text)) !== null) {
+            const tag = match[1];
+            // Skip hex color codes (e.g. #ef4444) from tag decorators
+            const hexColorRegex = /^#[a-fA-F0-9]{3,4}$|^#[a-fA-F0-9]{6}$|^#[a-fA-F0-9]{8}$/;
+            if (hexColorRegex.test(tag)) {
+              continue;
+            }
+
             const tagStart =
               line.from + match.index + (match[0].startsWith(" ") ? 1 : 0);
             const tagEnd = tagStart + match[1].length;
@@ -506,9 +607,9 @@ interface MarkdownImageMatch {
 }
 
 const MARKDOWN_IMAGE_GLOBAL_REGEX =
-  /!\[([^\]]*)\]\(([^)\s]+)(?:\s+"([^"]*)")?\)/g;
+  /!\[([^\]]*)\]\((<[^>]+>|[^)\s"]+)(?:\s+"([^"]*)")?\)|!\[\[([^\n\]|]+)(?:\|([^\n\]]+))?\]\]/g;
 const MARKDOWN_IMAGE_SINGLE_REGEX =
-  /^!\[([^\]]*)\]\(([^)\s]+)(?:\s+"([^"]*)")?\)$/;
+  /^!\[([^\]]*)\]\((<[^>]+>|[^)\s"]+)(?:\s+"([^"]*)")?\)$/;
 
 function parseImageMeta(title?: string): {
   width?: number;
@@ -541,12 +642,50 @@ function parseMarkdownImage(
   from: number,
   to: number,
 ): MarkdownImageMatch | null {
-  const match = markdown.match(MARKDOWN_IMAGE_SINGLE_REGEX);
-  if (!match) return null;
+  // Standard markdown image: ![alt](src "title")
+  const stdMatch = markdown.match(MARKDOWN_IMAGE_SINGLE_REGEX);
+  if (stdMatch) {
+    let [, alt, src, title] = stdMatch;
+    if (src.startsWith("<") && src.endsWith(">")) {
+      src = src.slice(1, -1).trim();
+    }
+    const { width, crop, offsetX, offsetY } = parseImageMeta(title);
+    return { from, to, alt: alt || "", src, width, crop, offsetX, offsetY };
+  }
 
-  const [, alt, src, title] = match;
-  const { width, crop, offsetX, offsetY } = parseImageMeta(title);
-  return { from, to, alt, src, width, crop, offsetX, offsetY };
+  // Wiki embed image: ![[filename.png]] or ![[filename.png|400]]
+  const wikiMatch = markdown.match(/^!\[\[([^\n\]|]+)(?:\|([^\n\]]+))?\]\]$/);
+  if (wikiMatch) {
+    const [, rawSrc, rawOpt] = wikiMatch;
+    let src = rawSrc.trim();
+    let alt = "";
+    let width: number | undefined = undefined;
+
+    if (rawOpt) {
+      const parts = rawOpt.split("|");
+      for (const part of parts) {
+        const trimmed = part.trim();
+        if (/^\d{2,4}$/.test(trimmed)) {
+          width = Number(trimmed);
+        } else {
+          alt = trimmed;
+        }
+      }
+    }
+
+    return {
+      from,
+      to,
+      alt,
+      src,
+      width: width ? Math.max(120, Math.min(1400, width)) : undefined,
+      crop: "contain",
+      offsetX: 0,
+      offsetY: 0,
+    };
+  }
+
+  return null;
 }
 
 function buildMarkdownImage(
@@ -587,8 +726,15 @@ function applyWidgetImageStyles(
 }
 
 class MarkdownImageWidget extends WidgetType {
-  constructor(private readonly image: MarkdownImageMatch) {
+  constructor(
+    private readonly image: MarkdownImageMatch,
+    private readonly view?: EditorView,
+  ) {
     super();
+  }
+
+  get estimatedHeight(): number {
+    return 240;
   }
 
   eq(other: MarkdownImageWidget): boolean {
@@ -625,16 +771,13 @@ class MarkdownImageWidget extends WidgetType {
     img.className = "cm-image-widget-image";
     img.src = resolveVaultImageSrc(this.image.src);
     img.alt = this.image.alt || "Image";
+    img.addEventListener("load", () => {
+      if (this.view) {
+        try { this.view.requestMeasure(); } catch { }
+      }
+    });
     applyWidgetImageStyles(img, this.image);
     stage.appendChild(img);
-
-    const imageToggle = document.createElement("button");
-    imageToggle.className = "cm-image-widget-toggle";
-    imageToggle.type = "button";
-    imageToggle.dataset.action = "toggle-mode";
-    imageToggle.title = "Switch between image and markdown text mode";
-    imageToggle.textContent = "↻";
-    stage.appendChild(imageToggle);
 
     const metaRow = document.createElement("div");
     metaRow.className = "cm-image-widget-meta";
@@ -656,30 +799,6 @@ class MarkdownImageWidget extends WidgetType {
 
     root.appendChild(metaRow);
 
-    const textWrap = document.createElement("div");
-    textWrap.className = "cm-image-widget-text-wrap";
-    const textEditor = document.createElement("textarea");
-    textEditor.className = "cm-image-widget-text";
-    textEditor.value = buildMarkdownImage(
-      this.image.alt,
-      this.image.src,
-      this.image.width,
-      this.image.crop,
-      this.image.offsetX,
-      this.image.offsetY,
-    );
-    textEditor.spellcheck = false;
-    textWrap.appendChild(textEditor);
-
-    const textToggle = document.createElement("button");
-    textToggle.className = "cm-image-widget-toggle text-toggle";
-    textToggle.type = "button";
-    textToggle.dataset.action = "toggle-mode";
-    textToggle.title = "Back to image mode";
-    textToggle.textContent = "↻";
-    textWrap.appendChild(textToggle);
-    root.appendChild(textWrap);
-
     return root;
   }
 
@@ -690,6 +809,23 @@ class MarkdownImageWidget extends WidgetType {
 
 function imageWidgetPlugin(onOpenLightbox: (src: string, alt: string) => void) {
   let activeDragCleanup: (() => void) | null = null;
+
+  const getWidgetRange = (view: EditorView, widgetEl: HTMLElement): { from: number; to: number } | null => {
+    const pos = view.posAtDOM(widgetEl);
+    if (pos < 0) return null;
+
+    const line = view.state.doc.lineAt(pos);
+    const regex = new RegExp(MARKDOWN_IMAGE_GLOBAL_REGEX.source, "g");
+    let match: RegExpExecArray | null;
+    while ((match = regex.exec(line.text)) !== null) {
+      const from = line.from + match.index;
+      const to = from + match[0].length;
+      if (pos >= from && pos <= to) {
+        return { from, to };
+      }
+    }
+    return null;
+  };
 
   const getMaxRenderableWidth = (view: EditorView) => {
     const content = view.dom.querySelector(".cm-content") as HTMLElement | null;
@@ -750,7 +886,7 @@ function imageWidgetPlugin(onOpenLightbox: (src: string, alt: string) => void) {
 
             decorations.push(
               Decoration.replace({
-                widget: new MarkdownImageWidget(parsed),
+                widget: new MarkdownImageWidget(parsed, view),
               }).range(from, to),
             );
           }
@@ -764,14 +900,6 @@ function imageWidgetPlugin(onOpenLightbox: (src: string, alt: string) => void) {
       eventHandlers: {
         mousedown: (e: MouseEvent, view: EditorView) => {
           const target = e.target as HTMLElement;
-          const textEditor = target.closest(
-            ".cm-image-widget-text",
-          ) as HTMLTextAreaElement | null;
-          if (textEditor) {
-            e.stopPropagation();
-            return;
-          }
-
           const widget = target.closest(
             ".cm-image-widget",
           ) as HTMLElement | null;
@@ -781,10 +909,9 @@ function imageWidgetPlugin(onOpenLightbox: (src: string, alt: string) => void) {
           e.stopPropagation();
           view.dom.blur();
 
-          const from = Number(widget.dataset.from);
-          const to = Number(widget.dataset.to);
-          if (!Number.isFinite(from) || !Number.isFinite(to) || to <= from)
-            return;
+          const range = getWidgetRange(view, widget);
+          if (!range) return;
+          const { from, to } = range;
 
           const current = view.state.doc.sliceString(from, to);
           const parsed = parseMarkdownImage(current, from, to);
@@ -796,44 +923,16 @@ function imageWidgetPlugin(onOpenLightbox: (src: string, alt: string) => void) {
           if (button) {
             const action = button.dataset.action;
             if (action === "delete-image") {
+              const currentRange = getWidgetRange(view, widget);
+              if (!currentRange) return;
               view.dispatch({
-                changes: { from, to, insert: "" },
-                selection: { anchor: from },
+                changes: { from: currentRange.from, to: currentRange.to, insert: "" },
+                selection: { anchor: currentRange.from },
               });
-              return;
-            }
-            if (action === "toggle-mode") {
-              const editor = widget.querySelector(
-                ".cm-image-widget-text",
-              ) as HTMLTextAreaElement | null;
-              const isTextMode = widget.classList.contains("text-mode");
-              if (!isTextMode) {
-                widget.classList.add("text-mode");
-                if (editor) {
-                  editor.value = current;
-                  editor.focus();
-                  editor.select();
-                }
-                return;
-              }
-
-              const nextRaw = (editor?.value || "").trim();
-              const nextParsed = nextRaw
-                ? parseMarkdownImage(nextRaw, from, to)
-                : null;
-              if (nextParsed) {
-                view.dispatch({
-                  changes: { from, to, insert: nextRaw },
-                  selection: { anchor: from + nextRaw.length },
-                });
-                widget.classList.remove("text-mode");
-              }
               return;
             }
             return;
           }
-
-          if (widget.classList.contains("text-mode")) return;
 
           const imageEl = widget.querySelector(
             ".cm-image-widget-image",
@@ -917,6 +1016,9 @@ function imageWidgetPlugin(onOpenLightbox: (src: string, alt: string) => void) {
               return;
             }
 
+            const currentRange = getWidgetRange(view, widget);
+            if (!currentRange) return;
+
             const dx = event.clientX - startX;
             const dy = event.clientY - startY;
             const nextWidth = isResizeFromEdge
@@ -939,8 +1041,8 @@ function imageWidgetPlugin(onOpenLightbox: (src: string, alt: string) => void) {
               nextOy,
             );
             view.dispatch({
-              changes: { from, to, insert: replacement },
-              selection: { anchor: from + replacement.length },
+              changes: { from: currentRange.from, to: currentRange.to, insert: replacement },
+              selection: { anchor: currentRange.from + replacement.length },
             });
           };
 
@@ -958,7 +1060,7 @@ function imageWidgetPlugin(onOpenLightbox: (src: string, alt: string) => void) {
           const widget = target.closest(
             ".cm-image-widget",
           ) as HTMLElement | null;
-          if (!widget || widget.classList.contains("text-mode")) return;
+          if (!widget) return;
           const imageEl = widget.querySelector(
             ".cm-image-widget-image",
           ) as HTMLImageElement | null;
@@ -982,10 +1084,7 @@ function imageWidgetPlugin(onOpenLightbox: (src: string, alt: string) => void) {
 
         click: (e: MouseEvent) => {
           const target = e.target as HTMLElement;
-          if (
-            target.closest(".cm-image-widget") &&
-            !target.closest(".cm-image-widget-text")
-          ) {
+          if (target.closest(".cm-image-widget")) {
             e.preventDefault();
             e.stopPropagation();
           }
@@ -1108,16 +1207,33 @@ class MarkdownTableWidget extends WidgetType {
   toDOM(view: EditorView): HTMLElement {
     const wrapper = document.createElement("div");
     wrapper.className = "cm-live-table-wrapper";
-    wrapper.title = "Click to edit table";
-    wrapper.addEventListener("mousedown", (event) => {
-      event.preventDefault();
-      const line = view.state.doc.line(this.startLine);
-      view.dispatch({ selection: { anchor: line.from } });
-      view.focus();
+    wrapper.title = "Edit table";
+    
+    wrapper.addEventListener("mousedown", (e) => {
+      e.stopPropagation();
     });
+
     const table = document.createElement("table");
     table.className = "cm-live-table";
     wrapper.appendChild(table);
+
+    const saveTable = () => {
+      const pos = view.posAtDOM(wrapper);
+      if (pos < 0) return;
+      const startLine = view.state.doc.lineAt(pos).number;
+      const range = getTableRange(view.state.doc, startLine);
+      if (!range) return;
+      const from = view.state.doc.line(range.start).from;
+      const to = view.state.doc.line(range.end).to;
+      const newMarkdown = serializeTableDOMToMarkdown(table);
+      const currentMarkdown = view.state.sliceDoc(from, to);
+      if (currentMarkdown !== newMarkdown) {
+        view.dispatch({
+          changes: { from, to, insert: newMarkdown },
+          userEvent: "input",
+        });
+      }
+    };
 
     const parsedRows = this.rows.map(parseTableCells);
     const separatorIndex = parsedRows.findIndex((cells) =>
@@ -1145,6 +1261,7 @@ class MarkdownTableWidget extends WidgetType {
           const th = document.createElement("th");
           renderTableCellMarkdown(th, cell);
           tr.appendChild(th);
+          setupEditableCell(th, view, saveTable, wrapper);
         }
       }
     }
@@ -1158,10 +1275,112 @@ class MarkdownTableWidget extends WidgetType {
         const td = document.createElement("td");
         renderTableCellMarkdown(td, cell);
         tr.appendChild(td);
+        setupEditableCell(td, view, saveTable, wrapper);
       }
     }
 
+    const controls = document.createElement("div");
+    controls.className = "cm-live-table-controls";
+    controls.setAttribute("contenteditable", "false");
+
+    const addRowBtn = document.createElement("button");
+    addRowBtn.type = "button";
+    addRowBtn.className = "cm-live-table-control";
+    addRowBtn.textContent = "+ Row";
+    addRowBtn.title = "Add row below";
+    addRowBtn.addEventListener("mousedown", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const cols = table.rows[0]?.cells.length || 1;
+      const tBody = table.querySelector("tbody") || table;
+      const tr = document.createElement("tr");
+      tBody.appendChild(tr);
+      for (let c = 0; c < cols; c++) {
+        const td = document.createElement("td");
+        tr.appendChild(td);
+        setupEditableCell(td, view, saveTable, wrapper);
+      }
+      (tr.cells[0] as HTMLElement).focus();
+      saveTable();
+    });
+    controls.appendChild(addRowBtn);
+
+    const deleteRowBtn = document.createElement("button");
+    deleteRowBtn.type = "button";
+    deleteRowBtn.className = "cm-live-table-control";
+    deleteRowBtn.textContent = "- Row";
+    deleteRowBtn.title = "Delete last row";
+    deleteRowBtn.addEventListener("mousedown", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const tBody = table.querySelector("tbody");
+      if (tBody && tBody.rows.length > 1) {
+        tBody.deleteRow(tBody.rows.length - 1);
+        saveTable();
+      }
+    });
+    controls.appendChild(deleteRowBtn);
+
+    const addColBtn = document.createElement("button");
+    addColBtn.type = "button";
+    addColBtn.className = "cm-live-table-control";
+    addColBtn.textContent = "+ Col";
+    addColBtn.title = "Add column to the right";
+    addColBtn.addEventListener("mousedown", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      
+      const theadTrs = table.querySelectorAll("thead tr");
+      theadTrs.forEach((tr) => {
+        const th = document.createElement("th");
+        tr.appendChild(th);
+        setupEditableCell(th, view, saveTable, wrapper);
+      });
+      
+      const tbodyTrs = table.querySelectorAll("tbody tr");
+      tbodyTrs.forEach((tr) => {
+        const td = document.createElement("td");
+        tr.appendChild(td);
+        setupEditableCell(td, view, saveTable, wrapper);
+      });
+      
+      const firstRow = table.rows[0];
+      if (firstRow) {
+        (firstRow.cells[firstRow.cells.length - 1] as HTMLElement).focus();
+      }
+      saveTable();
+    });
+    controls.appendChild(addColBtn);
+
+    const deleteColBtn = document.createElement("button");
+    deleteColBtn.type = "button";
+    deleteColBtn.className = "cm-live-table-control";
+    deleteColBtn.textContent = "- Col";
+    deleteColBtn.title = "Delete last column";
+    deleteColBtn.addEventListener("mousedown", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const rows = table.rows;
+      if (rows.length > 0 && rows[0].cells.length > 1) {
+        for (let r = 0; r < rows.length; r++) {
+          rows[r].deleteCell(rows[r].cells.length - 1);
+        }
+        saveTable();
+      }
+    });
+    controls.appendChild(deleteColBtn);
+
+    wrapper.appendChild(controls);
+
     return wrapper;
+  }
+
+  updateDOM(dom: HTMLElement, view: EditorView): boolean {
+    const activeEl = document.activeElement;
+    if (activeEl && dom.contains(activeEl)) {
+      return true;
+    }
+    return false;
   }
 }
 
@@ -1220,6 +1439,177 @@ class MarkdownTableControlsWidget extends WidgetType {
 function parseTableCells(row: string): string[] {
   const trimmed = row.trim().replace(/^\|/, "").replace(/\|$/, "");
   return trimmed.split("|").map((cell) => cell.trim());
+}
+
+function htmlToMarkdown(html: string): string {
+  let text = html;
+  text = text.replace(/<code>(.*?)<\/code>/gi, "`$1`");
+  text = text.replace(/<strong>(.*?)<\/strong>/gi, "**$1**");
+  text = text.replace(/<b>(.*?)<\/b>/gi, "**$1**");
+  text = text.replace(/<em>(.*?)<\/em>/gi, "*$1*");
+  text = text.replace(/<i>(.*?)<\/i>/gi, "*$1*");
+  text = text.replace(/<del>(.*?)<\/del>/gi, "~~$1~~");
+  text = text.replace(/<s>(.*?)<\/s>/gi, "~~$1~~");
+  text = text.replace(/<[^>]+>/g, "");
+  text = text
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&nbsp;/g, " ");
+  return text.trim();
+}
+
+function serializeTableDOMToMarkdown(tableEl: HTMLTableElement): string {
+  const rows: string[][] = [];
+  const thead = tableEl.querySelector("thead");
+  if (thead) {
+    thead.querySelectorAll("tr").forEach((tr) => {
+      const cells: string[] = [];
+      tr.querySelectorAll("th").forEach((th) => {
+        cells.push(htmlToMarkdown(th.innerHTML));
+      });
+      rows.push(cells);
+    });
+  }
+  const columnCount = rows[0]?.length || tableEl.querySelector("tbody tr")?.querySelectorAll("td").length || 1;
+  const separatorRow = Array.from({ length: columnCount }, () => "---");
+  rows.push(separatorRow);
+  const tbody = tableEl.querySelector("tbody");
+  if (tbody) {
+    tbody.querySelectorAll("tr").forEach((tr) => {
+      const cells: string[] = [];
+      tr.querySelectorAll("td").forEach((td) => {
+        cells.push(htmlToMarkdown(td.innerHTML));
+      });
+      rows.push(cells);
+    });
+  }
+  return rows.map((cells) => `| ${cells.join(" | ")} |`).join("\n");
+}
+
+function setupEditableCell(
+  cell: HTMLTableCellElement,
+  view: EditorView,
+  saveTable: () => void,
+  wrapper: HTMLElement,
+) {
+  cell.contentEditable = "true";
+  cell.style.outline = "none";
+  const stopProp = (e: Event) => e.stopPropagation();
+
+  cell.addEventListener("keydown", (e) => {
+    if (e.key === "Tab") {
+      e.preventDefault();
+      e.stopPropagation();
+      const cells = Array.from(cell.closest("table")?.querySelectorAll("th, td") || []);
+      const index = cells.indexOf(cell);
+      if (index >= 0) {
+        const nextCell = cells[index + (e.shiftKey ? -1 : 1)] as HTMLElement;
+        if (nextCell) {
+          nextCell.focus();
+          const range = document.createRange();
+          range.selectNodeContents(nextCell);
+          range.collapse(false);
+          const sel = window.getSelection();
+          sel?.removeAllRanges();
+          sel?.addRange(range);
+        }
+      }
+    } else if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      e.stopPropagation();
+      const tr = cell.parentElement;
+      const table = tr?.closest("table");
+      if (tr && table) {
+        const colIndex = Array.from(tr.children).indexOf(cell);
+        const trs = Array.from(table.querySelectorAll("tr")) as Element[];
+        const rowIndex = trs.indexOf(tr as Element);
+        const nextTr = trs[rowIndex + 1];
+        if (nextTr) {
+          const nextCell = nextTr.children[colIndex] as HTMLElement;
+          if (nextCell) nextCell.focus();
+        } else {
+          const columnCount = table.rows[0]?.cells.length || 1;
+          const tbody = table.querySelector("tbody") || table;
+          const newTr = document.createElement("tr");
+          tbody.appendChild(newTr);
+          for (let c = 0; c < columnCount; c++) {
+            const td = document.createElement("td");
+            newTr.appendChild(td);
+            setupEditableCell(td, view, saveTable, wrapper);
+          }
+          (newTr.cells[colIndex] as HTMLElement || newTr.cells[0]).focus();
+          saveTable();
+        }
+      }
+    } else if (e.key === "ArrowUp") {
+      const tr = cell.parentElement;
+      const table = tr?.closest("table");
+      if (tr && table) {
+        const trs = Array.from(table.querySelectorAll("tr")) as Element[];
+        const rowIndex = trs.indexOf(tr as Element);
+        if (rowIndex > 0) {
+          e.preventDefault();
+          e.stopPropagation();
+          const colIndex = Array.from(tr.children).indexOf(cell);
+          const prevTr = trs[rowIndex - 1];
+          const prevCell = prevTr.children[colIndex] as HTMLElement;
+          if (prevCell) prevCell.focus();
+        } else {
+          const pos = view.posAtDOM(wrapper);
+          if (pos >= 0) {
+            e.preventDefault();
+            e.stopPropagation();
+            view.dispatch({ selection: { anchor: pos } });
+            view.focus();
+          }
+        }
+      }
+    } else if (e.key === "ArrowDown") {
+      const tr = cell.parentElement;
+      const table = tr?.closest("table");
+      if (tr && table) {
+        const trs = Array.from(table.querySelectorAll("tr")) as Element[];
+        const rowIndex = trs.indexOf(tr as Element);
+        if (rowIndex < trs.length - 1) {
+          e.preventDefault();
+          e.stopPropagation();
+          const colIndex = Array.from(tr.children).indexOf(cell);
+          const nextTr = trs[rowIndex + 1];
+          const nextCell = nextTr.children[colIndex] as HTMLElement;
+          if (nextCell) nextCell.focus();
+        } else {
+          const pos = view.posAtDOM(wrapper);
+          if (pos >= 0) {
+            const startLine = view.state.doc.lineAt(pos).number;
+            const range = getTableRange(view.state.doc, startLine);
+            if (range) {
+              e.preventDefault();
+              e.stopPropagation();
+              const endLinePos = view.state.doc.line(range.end).to;
+              const targetPos = Math.min(view.state.doc.length, endLinePos + 1);
+              view.dispatch({ selection: { anchor: targetPos } });
+              view.focus();
+            }
+          }
+        }
+      }
+    } else {
+      e.stopPropagation();
+    }
+  });
+
+  cell.addEventListener("keyup", stopProp);
+  cell.addEventListener("keypress", stopProp);
+  cell.addEventListener("mousedown", stopProp);
+  cell.addEventListener("mouseup", stopProp);
+  cell.addEventListener("click", stopProp);
+
+  cell.addEventListener("input", () => {
+    saveTable();
+  });
 }
 
 function isTableRow(text: string): boolean {
@@ -1372,6 +1762,20 @@ function addInactiveInlinePreviewDecorations(
     addInlineRange(decorations, lineFrom, match, { open: 1, content: 2, close: 3 }, "cm-live-strike");
   }
 
+  const highlightRegex = /(^|\s)(==)([^\s=](?:[^\n=]*?[^\s=])?)(==)(?=\s|[.,;:!?\x27\x22]|$)/g;
+  while ((match = highlightRegex.exec(lineText)) !== null) {
+    const prefix = match[1] || "";
+    const marker = match[2];
+    const content = match[3];
+    const openFrom = lineFrom + match.index + prefix.length;
+    const contentFrom = openFrom + marker.length;
+    const contentTo = contentFrom + content.length;
+    const closeTo = contentTo + marker.length;
+    hideMarkdownSyntax(decorations, openFrom, contentFrom);
+    decorations.push(Decoration.mark({ class: "cm-live-highlight" }).range(contentFrom, contentTo));
+    hideMarkdownSyntax(decorations, contentTo, closeTo);
+  }
+
   const emphasisRegex = /(^|[^\w*])(\*|_)(?=\S)([^*_]+?\S)(\2)(?!\w)/g;
   while ((match = emphasisRegex.exec(lineText)) !== null) {
     const prefix = match[1] || "";
@@ -1434,15 +1838,90 @@ function addInactiveInlinePreviewDecorations(
   }
 }
 
+function addInactiveInlineHTMLDecorations(
+  decorations: any[],
+  lineFrom: number,
+  lineText: string,
+) {
+  const htmlRegex = /(<([a-zA-Z]+)([^>]*)>)([\s\S]*?)(<\/\2>)/g;
+  let match;
+  while ((match = htmlRegex.exec(lineText)) !== null) {
+    const openTag = match[1];
+    const tagName = match[2].toLowerCase();
+    const attrs = match[3];
+    const content = match[4];
+    const closeTag = match[5];
+
+    // Calculate absolute offsets
+    const openFrom = lineFrom + match.index;
+    const contentFrom = openFrom + openTag.length;
+    const contentTo = contentFrom + content.length;
+    const closeTo = contentTo + closeTag.length;
+
+    // Build the style/attributes object to apply to the content range
+    const attributes: Record<string, string> = {
+      class: "cm-live-html-content"
+    };
+    
+    // Parse style attribute if present
+    const styleMatch = attrs.match(/style=(["\x27])(.*?)\1/i);
+    if (styleMatch) {
+      let styleStr = styleMatch[2].trim().replace(/;+$/, "");
+      if (/background-color\s*:/i.test(styleStr) || /background\s*:/i.test(styleStr)) {
+        styleStr += "; color: #000000 !important;";
+      }
+      attributes.style = styleStr;
+    }
+    
+    // Parse class attribute if present
+    const classMatch = attrs.match(/class=(["\x27])(.*?)\1/i);
+    if (classMatch) {
+      attributes.class = "cm-live-html-content " + classMatch[2];
+    }
+
+    // Default styles for common tag names
+    if (tagName === "u") {
+      attributes.style = (attributes.style || "") + ";text-decoration:underline";
+    } else if (tagName === "i" || tagName === "em") {
+      attributes.style = (attributes.style || "") + ";font-style:italic";
+    } else if (tagName === "b" || tagName === "strong") {
+      attributes.style = (attributes.style || "") + ";font-weight:bold";
+    } else if (tagName === "s" || tagName === "del") {
+      attributes.style = (attributes.style || "") + ";text-decoration:line-through";
+    } else if (tagName === "mark") {
+      attributes.style = (attributes.style || "") + ";background-color:#ffff00;color:#000000 !important";
+    }
+
+    // Hide opening and closing tags
+    hideMarkdownSyntax(decorations, openFrom, contentFrom);
+    hideMarkdownSyntax(decorations, contentTo, closeTo);
+
+    // Apply decorations to content range
+    if (Object.keys(attributes).length > 0) {
+      decorations.push(
+        Decoration.mark({ attributes }).range(contentFrom, contentTo)
+      );
+    }
+  }
+}
+
 function addInactiveBlockPreviewDecorations(
   decorations: any[],
   lineFrom: number,
   lineText: string,
 ) {
-  const indent = lineText.match(/^\s*/)?.[0].length || 0;
-  const listMatch = lineText.match(/^(\s*)((?:[-*+])|\d+[.)])\s+(\[[ xX]\]\s+)?/);
+  const indentText = lineText.match(/^\s*/)?.[0] || "";
+  const indent = indentText.replace(/\t/g, "    ").length;
+  const listMatch = lineText.match(/^(\s*)(?:<[a-zA-Z]+[^>]*>)?((?:[-*+])|\d+[.)])\s+(\[[ xX]\]\s+)?/);
   if (listMatch) {
-    const markerFrom = lineFrom + listMatch[1].length;
+    // Hide the leading spaces to let the padding handle the indentation cleanly
+    if (listMatch[1].length > 0) {
+      hideMarkdownSyntax(decorations, lineFrom, lineFrom + listMatch[1].length);
+    }
+
+    const tagMatch = listMatch[0].match(/^(?:\s*)(?:<[a-zA-Z]+[^>]*>)/);
+    const offset = tagMatch ? tagMatch[0].length : listMatch[1].length;
+    const markerFrom = lineFrom + offset;
     const markerTo = markerFrom + listMatch[2].length;
     const checkbox = listMatch[3];
     if (checkbox) {
@@ -1465,7 +1944,7 @@ function addInactiveBlockPreviewDecorations(
       );
     }
 
-    const depth = Math.min(6, Math.floor(indent / 2));
+    const depth = indent === 0 ? 0 : Math.min(6, Math.floor((indent - 1) / 4) + 1);
     decorations.push(
       Decoration.line({
         attributes: {
@@ -1476,9 +1955,16 @@ function addInactiveBlockPreviewDecorations(
     return;
   }
 
-  const quoteMatch = lineText.match(/^(\s*>+\s*)/);
+  const quoteMatch = lineText.match(/^(\s*)(?:<[a-zA-Z]+[^>]*>)?(>+\s*)/);
   if (quoteMatch) {
-    hideMarkdownSyntax(decorations, lineFrom, lineFrom + quoteMatch[1].length);
+    // Hide the leading spaces
+    if (quoteMatch[1].length > 0) {
+      hideMarkdownSyntax(decorations, lineFrom, lineFrom + quoteMatch[1].length);
+    }
+
+    const tagMatch = quoteMatch[0].match(/^(?:\s*)(?:<[a-zA-Z]+[^>]*>)/);
+    const offset = tagMatch ? tagMatch[0].length : quoteMatch[1].length;
+    hideMarkdownSyntax(decorations, lineFrom + offset, lineFrom + offset + quoteMatch[2].length);
     decorations.push(
       Decoration.line({
         attributes: { class: "cm-live-blockquote-line" },
@@ -1492,7 +1978,7 @@ function addInactiveBlockPreviewDecorations(
  * and applies rendered styling while keeping the active line source-visible.
  */
 function markdownLivePreviewPlugin() {
-  const headingRegex = /^(#{1,6})\s/;
+  const headingRegex = /^([ \t]*)(?:<[a-zA-Z]+[^>]*>)?(#{1,6})\s/;
   const codeFenceRegex = /^\s*```/;
 
   const buildDecorations = (state: EditorState): DecorationSet => {
@@ -1549,66 +2035,36 @@ function markdownLivePreviewPlugin() {
           tableEnd++;
           tableRows.push(doc.line(tableEnd).text);
         }
-        const tableHasActiveLine = Array.from({ length: tableEnd - tableStart + 1 }, (_, index) => tableStart + index)
-          .some((lineNumber) => activeLinesSet.has(lineNumber));
 
-        if (!tableHasActiveLine) {
-          decorations.push(
-            Decoration.replace({
-              widget: new MarkdownTableWidget(tableRows, tableStart),
-              block: true,
-            }).range(line.from, doc.line(tableEnd).to),
-          );
-          i = tableEnd;
-          continue;
-        }
-
-        for (let tableLine = tableStart; tableLine <= tableEnd; tableLine++) {
-          const targetLine = doc.line(tableLine);
-          decorations.push(
-            Decoration.line({
-              attributes: {
-                class: isTableSeparator(targetLine.text)
-                  ? "cm-live-table-source-separator"
-                  : "cm-live-table-source-row",
-              },
-            }).range(targetLine.from),
-          );
-          if (tableLine !== tableStart + 1 && !activeLinesSet.has(tableLine)) {
-            addInactiveInlinePreviewDecorations(decorations, targetLine.from, targetLine.text);
-          }
-        }
-
-        if (tableHasActiveLine) {
-          decorations.push(
-            Decoration.widget({
-              widget: new MarkdownTableControlsWidget(selection.main.head === doc.line(tableEnd).to ? tableEnd : doc.lineAt(selection.main.head).number),
-              side: 1,
-              block: true,
-            }).range(doc.line(tableEnd).to),
-          );
-        }
+        decorations.push(
+          Decoration.replace({
+            widget: new MarkdownTableWidget(tableRows, tableStart),
+            block: true,
+          }).range(line.from, doc.line(tableEnd).to),
+        );
 
         i = tableEnd;
         continue;
       }
 
       if (match) {
-        const level = match[1].length;
+        const level = match[2].length;
 
         if (!isActive) {
           // Hide the `# ` prefix on non-active heading lines
-          const markerEnd = line.from + match[0].length;
-          hideMarkdownSyntax(decorations, line.from, markerEnd);
+          const tagMatch = match[0].match(/^(?:[ \t]*)(?:<[a-zA-Z]+[^>]*>)/);
+          const offset = tagMatch ? tagMatch[0].length : match[1].length;
+          const hashesLength = match[2].length + 1; // plus space
+          hideMarkdownSyntax(decorations, line.from + offset, line.from + offset + hashesLength);
         }
 
         // Apply heading font size as a line decoration
-        const sizes = ["1.6em", "1.4em", "1.2em", "1.1em", "1.05em", "1em"];
+        const sizes = ["2.0em", "1.6em", "1.37em", "1.25em", "1.1em", "1em"];
         const fontSize = sizes[level - 1] || "1em";
         decorations.push(
           Decoration.line({
             attributes: {
-              style: `font-size: ${fontSize}; line-height: 1.4`,
+              style: `font-size: ${fontSize}; line-height: 1.3; font-weight: 700; font-family: var(--font-family); color: var(--editor-heading);`,
               class: `cm-heading-${level}`,
             },
           }).range(line.from),
@@ -1618,6 +2074,7 @@ function markdownLivePreviewPlugin() {
       if (!isActive) {
         addInactiveBlockPreviewDecorations(decorations, line.from, line.text);
         addInactiveInlinePreviewDecorations(decorations, line.from, line.text);
+        addInactiveInlineHTMLDecorations(decorations, line.from, line.text);
       }
     }
 
@@ -2159,14 +2616,14 @@ function buildSectionScopedSuggestions(
 
       const fallbackRelevance = resetBias
         ? contextOverlap * 0.38 +
-          intentOverlap * 0.28 +
-          keywordOverlap * 0.2 +
-          candidate.similarity * 0.14
+        intentOverlap * 0.28 +
+        keywordOverlap * 0.2 +
+        candidate.similarity * 0.14
         : recentListOverlap * 0.52 +
-          contextOverlap * 0.24 +
-          intentOverlap * 0.12 +
-          keywordOverlap * 0.08 +
-          candidate.similarity * 0.04;
+        contextOverlap * 0.24 +
+        intentOverlap * 0.12 +
+        keywordOverlap * 0.08 +
+        candidate.similarity * 0.04;
 
       // Fallback exploration should only nudge rank order, never dominate strong matches.
       const explorationBoost = Math.max(0, 1 - recentListOverlap) * SECTION_EXPLORATION_BOOST_WEIGHT;
@@ -2291,9 +2748,6 @@ class EndOfNoteSuggestionsWidget extends WidgetType {
     root.setAttribute("contenteditable", "false");
     root.style.userSelect = "none";
     root.style.caretColor = "transparent";
-    root.addEventListener("mousedown", (event) => {
-      event.preventDefault();
-    });
 
     const uniqueNextSteps = this.nextStepSuggestions.filter(
       (candidate, index, list) =>
@@ -2406,7 +2860,7 @@ function buildSuggestionsDecorations(
     sectionContext,
   );
   const currentContextVector = buildTokenFrequencyMap(contextSnapshot);
-  
+
   const intentShiftUntil = options.getIntentShiftUntil();
   let resetBiasForThisPass = now < intentShiftUntil;
 
@@ -2442,7 +2896,7 @@ function buildSuggestionsDecorations(
           !resetBiasForThisPass &&
           topIncomingSimilarity <=
           stableEnd.topSimilarity +
-            SUGGESTION_SIGNIFICANT_IMPROVEMENT_DELTA;
+          SUGGESTION_SIGNIFICANT_IMPROVEMENT_DELTA;
 
         if (shouldKeepStableSuggestions) {
           const stableSuggestions = stableEnd.paths
@@ -2474,7 +2928,7 @@ function buildSuggestionsDecorations(
             options.isClosing || false,
           ),
           side: 1,
-          block: true,
+          block: false,
         }).range(doc.length),
       );
     }
@@ -2494,7 +2948,7 @@ function buildSuggestionsDecorations(
           options.isClosing || false,
         ),
         side: 1,
-        block: true,
+        block: false,
       }).range(doc.length),
     );
   }
@@ -2554,7 +3008,7 @@ function cleanInlineAIResponse(text: string): string {
     } else {
       cleaned = cleaned.substring(3);
     }
-    
+
     // Strip trailing code block marker if present
     if (cleaned.endsWith("```")) {
       cleaned = cleaned.substring(0, cleaned.length - 3);
@@ -2864,6 +3318,8 @@ export function Editor({
   readOnly = false,
   onGenerateInsight,
   isGeneratingInsight = false,
+  isFocused = false,
+  yCollabExtension,
 }: EditorProps) {
   const activeTab = tabs.find((t) => t.id === activeTabId);
   const activePath = activeTab?.path;
@@ -2902,6 +3358,12 @@ export function Editor({
   const viewRef = useRef<EditorView | null>(null);
   const obsidianEditorRef = useRef<ObsidianEditor | null>(null);
   const contentRef = useRef(content);
+  const viewModeRef = useRef(viewMode);
+  viewModeRef.current = viewMode;
+  const readOnlyRef = useRef(readOnly);
+  readOnlyRef.current = readOnly;
+  const isFocusedRef = useRef(isFocused);
+  isFocusedRef.current = isFocused;
 
   // Tracks the timestamp of the last local (user) edit. Used by the content
   // sync effect to avoid replacing the CM document with stale debounced
@@ -2920,6 +3382,7 @@ export function Editor({
   const editorSettingsCompartmentRef = useRef(new Compartment());
   const editorKeymapCompartmentRef = useRef(new Compartment());
   const editorBehaviorCompartmentRef = useRef(new Compartment());
+  const collabCompartmentRef = useRef(new Compartment());
   const typingPauseTimerRef = useRef<number | null>(null);
   const flowTriggerDelayTimerRef = useRef<number | null>(null);
   const flowTriggerWindowTimerRef = useRef<number | null>(null);
@@ -2942,6 +3405,24 @@ export function Editor({
     onCursorChangeRef.current = onCursorChange;
     localClientIdRef.current = localClientId;
   });
+
+  // Ref for the Yjs CRDT collaboration extension. Stored as a ref so the
+  // CodeMirror extension array (created once per EditorState) reads the
+  // value that was current at view-creation time.
+  const yCollabExtensionRef = useRef(yCollabExtension);
+  useEffect(() => {
+    yCollabExtensionRef.current = yCollabExtension;
+    if (viewRef.current) {
+      viewRef.current.dispatch({
+        effects: collabCompartmentRef.current.reconfigure(
+          yCollabExtension
+            ? [yCollabExtension]
+            : [history(), remoteCursorsExtension()]
+        ),
+      });
+      console.log(`[YJS] Reconfigured editor collaboration compartment (yCollabExtension is ${yCollabExtension ? "defined" : "undefined"})`);
+    }
+  }, [yCollabExtension]);
 
   const [editorWidth, setEditorWidth] = useState(50); // percentage
   const [isSearchOpen, setIsSearchOpen] = useState(false);
@@ -2976,6 +3457,50 @@ export function Editor({
     src: string;
     alt: string;
   } | null>(null);
+  const [zoomScale, setZoomScale] = useState<number>(1);
+  const [panOffset, setPanOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const [isPanning, setIsPanning] = useState<boolean>(false);
+  const panStartRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+  const lightboxRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (isPanning) {
+      const onMouseMove = (e: MouseEvent) => {
+        setPanOffset({
+          x: e.clientX - panStartRef.current.x,
+          y: e.clientY - panStartRef.current.y,
+        });
+      };
+      const onMouseUp = () => {
+        setIsPanning(false);
+      };
+      window.addEventListener("mousemove", onMouseMove);
+      window.addEventListener("mouseup", onMouseUp);
+      return () => {
+        window.removeEventListener("mousemove", onMouseMove);
+        window.removeEventListener("mouseup", onMouseUp);
+      };
+    }
+  }, [isPanning]);
+
+  useEffect(() => {
+    const el = lightboxRef.current;
+    if (!el) return;
+
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const zoomFactor = 0.15;
+      const nextScale = e.deltaY < 0
+        ? Math.min(5, zoomScale + zoomFactor)
+        : Math.max(0.5, zoomScale - zoomFactor);
+      setZoomScale(nextScale);
+    };
+
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => {
+      el.removeEventListener("wheel", onWheel);
+    };
+  }, [imageLightbox, zoomScale]);
 
   const isSpecialTab = !!specialContent;
 
@@ -3208,7 +3733,7 @@ export function Editor({
   ) => {
     if (!selectionRange) return;
     const { text } = selectionRange;
-    
+
     setIsInlineQuerying(true);
     setExplanation(null);
     setExplanationCoords(null);
@@ -3459,11 +3984,11 @@ export function Editor({
     // Case 2: We are currently showing suggestions, but we should now hide them
     else if (renderedShowEndSuggestions && !isClosingSuggestions) {
       setIsClosingSuggestions(true);
-      
+
       if (closingTimeoutRef.current) {
         window.clearTimeout(closingTimeoutRef.current);
       }
-      
+
       closingTimeoutRef.current = window.setTimeout(() => {
         setIsClosingSuggestions(false);
         setRenderedShowEndSuggestions(false);
@@ -3554,6 +4079,9 @@ export function Editor({
   }, [content, isSpecialTab, updateEndSuggestionProximity]);
   const handleOpenImageLightbox = useCallback((src: string, alt: string) => {
     setImageLightbox({ src, alt });
+    setZoomScale(1);
+    setPanOffset({ x: 0, y: 0 });
+    setIsPanning(false);
   }, []);
 
   // Update available notes for autocomplete
@@ -3809,7 +4337,12 @@ export function Editor({
       selection: { anchor: Math.min(initialCursor, content.length) },
       extensions: [
         codeMirrorPluginExceptionSink,
-        history(),
+        // Dynamically configured collaboration compartment (Yjs yCollab vs legacy history/cursors)
+        collabCompartmentRef.current.of(
+          yCollabExtensionRef.current
+            ? [yCollabExtensionRef.current]
+            : [history(), remoteCursorsExtension()]
+        ),
         search(),
         highlightSelectionMatches(),
         editorKeymapCompartmentRef.current.of(getEditorKeymapExtensions(settings)),
@@ -3869,6 +4402,24 @@ export function Editor({
               console.error("Error dispatching cursor-line event:", err);
             }
           }
+          if ((update.selectionSet || update.docChanged || update.focusChanged) && activePathRef.current) {
+            try {
+              const pos = update.state.selection.main.head;
+              const lineObj = update.state.doc.lineAt(pos);
+              let headingLevel: number | null = null;
+              const match = lineObj.text.match(/^(#{1,6})\s/);
+              if (match) {
+                headingLevel = match[1].length;
+              }
+              document.dispatchEvent(
+                new CustomEvent("editor:format-state", {
+                  detail: { path: activePathRef.current, heading: headingLevel },
+                })
+              );
+            } catch (err) {
+              // Ignore
+            }
+          }
           if (update.docChanged) {
             // A change is a "user edit" if it changed the doc AND is not
             // explicitly marked as remote (from collaboration) or a
@@ -3890,13 +4441,17 @@ export function Editor({
               // effect knows not to overwrite the CM doc with stale content.
               lastLocalEditTsRef.current = Date.now();
 
-              // Extract granular operations for collaboration broadcast
-              const collabOps = onCollabOperationsRef.current;
-              const cid = localClientIdRef.current;
-              if (collabOps && cid) {
-                const allOps = extractOperations(update.changes, cid, authManager.getUserId() || undefined);
-                if (allOps.length > 0) {
-                  collabOps(allOps);
+              // Extract granular operations for legacy collaboration broadcast.
+              // Skip when Yjs CRDT is active -- Yjs handles update propagation
+              // via its own doc.on('update') listener, not through extracted ops.
+              if (!yCollabExtensionRef.current) {
+                const collabOps = onCollabOperationsRef.current;
+                const cid = localClientIdRef.current;
+                if (collabOps && cid) {
+                  const allOps = extractOperations(update.changes, cid, authManager.getUserId() || undefined);
+                  if (allOps.length > 0) {
+                    collabOps(allOps);
+                  }
                 }
               }
 
@@ -3947,8 +4502,6 @@ export function Editor({
             return false;
           },
         }),
-        // Remote collaborator cursor decorations
-        remoteCursorsExtension(),
         EditorView.editable.of(!readOnly),
         EditorView.theme({
           "&": {
@@ -3961,19 +4514,60 @@ export function Editor({
           ".cm-scroller": {
             overflowY: "auto",
             overflowX: "hidden",
+            "--font-family": "var(--font-sans, Inter, system-ui, sans-serif)",
+            "--font-mono": "var(--font-mono, monospace)",
             fontFamily: "var(--font-family)",
-            lineHeight: "var(--editor-line-height)",
+            lineHeight: "1.3 !important",
           },
           ".cm-content": {
             padding: "20px 40px",
             maxWidth: "var(--reading-view-width)",
             margin: "0 auto",
             caretColor: "var(--editor-caret)",
+            lineHeight: "1.3 !important",
           },
           ".cm-line": {
             padding: "0 2px",
             borderRadius: "4px",
             caretColor: "var(--editor-caret)",
+            lineHeight: "1.3 !important",
+          },
+          ".cm-line[class*='cm-heading-'] span": {
+            fontFamily: "var(--font-family) !important",
+            fontWeight: "700 !important",
+          },
+          ".cm-live-highlight, mark": {
+            color: "#000000 !important",
+          },
+          ".cm-live-html-content *, .cm-live-highlight *, mark *": {
+            color: "inherit !important",
+            fontStyle: "inherit !important",
+            fontWeight: "inherit !important",
+            textDecoration: "inherit !important",
+          },
+          ".cm-heading-1": {
+            paddingTop: "6px !important",
+            paddingBottom: "2px !important",
+          },
+          ".cm-heading-2": {
+            paddingTop: "5px !important",
+            paddingBottom: "2px !important",
+          },
+          ".cm-heading-3": {
+            paddingTop: "4px !important",
+            paddingBottom: "1px !important",
+          },
+          ".cm-heading-4": {
+            paddingTop: "3px !important",
+            paddingBottom: "1px !important",
+          },
+          ".cm-heading-5": {
+            paddingTop: "2px !important",
+            paddingBottom: "1px !important",
+          },
+          ".cm-heading-6": {
+            paddingTop: "2px !important",
+            paddingBottom: "1px !important",
           },
           ".cm-cursorLayer .cm-cursor": {
             borderLeft: "2px solid var(--editor-caret)",
@@ -4003,9 +4597,9 @@ export function Editor({
             backgroundColor: "var(--editor-selection)",
           },
           ".cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection":
-            {
-              backgroundColor: "var(--editor-selection-focused)",
-            },
+          {
+            backgroundColor: "var(--editor-selection-focused)",
+          },
           ".cm-gutters": {
             backgroundColor: "transparent",
             border: "none",
@@ -4047,12 +4641,20 @@ export function Editor({
             textDecoration: "line-through",
             color: "var(--editor-muted-token)",
           },
+          ".cm-live-highlight": {
+            backgroundColor: "#ffff00",
+            borderRadius: "2px",
+            padding: "0 2px",
+            color: "#000000 !important",
+          },
           ".cm-live-code": {
             borderRadius: "var(--radius-sm)",
             backgroundColor: "var(--bg-secondary)",
             color: "var(--editor-code)",
             fontFamily: "var(--font-mono)",
-            padding: "0 4px",
+            padding: "2px 6px",
+            fontSize: "0.9em",
+            border: "1px solid var(--border-subtle)",
           },
           ".cm-live-link, .cm-live-wikilink": {
             color: "var(--editor-link)",
@@ -4180,12 +4782,12 @@ export function Editor({
           ".cm-live-task-line": {
             position: "relative",
           },
-          ".cm-live-indent-1": { paddingLeft: "1.4em" },
-          ".cm-live-indent-2": { paddingLeft: "2.8em" },
-          ".cm-live-indent-3": { paddingLeft: "4.2em" },
-          ".cm-live-indent-4": { paddingLeft: "5.6em" },
-          ".cm-live-indent-5": { paddingLeft: "7em" },
-          ".cm-live-indent-6": { paddingLeft: "8.4em" },
+          ".cm-live-indent-1": { paddingLeft: "1.5em" },
+          ".cm-live-indent-2": { paddingLeft: "3.0em" },
+          ".cm-live-indent-3": { paddingLeft: "4.5em" },
+          ".cm-live-indent-4": { paddingLeft: "6.0em" },
+          ".cm-live-indent-5": { paddingLeft: "7.5em" },
+          ".cm-live-indent-6": { paddingLeft: "9.0em" },
           ".cm-live-blockquote-line": {
             borderLeft: "3px solid var(--border-medium)",
             color: "var(--text-secondary)",
@@ -4218,7 +4820,44 @@ export function Editor({
             backgroundColor: "rgba(34, 197, 94, 0.24)",
             color: "#bbf7d0",
             fontFamily: "var(--font-family)",
-            lineHeight: "var(--editor-line-height)",
+            lineHeight: "1.3 !important",
+          },
+          ".cm-collab-cursor-wrapper": {
+            position: "relative",
+            display: "inline-block",
+            width: "0",
+            height: "0",
+            verticalAlign: "text-top",
+            pointerEvents: "none",
+            userSelect: "none",
+          },
+          ".cm-collab-cursor": {
+            position: "absolute",
+            top: "0",
+            left: "-1px",
+            width: "0",
+            height: "1.2em",
+            pointerEvents: "none",
+            zIndex: "10",
+          },
+          ".cm-collab-cursor-label": {
+            position: "absolute",
+            bottom: "100%",
+            left: "-1px",
+            transform: "translateY(-2px)",
+            whiteSpace: "nowrap",
+            fontSize: "10px",
+            fontWeight: "600",
+            lineHeight: "1",
+            color: "#ffffff",
+            padding: "2px 6px",
+            borderRadius: "4px 4px 4px 0",
+            pointerEvents: "none",
+            zIndex: "11",
+            boxShadow: "0 2px 6px rgba(0,0,0,0.3)",
+          },
+          ".cm-collab-selection": {
+            borderRadius: "2px",
           },
         }),
       ],
@@ -4433,14 +5072,14 @@ export function Editor({
       const clampedHead = Math.min(oldSel.main.head, maxPos);
 
       viewRef.current.dispatch({
-         changes: { from: 0, to: currentDoc.length, insert: newContent },
-         selection: { anchor: clampedAnchor, head: clampedHead },
-         annotations: [
-           Transaction.remote.of(true),
-           Transaction.userEvent.of("setContent"),
-           Transaction.addToHistory.of(false),
-         ],
-       });
+        changes: { from: 0, to: currentDoc.length, insert: newContent },
+        selection: { anchor: clampedAnchor, head: clampedHead },
+        annotations: [
+          Transaction.remote.of(true),
+          Transaction.userEvent.of("setContent"),
+          Transaction.addToHistory.of(false),
+        ],
+      });
     }
   }, [content, isSpecialTab]);
 
@@ -4508,26 +5147,50 @@ export function Editor({
       view.focus();
     };
 
-    const prefixLine = (prefix: string) => {
+    const prefixLine = (prefix: string | null) => {
       const view = viewRef.current;
       if (!view) return;
       const { from } = view.state.selection.main;
       const line = view.state.doc.lineAt(from);
-      const already = line.text.startsWith(prefix);
-      if (already) {
+
+      const isHeadingCmd = prefix === null || prefix.startsWith("#");
+
+      if (isHeadingCmd) {
+        const headingMatch = line.text.match(/^(#{1,6}\s+)/);
+        let cleanText = line.text;
+        let offset = 0;
+        if (headingMatch) {
+          cleanText = line.text.substring(headingMatch[1].length);
+          offset = -headingMatch[1].length;
+        }
+
+        const newText = prefix ? `${prefix}${cleanText}` : cleanText;
+        const newOffset = prefix ? prefix.length : 0;
+
         view.dispatch({
-          changes: { from: line.from, to: line.from + prefix.length, insert: "" },
+          changes: { from: line.from, to: line.to, insert: newText },
+          selection: { anchor: Math.max(line.from, from + offset + newOffset) },
         });
-      } else {
-        view.dispatch({
-          changes: { from: line.from, insert: prefix },
-          selection: { anchor: from + prefix.length },
-        });
+      } else if (prefix) {
+        const already = line.text.startsWith(prefix);
+        if (already) {
+          view.dispatch({
+            changes: { from: line.from, to: line.from + prefix.length, insert: "" },
+          });
+        } else {
+          view.dispatch({
+            changes: { from: line.from, insert: prefix },
+            selection: { anchor: from + prefix.length },
+          });
+        }
       }
       view.focus();
     };
 
     const handleFormat = (e: Event) => {
+      if (!isFocusedRef.current) return;
+      if (viewModeRef.current === "preview" || readOnlyRef.current) return;
+
       const command = (e as CustomEvent<{ command: string }>).detail?.command;
       if (!command) return;
       switch (command) {
@@ -4552,11 +5215,81 @@ export function Editor({
         case "link":
           wrapSelection("[", "](url)", "link text");
           break;
-        case "image":
-          wrapSelection("![", "](url)", "alt");
+        case "image": {
+          const view = viewRef.current;
+          if (!view) break;
+
+          (async () => {
+            try {
+              const result = await getAPI().showOpenDialog({
+                title: "Choose Images",
+                buttonLabel: "Insert",
+                properties: ["openFile", "multiSelections"],
+                filters: [
+                  { name: "Images", extensions: ["png", "jpg", "jpeg", "gif", "webp", "svg"] }
+                ]
+              });
+
+              if (result.canceled || !result.filePaths || result.filePaths.length === 0) {
+                return;
+              }
+
+              let insertionText = "";
+              for (const filePath of result.filePaths) {
+                const fileName = filePath.split(/[/\\]/).pop() || "image.png";
+                
+                // Read binary data from the file path
+                const binaryData = await getAPI().readBinary(filePath);
+                
+                // Convert Uint8Array to base64 (fast, native, memory-efficient FileReader)
+                const base64Data = await new Promise<string>((resolve, reject) => {
+                  const blob = new Blob([binaryData as any]);
+                  const reader = new FileReader();
+                  reader.onloadend = () => {
+                    const res = reader.result as string;
+                    const base64 = res.split(",")[1];
+                    resolve(base64);
+                  };
+                  reader.onerror = reject;
+                  reader.readAsDataURL(blob);
+                });
+                
+                // Save image with content-hash deduplication
+                const saveResult = await getAPI().saveImageDedup(fileName, base64Data);
+                
+                // Extract filename without extension for alt text
+                const extIdx = fileName.lastIndexOf(".");
+                const altText = extIdx !== -1 ? fileName.substring(0, extIdx) : fileName;
+                
+                insertionText += `![${altText}](${saveResult.relativePath})\n`;
+              }
+
+              const { from, to } = view.state.selection.main;
+              view.dispatch({
+                changes: { from, to, insert: insertionText },
+                selection: { anchor: from + insertionText.length }
+              });
+              view.focus();
+            } catch (err) {
+              console.error("Failed to select/import images:", err);
+            }
+          })();
           break;
-        case "heading":
+        }
+        case "heading-1":
+          prefixLine("# ");
+          break;
+        case "heading-2":
           prefixLine("## ");
+          break;
+        case "heading-3":
+          prefixLine("### ");
+          break;
+        case "heading-4":
+          prefixLine("#### ");
+          break;
+        case "heading-normal":
+          prefixLine(null);
           break;
         case "bullet-list":
           prefixLine("- ");
@@ -4567,6 +5300,60 @@ export function Editor({
         case "blockquote":
           prefixLine("> ");
           break;
+        case "font-size-small":
+          wrapSelection('<span style="font-size: 0.85em;">', "</span>", "small text");
+          break;
+        case "font-size-normal":
+          wrapSelection('<span style="font-size: 1.0em;">', "</span>", "normal text");
+          break;
+        case "font-size-medium":
+          wrapSelection('<span style="font-size: 1.2em;">', "</span>", "medium text");
+          break;
+        case "font-size-large":
+          wrapSelection('<span style="font-size: 1.5em;">', "</span>", "large text");
+          break;
+        case "font-size-xl":
+          wrapSelection('<span style="font-size: 2.0em;">', "</span>", "extra large text");
+          break;
+        case "text-color":
+          wrapSelection('<span style="color: #ef4444;">', "</span>", "colored text");
+          break;
+        case "align-left":
+          wrapSelection('<div align="left">', "</div>", "left aligned text");
+          break;
+        case "align-center":
+          wrapSelection('<div align="center">', "</div>", "centered text");
+          break;
+        case "align-right":
+          wrapSelection('<div align="right">', "</div>", "right aligned text");
+          break;
+        case "align-justify":
+          wrapSelection('<div align="justify">', "</div>", "justified text");
+          break;
+        case "clear-format": {
+          const view = viewRef.current;
+          if (!view) break;
+          const { from, to } = view.state.selection.main;
+          const selected = view.state.sliceDoc(from, to);
+          if (selected) {
+            const cleared = selected
+              .replace(/\*\*([^*]+)\*\*/g, "$1")
+              .replace(/\*([^*]+)\*/g, "$1")
+              .replace(/~~([^~]+)~~/g, "$1")
+              .replace(/==([^=]+)==/g, "$1")
+              .replace(/<u>([^<]+)<\/u>/g, "$1")
+              .replace(/`([^`]+)`/g, "$1")
+              .replace(/<span[^>]*>([^<]+)<\/span>/g, "$1")
+              .replace(/<div[^>]*>([^<]+)<\/div>/g, "$1")
+              .replace(/<p[^>]*>([^<]+)<\/p>/g, "$1");
+            view.dispatch({
+              changes: { from, to, insert: cleared },
+              selection: { anchor: from, head: from + cleared.length },
+            });
+          }
+          view.focus();
+          break;
+        }
         case "table": {
           const view = viewRef.current;
           if (!view) break;
@@ -4684,7 +5471,7 @@ export function Editor({
       try {
         const saved = localStorage.getItem("openonyx-settings");
         if (saved) return JSON.parse(saved);
-      } catch (err) {}
+      } catch (err) { }
       return null;
     };
 
@@ -4695,11 +5482,11 @@ export function Editor({
       const main = state.selection.main;
       const selectedText = state.sliceDoc(main.from, main.to);
       const isWrapped = selectedText.startsWith(prefix) && selectedText.endsWith(suffix);
-      
+
       let newText = '';
       let newAnchor = main.from;
       let newHead = main.to;
-      
+
       if (isWrapped) {
         newText = selectedText.slice(prefix.length, selectedText.length - suffix.length);
         newAnchor = main.from;
@@ -4709,7 +5496,7 @@ export function Editor({
         newAnchor = main.from + prefix.length;
         newHead = main.to + prefix.length;
       }
-      
+
       view.dispatch({
         changes: { from: main.from, to: main.to, insert: newText },
         selection: { anchor: isWrapped ? main.from : newAnchor, head: isWrapped ? newHead : newHead }
@@ -4725,14 +5512,14 @@ export function Editor({
       const line = state.doc.lineAt(main.from);
       const lineText = line.text;
       const hasPrefix = lineText.startsWith(blockPrefix);
-      
+
       let newText = '';
       if (hasPrefix) {
         newText = lineText.slice(blockPrefix.length);
       } else {
         newText = blockPrefix + lineText;
       }
-      
+
       view.dispatch({
         changes: { from: line.from, to: line.to, insert: newText },
         selection: { anchor: Math.max(line.from, main.from + (hasPrefix ? -blockPrefix.length : blockPrefix.length)) }
@@ -4744,7 +5531,7 @@ export function Editor({
       const view = viewRef.current;
       if (!view) return;
       const main = view.state.selection.main;
-      
+
       view.dispatch({
         changes: { from: main.from, to: main.to, insert: content },
         selection: { anchor: main.from + cursorOffset }
@@ -4759,14 +5546,14 @@ export function Editor({
       const useWikiLinks = settings ? settings.useWikiLinks !== false : true;
       const main = view.state.selection.main;
       const selectedText = view.state.sliceDoc(main.from, main.to);
-      
+
       let clipboardText = '';
       try {
         clipboardText = await navigator.clipboard.readText();
-      } catch (err) {}
-      
+      } catch (err) { }
+
       const isUrl = /^(https?:\/\/|www\.)\S+$/i.test(clipboardText.trim());
-      
+
       let insertText = '';
       let newAnchor = main.from;
       if (isUrl) {
@@ -4779,7 +5566,7 @@ export function Editor({
         insertText = `[${selectedText}]()`;
         newAnchor = main.from + selectedText.length + 3;
       }
-      
+
       view.dispatch({
         changes: { from: main.from, to: main.to, insert: insertText },
         selection: { anchor: newAnchor }
@@ -4792,14 +5579,14 @@ export function Editor({
       if (!view) return;
       const main = view.state.selection.main;
       const selectedText = view.state.sliceDoc(main.from, main.to);
-      
+
       let clipboardText = '';
       try {
         clipboardText = await navigator.clipboard.readText();
-      } catch (err) {}
-      
+      } catch (err) { }
+
       const isUrl = /^(https?:\/\/|www\.)\S+$/i.test(clipboardText.trim());
-      
+
       let insertText = '';
       let newAnchor = main.from;
       if (isUrl) {
@@ -4809,7 +5596,7 @@ export function Editor({
         insertText = `[${selectedText}]()`;
         newAnchor = main.from + selectedText.length + 3;
       }
-      
+
       view.dispatch({
         changes: { from: main.from, to: main.to, insert: insertText },
         selection: { anchor: newAnchor }
@@ -4831,7 +5618,7 @@ export function Editor({
     const extractSelection = () => {
       const view = viewRef.current;
       if (!view || !selection) return;
-      
+
       const event = new CustomEvent('oo:show-prompt', {
         detail: {
           title: 'Extract Selection to Note',
@@ -4841,12 +5628,12 @@ export function Editor({
             if (!fileName || !fileName.trim()) return;
             const cleanName = fileName.trim();
             const notePath = cleanName.endsWith('.md') ? cleanName : `${cleanName}.md`;
-            
+
             try {
               await getAPI().createFile(notePath, selection);
-              
+
               window.dispatchEvent(new CustomEvent('oo:refresh-file-tree'));
-              
+
               const main = view.state.selection.main;
               const linkText = `[[${cleanName}]]`;
               view.dispatch({
@@ -4865,11 +5652,184 @@ export function Editor({
 
     const menu = new Menu();
 
+    const findLinkOrEmbedAtCursor = (lineText: string, posInLine: number) => {
+      const mdLinkRegex = /\[([^\]]*)\]\((https?:\/\/[^\s)]+)\)/g;
+      let match;
+      while ((match = mdLinkRegex.exec(lineText)) !== null) {
+        const start = match.index;
+        const end = mdLinkRegex.lastIndex;
+        if (posInLine >= start && posInLine <= end) {
+          return {
+            type: 'md-link',
+            text: match[0],
+            label: match[1],
+            url: match[2],
+            start,
+            end
+          };
+        }
+      }
+
+      const iframeRegex = /<iframe[^>]+src=(["'])(.*?)\1[^>]*>.*?<\/iframe>/gi;
+      iframeRegex.lastIndex = 0;
+      while ((match = iframeRegex.exec(lineText)) !== null) {
+        const start = match.index;
+        const end = iframeRegex.lastIndex;
+        if (posInLine >= start && posInLine <= end) {
+          return {
+            type: 'iframe',
+            text: match[0],
+            url: match[2],
+            start,
+            end
+          };
+        }
+      }
+
+      const urlRegex = /https?:\/\/[^\s\)\>]+/g;
+      while ((match = urlRegex.exec(lineText)) !== null) {
+        const start = match.index;
+        const end = urlRegex.lastIndex;
+        if (posInLine >= start && posInLine <= end) {
+          return {
+            type: 'raw-url',
+            text: match[0],
+            url: match[0],
+            start,
+            end
+          };
+        }
+      }
+
+      return null;
+    };
+
+    const cmView = viewRef.current;
+    let detected = null;
+    let targetFrom = 0;
+    let targetTo = 0;
+
+    if (cmView) {
+      const state = cmView.state;
+      const main = state.selection.main;
+      const line = state.doc.lineAt(main.from);
+      const lineText = line.text;
+      const posInLine = main.from - line.from;
+
+      if (!main.empty) {
+        const selectionText = state.sliceDoc(main.from, main.to).trim();
+        const mdLinkMatch = selectionText.match(/^\[([^\]]*)\]\((https?:\/\/[^\s)]+)\)$/i);
+        if (mdLinkMatch) {
+          detected = {
+            type: 'md-link',
+            text: selectionText,
+            label: mdLinkMatch[1],
+            url: mdLinkMatch[2]
+          };
+          targetFrom = main.from;
+          targetTo = main.to;
+        } else {
+          const iframeMatch = selectionText.match(/^<iframe[^>]+src=(["'])(.*?)\1[^>]*>.*?<\/iframe>$/i);
+          if (iframeMatch) {
+            detected = {
+              type: 'iframe',
+              text: selectionText,
+              url: iframeMatch[2]
+            };
+            targetFrom = main.from;
+            targetTo = main.to;
+          } else {
+            const urlMatch = selectionText.match(/^https?:\/\/[^\s\)\>]+$/i);
+            if (urlMatch) {
+              detected = {
+                type: 'raw-url',
+                text: selectionText,
+                url: selectionText
+              };
+              targetFrom = main.from;
+              targetTo = main.to;
+            }
+          }
+        }
+      } else {
+        const cursorDetect = findLinkOrEmbedAtCursor(lineText, posInLine);
+        if (cursorDetect) {
+          detected = cursorDetect;
+          targetFrom = line.from + cursorDetect.start;
+          targetTo = line.from + cursorDetect.end;
+        }
+      }
+    }
+
+    if (detected && cmView) {
+      if (detected.type === 'md-link') {
+        menu.addItem((item: any) =>
+          item
+            .setTitle('Convert link to iframe embed')
+            .setIcon('video')
+            .onClick(() => {
+              const replacement = `<iframe src="${detected.url}"></iframe>`;
+              cmView.dispatch({
+                changes: { from: targetFrom, to: targetTo, insert: replacement },
+                selection: { anchor: targetFrom + replacement.length }
+              });
+              cmView.focus();
+            })
+        );
+        menu.addSeparator();
+      } else if (detected.type === 'iframe') {
+        menu.addItem((item: any) =>
+          item
+            .setTitle('Convert embed to text link')
+            .setIcon('link')
+            .onClick(() => {
+              const domain = getDisplayDomain(detected.url);
+              const replacement = `[${domain}](${detected.url})`;
+              cmView.dispatch({
+                changes: { from: targetFrom, to: targetTo, insert: replacement },
+                selection: { anchor: targetFrom + replacement.length }
+              });
+              cmView.focus();
+            })
+        );
+        menu.addSeparator();
+      } else if (detected.type === 'raw-url') {
+        menu.addItem((item: any) =>
+          item
+            .setTitle('Convert URL to iframe embed')
+            .setIcon('video')
+            .onClick(() => {
+              const replacement = `<iframe src="${detected.url}"></iframe>`;
+              cmView.dispatch({
+                changes: { from: targetFrom, to: targetTo, insert: replacement },
+                selection: { anchor: targetFrom + replacement.length }
+              });
+              cmView.focus();
+            })
+        );
+        menu.addItem((item: any) =>
+          item
+            .setTitle('Convert URL to text link')
+            .setIcon('link')
+            .onClick(() => {
+              const domain = getDisplayDomain(detected.url);
+              const replacement = `[${domain}](${detected.url})`;
+              cmView.dispatch({
+                changes: { from: targetFrom, to: targetTo, insert: replacement },
+                selection: { anchor: targetFrom + replacement.length }
+              });
+              cmView.focus();
+            })
+        );
+        menu.addSeparator();
+      }
+    }
+
     const selection = viewRef.current?.state.sliceDoc(
       viewRef.current.state.selection.main.from,
       viewRef.current.state.selection.main.to
     ) || '';
-    const searchTitle = selection 
+    const searchTitle = selection
       ? `Search for "${selection.length > 20 ? selection.substring(0, 20) + '...' : selection}"`
       : 'Search for selection';
 
@@ -4879,7 +5839,7 @@ export function Editor({
     menu.addItem((item: any) => item.setTitle(searchTitle).setIcon('search').onClick(() => { searchSelection(); }));
     menu.addItem((item: any) => item.setTitle('Extract current selection...').setIcon('scissors').onClick(() => { extractSelection(); }));
     menu.addSeparator();
-    
+
     // Submenus for Format, Paragraph, Insert
     let formatItem: any;
     menu.addItem((item: any) => {
@@ -4930,117 +5890,117 @@ export function Editor({
     });
 
     menu.addSeparator();
-    
+
     menu.addItem((item: any) => item.setTitle('Cut').setIcon('scissors').onClick(() => { document.execCommand('cut'); }));
     menu.addItem((item: any) => item.setTitle('Copy').setIcon('copy').onClick(() => { document.execCommand('copy'); }));
     menu.addItem((item: any) => item.setTitle('Paste').setIcon('clipboard').onClick(async () => {
-       try {
-         const text = await navigator.clipboard.readText();
-         if (viewRef.current) {
-           const main = viewRef.current.state.selection.main;
-           viewRef.current.dispatch({ changes: { from: main.from, to: main.to, insert: text }, selection: { anchor: main.from + text.length } });
-         }
-       } catch (err) {}
+      try {
+        const text = await navigator.clipboard.readText();
+        if (viewRef.current) {
+          const main = viewRef.current.state.selection.main;
+          viewRef.current.dispatch({ changes: { from: main.from, to: main.to, insert: text }, selection: { anchor: main.from + text.length } });
+        }
+      } catch (err) { }
     }));
     menu.addItem((item: any) => item.setTitle('Paste as plain text').setIcon('clipboard-type').onClick(async () => {
-       try {
-         const text = await navigator.clipboard.readText();
-         if (viewRef.current) {
-           const main = viewRef.current.state.selection.main;
-           viewRef.current.dispatch({ changes: { from: main.from, to: main.to, insert: text }, selection: { anchor: main.from + text.length } });
-         }
-       } catch (err) {}
+      try {
+        const text = await navigator.clipboard.readText();
+        if (viewRef.current) {
+          const main = viewRef.current.state.selection.main;
+          viewRef.current.dispatch({ changes: { from: main.from, to: main.to, insert: text }, selection: { anchor: main.from + text.length } });
+        }
+      } catch (err) { }
     }));
     menu.addSeparator();
     menu.addItem((item: any) => item.setTitle('Select all').setIcon('check-square').onClick(() => {
-       if (viewRef.current) {
-         viewRef.current.dispatch({ selection: { anchor: 0, head: viewRef.current.state.doc.length }});
-       }
-     }));
- 
-     // Sync real editor state to the API mock before triggering event
-     const activeLeaf = app.workspace.activeLeaf;
-     if (activeLeaf?.view?.getViewType?.() === 'markdown' && viewRef.current) {
-       // Ensure this leaf is considered the active one during the event trigger
-       if (activeLeaf.view) {
-         const view = activeLeaf.view;
-         let editorDescriptor: PropertyDescriptor | undefined;
-         for (let target: any = view; target && !editorDescriptor; target = Object.getPrototypeOf(target)) {
-           editorDescriptor = Object.getOwnPropertyDescriptor(target, 'editor');
-         }
-         // Excalidraw subclasses the Markdown-compatible view surface but
-         // exposes a getter-only editor property. Its own editor bridge must
-         // remain untouched by the host Markdown context-menu bridge.
-         if (editorDescriptor && !editorDescriptor.writable && !editorDescriptor.set) {
-           menu.showAtMouseEvent(e.nativeEvent);
-           return;
-         }
-         const cmView = viewRef.current;
-         const state = cmView.state;
-         
-         // Sync the file info
-         const activeTab = tabs.find(t => t.id === activeTabId);
-         if (activeTab) {
-           setWritableViewProperty(activeLeaf.view, 'file', new TFile(activeTab.path));
-         }
- 
-         // Initialize editor mocks if needed
-         const editor = view.editor || {};
-         view.editor = editor;
-         
-         // Update the mock methods with real data from CodeMirror 6
-         editor.getValue = () => state.doc.toString();
-         editor.getSelection = () => state.sliceDoc(state.selection.main.from, state.selection.main.to);
-         editor.somethingSelected = () => !state.selection.main.empty;
-         editor.getCursor = () => {
-           const pos = state.selection.main.head;
-           const line = state.doc.lineAt(pos);
-           return { line: line.number - 1, ch: pos - line.from };
-         };
-         editor.replaceSelection = (text: string) => {
-           const main = state.selection.main;
-           cmView.dispatch({
-             changes: { from: main.from, to: main.to, insert: text },
-             selection: { anchor: main.from + text.length }
-           });
-         };
-         
-         // Add more standard Obsidian editor methods for compatibility
-         editor.getLine = (n: number) => state.doc.line(n + 1).text;
-         editor.lineCount = () => state.doc.lines;
-         editor.getDoc = () => editor;
-         editor.cm = editor;
-         
-         // Ensure sourceMode shim is present as expected by many plugins
-         view.sourceMode = view.sourceMode || {};
-         view.sourceMode.cmEditor = editor;
- 
-         console.log(`[Editor] Triggering editor-menu for ${activeTab?.path}. Selection: "${editor.getSelection()}"`);
-         app.workspace.trigger('editor-menu', menu, editor, view);
-       }
-     }
- 
-     menu.showAtMouseEvent(e.nativeEvent);
-   }, [activeTabId, tabs]);
+      if (viewRef.current) {
+        viewRef.current.dispatch({ selection: { anchor: 0, head: viewRef.current.state.doc.length } });
+      }
+    }));
+
+    // Sync real editor state to the API mock before triggering event
+    const activeLeaf = app.workspace.activeLeaf;
+    if (activeLeaf?.view?.getViewType?.() === 'markdown' && viewRef.current) {
+      // Ensure this leaf is considered the active one during the event trigger
+      if (activeLeaf.view) {
+        const view = activeLeaf.view;
+        let editorDescriptor: PropertyDescriptor | undefined;
+        for (let target: any = view; target && !editorDescriptor; target = Object.getPrototypeOf(target)) {
+          editorDescriptor = Object.getOwnPropertyDescriptor(target, 'editor');
+        }
+        // Excalidraw subclasses the Markdown-compatible view surface but
+        // exposes a getter-only editor property. Its own editor bridge must
+        // remain untouched by the host Markdown context-menu bridge.
+        if (editorDescriptor && !editorDescriptor.writable && !editorDescriptor.set) {
+          menu.showAtMouseEvent(e.nativeEvent);
+          return;
+        }
+        const cmView = viewRef.current;
+        const state = cmView.state;
+
+        // Sync the file info
+        const activeTab = tabs.find(t => t.id === activeTabId);
+        if (activeTab) {
+          setWritableViewProperty(activeLeaf.view, 'file', new TFile(activeTab.path));
+        }
+
+        // Initialize editor mocks if needed
+        const editor = view.editor || {};
+        view.editor = editor;
+
+        // Update the mock methods with real data from CodeMirror 6
+        editor.getValue = () => state.doc.toString();
+        editor.getSelection = () => state.sliceDoc(state.selection.main.from, state.selection.main.to);
+        editor.somethingSelected = () => !state.selection.main.empty;
+        editor.getCursor = () => {
+          const pos = state.selection.main.head;
+          const line = state.doc.lineAt(pos);
+          return { line: line.number - 1, ch: pos - line.from };
+        };
+        editor.replaceSelection = (text: string) => {
+          const main = state.selection.main;
+          cmView.dispatch({
+            changes: { from: main.from, to: main.to, insert: text },
+            selection: { anchor: main.from + text.length }
+          });
+        };
+
+        // Add more standard Obsidian editor methods for compatibility
+        editor.getLine = (n: number) => state.doc.line(n + 1).text;
+        editor.lineCount = () => state.doc.lines;
+        editor.getDoc = () => editor;
+        editor.cm = editor;
+
+        // Ensure sourceMode shim is present as expected by many plugins
+        view.sourceMode = view.sourceMode || {};
+        view.sourceMode.cmEditor = editor;
+
+        console.log(`[Editor] Triggering editor-menu for ${activeTab?.path}. Selection: "${editor.getSelection()}"`);
+        app.workspace.trigger('editor-menu', menu, editor, view);
+      }
+    }
+
+    menu.showAtMouseEvent(e.nativeEvent);
+  }, [activeTabId, tabs]);
 
   const getClampedToolbarCoords = () => {
     if (!selectionRange) return { top: 0, left: 0 };
     const toolbarHeight = showPromptInput ? 84 : 40;
     const toolbarWidth = 400;
-    
+
     const y = selectionRange.rect.top < (showPromptInput ? 110 : 70)
       ? selectionRange.rect.bottom + 8
       : selectionRange.rect.top - (showPromptInput ? 92 : 46);
-      
+
     const minY = 50;
     const maxY = Math.max(minY, window.innerHeight - toolbarHeight - 40);
     const clampedY = Math.max(minY, Math.min(maxY, y));
-    
+
     const x = selectionRange.rect.left + (selectionRange.rect.width / 2) - (toolbarWidth / 2);
     const minX = 10;
     const maxX = Math.max(minX, window.innerWidth - toolbarWidth - 10);
     const clampedX = Math.max(minX, Math.min(maxX, x));
-    
+
     return {
       top: clampedY + window.scrollY,
       left: clampedX + window.scrollX
@@ -5051,20 +6011,20 @@ export function Editor({
     if (!selectionRange) return { top: 0, left: 0 };
     const toolbarHeight = 40;
     const toolbarWidth = 200;
-    
+
     const y = selectionRange.rect.top < 70
       ? selectionRange.rect.bottom + 8
       : selectionRange.rect.top - 46;
-      
+
     const minY = 50;
     const maxY = Math.max(minY, window.innerHeight - toolbarHeight - 40);
     const clampedY = Math.max(minY, Math.min(maxY, y));
-    
+
     const x = selectionRange.rect.left + (selectionRange.rect.width / 2) - (toolbarWidth / 2);
     const minX = 10;
     const maxX = Math.max(minX, window.innerWidth - toolbarWidth - 10);
     const clampedX = Math.max(minX, Math.min(maxX, x));
-    
+
     return {
       top: clampedY + window.scrollY,
       left: clampedX + window.scrollX
@@ -5276,13 +6236,14 @@ export function Editor({
               onContextMenu={handleContextMenu}
               style={{
                 flex: viewMode === "split" ? `0 0 ${editorWidth}%` : 1,
+                minWidth: 0,
                 height: "100%",
                 overflow: "auto",
                 display:
                   viewMode === "editor" || viewMode === "split"
                     ? "block"
                     : "none",
-                backgroundColor: "var(--bg-primary)",
+                ...(settings?.backgroundImage ? {} : { backgroundColor: "var(--bg-primary)" }),
               }}
             />
 
@@ -5299,9 +6260,10 @@ export function Editor({
                     viewMode === "split"
                       ? `0 0 calc(${100 - editorWidth}% - 4px)`
                       : 1,
+                  minWidth: 0,
                   overflow: "auto",
                   height: "100%",
-                  backgroundColor: "var(--bg-primary)",
+                  ...(settings?.backgroundImage ? {} : { backgroundColor: "var(--bg-primary)" }),
                 }}
               >
 
@@ -5325,16 +6287,29 @@ export function Editor({
       {imageLightbox && (
         <div
           className={editorLightboxBackdropClass}
-          onClick={() => setImageLightbox(null)}
+          onClick={() => {
+            setImageLightbox(null);
+            setZoomScale(1);
+            setPanOffset({ x: 0, y: 0 });
+            setIsPanning(false);
+          }}
         >
           <div
+            ref={lightboxRef}
             className={editorLightboxModalClass}
             onClick={(e) => e.stopPropagation()}
+            style={{ overflow: "hidden" }}
           >
             <button
               type="button"
               className={editorLightboxCloseClass}
-              onClick={() => setImageLightbox(null)}
+              style={{ zIndex: 20 }}
+              onClick={() => {
+                setImageLightbox(null);
+                setZoomScale(1);
+                setPanOffset({ x: 0, y: 0 });
+                setIsPanning(false);
+              }}
               aria-label="Close image preview"
             >
               ×
@@ -5343,7 +6318,65 @@ export function Editor({
               src={imageLightbox.src}
               alt={imageLightbox.alt || "Image preview"}
               className={editorLightboxImageClass}
+              style={{
+                transform: `translate(${panOffset.x}px, ${panOffset.y}px) scale(${zoomScale})`,
+                transition: isPanning ? "none" : "transform 0.15s ease-out",
+                cursor: zoomScale > 1 ? (isPanning ? "grabbing" : "grab") : "zoom-in",
+                userSelect: "none",
+                maxHeight: "100%",
+                maxWidth: "100%",
+              }}
+              onMouseDown={(e) => {
+                if (zoomScale <= 1) return;
+                e.preventDefault();
+                setIsPanning(true);
+                panStartRef.current = {
+                  x: e.clientX - panOffset.x,
+                  y: e.clientY - panOffset.y,
+                };
+              }}
+              draggable={false}
             />
+            <div
+              className="absolute bottom-4 left-1/2 -translate-x-1/2 z-10 flex items-center gap-2 rounded-full border border-[var(--border-medium)] bg-[color-mix(in_srgb,var(--bg-elevated)_75%,transparent)] px-3 py-1.5 backdrop-blur-[8px]"
+              style={{ boxShadow: "0 4px 12px rgba(0, 0, 0, 0.25)" }}
+            >
+              <button
+                type="button"
+                className="flex h-7 w-7 cursor-pointer items-center justify-center rounded-full border-0 bg-transparent text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+                onClick={() => {
+                  setZoomScale((s) => Math.max(0.5, s - 0.25));
+                }}
+                title="Zoom Out"
+              >
+                <ZoomOut size={14} />
+              </button>
+              <span className="text-[12px] font-semibold min-w-[36px] text-center text-[var(--text-primary)]">
+                {Math.round(zoomScale * 100)}%
+              </span>
+              <button
+                type="button"
+                className="flex h-7 w-7 cursor-pointer items-center justify-center rounded-full border-0 bg-transparent text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+                onClick={() => {
+                  setZoomScale((s) => Math.min(5, s + 0.25));
+                }}
+                title="Zoom In"
+              >
+                <ZoomIn size={14} />
+              </button>
+              <div className="h-4 w-px bg-[var(--border-subtle)] mx-0.5" />
+              <button
+                type="button"
+                className="flex h-7 w-7 cursor-pointer items-center justify-center rounded-full border-0 bg-transparent text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+                onClick={() => {
+                  setZoomScale(1);
+                  setPanOffset({ x: 0, y: 0 });
+                }}
+                title="Reset Zoom"
+              >
+                <RotateCcw size={14} />
+              </button>
+            </div>
           </div>
         </div>
       )}

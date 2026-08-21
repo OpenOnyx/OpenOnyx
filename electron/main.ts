@@ -6,12 +6,32 @@
  * exposed to the renderer via secure IPC channels.
  */
 
-import { app, BrowserWindow, ipcMain, dialog, Menu, globalShortcut, shell, session } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog, Menu, globalShortcut, shell, session, protocol, net } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
-import { FileSystemManager } from './fileSystem';
-import { SearchEngine } from './search';
-import { registerIpcHandlers } from './ipc';
+import { fileURLToPath, pathToFileURL } from 'url';
+import { FileSystemManager } from './fileSystem.js';
+import { SearchEngine } from './search.js';
+import { registerIpcHandlers } from './ipc.js';
+import { isInsideRoot } from './pathSafety.js';
+
+// Register vault:// protocol as privileged before app is ready
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: 'vault',
+    privileges: {
+      standard: true,
+      secure: true,
+      supportFetchAPI: true,
+      corsEnabled: true,
+      stream: true,
+      bypassCSP: true,
+    },
+  },
+]);
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 let mainWindow: BrowserWindow | null = null;
 let fsManager: FileSystemManager | null = null;
@@ -19,6 +39,11 @@ let searchEngine: SearchEngine | null = null;
 
 const isDevMode = !app.isPackaged;
 const MAX_RECENT_VAULTS = 20;
+
+const singleInstanceLock = app.requestSingleInstanceLock();
+if (!singleInstanceLock) {
+  app.exit(0);
+}
 
 type VaultHistoryState = {
   currentVaultPath: string | null;
@@ -217,7 +242,22 @@ function configureChromiumRuntime(): void {
   ]);
 }
 
-configureChromiumRuntime();
+function findFileInVault(dir: string, fileName: string): string | null {
+  try {
+    const entries = fs.readdirSync(dir, { withFileTypes: true });
+    for (const entry of entries) {
+      if (entry.name.startsWith('.') || entry.name === 'node_modules') continue;
+      const fullPath = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        const found = findFileInVault(fullPath, fileName);
+        if (found) return found;
+      } else if (entry.name.toLowerCase() === fileName.toLowerCase()) {
+        return fullPath;
+      }
+    }
+  } catch { /* ignore */ }
+  return null;
+}
 
 function isExternalHttpUrl(url: string): boolean {
   try {
@@ -255,6 +295,7 @@ function createWindow(): void {
     height: 900,
     minWidth: 800,
     minHeight: 600,
+    show: false,
     title: 'OpenOnyx',
     backgroundColor: '#0f0f14',
     titleBarStyle: 'hiddenInset',
@@ -269,6 +310,11 @@ function createWindow(): void {
       sandbox: false,
       plugins: true,
     },
+  });
+
+  mainWindow.once('ready-to-show', () => {
+    mainWindow?.show();
+    mainWindow?.focus();
   });
 
   // In development, load from Vite dev server
@@ -402,6 +448,40 @@ function buildMenu(): void {
 }
 
 app.whenReady().then(() => {
+  // Register custom protocol handler for vault:// local asset loading
+  protocol.handle('vault', async (request) => {
+    try {
+      const url = new URL(request.url);
+      let relativePath = decodeURIComponent(url.pathname);
+      if (relativePath.startsWith('/')) relativePath = relativePath.slice(1);
+
+      const vaultPath = fsManager?.getVaultPath();
+      if (!vaultPath) {
+        return new Response('Vault path not set', { status: 404 });
+      }
+
+      let targetPath = path.resolve(vaultPath, relativePath);
+      if (!isInsideRoot(vaultPath, targetPath)) {
+        return new Response('Path traversal detected', { status: 403 });
+      }
+      if (!fs.existsSync(targetPath)) {
+        // Fallback: search for file by basename in vault
+        const fileName = path.basename(relativePath);
+        const found = findFileInVault(vaultPath, fileName);
+        if (found && fs.existsSync(found)) {
+          targetPath = found;
+        } else {
+          return new Response('File not found', { status: 404 });
+        }
+      }
+
+      return net.fetch(pathToFileURL(targetPath).toString());
+    } catch (err) {
+      console.error('[Vault Protocol Error]', err);
+      return new Response('Internal error', { status: 500 });
+    }
+  });
+
   // Set a clean User Agent for the session to bypass login blocks on services like Apple and Spotify
   const originalUserAgent = session.defaultSession.getUserAgent();
   const cleanUserAgent = originalUserAgent
@@ -556,10 +636,15 @@ app.whenReady().then(() => {
 
   // Handle vault directory selection dialog
   ipcMain.handle('dialog:openDirectory', async () => {
-    const result = await dialog.showOpenDialog({
-      properties: ['openDirectory', 'createDirectory'],
-      title: 'Select Vault Directory',
-    });
+    const result = mainWindow
+      ? await dialog.showOpenDialog(mainWindow, {
+          properties: ['openDirectory'],
+          title: 'Select Vault Directory',
+        })
+      : await dialog.showOpenDialog({
+          properties: ['openDirectory'],
+          title: 'Select Vault Directory',
+        });
     return result.canceled ? null : result.filePaths[0];
   });
 
@@ -571,6 +656,26 @@ app.whenReady().then(() => {
       createWindow();
     }
   });
+});
+
+app.on('second-instance', () => {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    return;
+  }
+
+  if (mainWindow.isMinimized()) {
+    mainWindow.restore();
+  }
+
+  if (!mainWindow.isVisible()) {
+    mainWindow.show();
+  }
+
+  mainWindow.focus();
+
+  if (process.platform === 'darwin') {
+    app.focus({ steal: true });
+  }
 });
 
 app.on('window-all-closed', () => {

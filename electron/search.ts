@@ -7,9 +7,9 @@
  */
 
 import Fuse from 'fuse.js';
-import { FileSystemManager } from './fileSystem';
+import { FileSystemManager } from './fileSystem.js';
 
-interface SearchDocument {
+export interface SearchDocument {
   path: string;
   name: string;
   content: string;
@@ -56,6 +56,26 @@ export class SearchEngine {
     }
 
     // Configure Fuse.js for optimal note search
+    this.rebuildFuse();
+  }
+
+  loadDocuments(documents: SearchDocument[]): void {
+    this.documents = documents.slice();
+    this.rebuildFuse();
+  }
+
+  upsertDocument(document: SearchDocument): void {
+    this.documents = this.documents.filter((item) => item.path !== document.path);
+    this.documents.push(document);
+    this.rebuildFuse();
+  }
+
+  removeDocument(filePath: string): void {
+    this.documents = this.documents.filter((item) => item.path !== filePath);
+    this.rebuildFuse();
+  }
+
+  private rebuildFuse(): void {
     this.fuse = new Fuse(this.documents, {
       keys: [
         { name: 'name', weight: 3 },     // Note name is most important

@@ -46,7 +46,7 @@ interface SidebarProps {
   activeFilePath: string | null;
   starredNotes: string[];
   onFileSelect: (path: string) => void;
-  onNewNote: () => void;
+  onNewNote: (parentPath?: string) => void;
   onNewFolder: (parentPath: string) => void;
   onDeleteFile: (path: string, isDir: boolean) => void;
   onRenameFile: (oldPath: string, newName: string) => void;
@@ -75,6 +75,7 @@ interface SidebarProps {
   onDeleteGroup?: (id: string) => void;
   onDuplicateGroup?: (id: string) => void;
   onToggleGroupAutoSave?: (id: string) => void;
+  hasWallpaper?: boolean;
 }
 
 type SortMode =
@@ -222,7 +223,7 @@ function NewFolderIcon({ size = 18 }: { size?: number }) {
 }
 
 const sidebarRootClass =
-  "sidebar trilium-tree relative flex h-full w-full min-w-0 shrink-0 flex-col overflow-hidden bg-[var(--bg-tree,var(--bg-secondary))] pt-0";
+  "sidebar onyx-tree relative flex h-full w-full min-w-0 shrink-0 flex-col overflow-hidden bg-[var(--bg-tree,var(--bg-secondary))] pt-0";
 const sidebarCollapsedClass =
   "collapsed !m-0 hidden !w-0 !min-w-0 !max-w-0 !overflow-hidden !border-x-0 !p-0";
 const sidebarHeaderClass =
@@ -233,14 +234,14 @@ const sidebarBtnClass =
 const sidebarBtnActiveClass =
   "bg-[color-mix(in_srgb,var(--accent-primary)_12%,transparent)] text-[var(--accent-primary)]";
 const sidebarFilterClass =
-  "trilium-quick-search mx-2 mt-2 mb-1.5 flex items-center gap-2 rounded-full bg-[var(--bg-input,var(--bg-tertiary))] px-3 py-1.5 shadow-none";
+  "onyx-quick-search mx-2 mt-2 mb-1.5 flex items-center gap-2 rounded-full bg-[var(--bg-input,var(--bg-tertiary))] px-3 py-1.5 shadow-none";
 const sidebarFilterIconClass = "shrink-0 text-[var(--text-muted)]";
 const sidebarFilterInputClass =
   "flex-1 min-w-0 border-0 bg-transparent py-0.5 font-sans text-[13px] text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)]";
 const sidebarFilterClearClass =
   "flex cursor-pointer items-center justify-center rounded-full border-0 bg-transparent p-0.5 text-[var(--text-muted)] transition-[var(--transition-fast)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]";
 const sidebarSortMenuClass =
-  "absolute right-2 top-9 z-[2500] min-w-[184px] overflow-hidden rounded-[var(--radius-md)] border border-[var(--border-medium)] bg-[var(--bg-elevated)] py-1 shadow-[var(--shadow-md)]";
+  "sort-menu absolute right-2 top-9 z-[2500] min-w-[184px] overflow-hidden rounded-[var(--radius-md)] border border-[var(--border-medium)] bg-[var(--bg-elevated)] py-1 shadow-[var(--shadow-md)]";
 const sidebarSortMenuItemClass =
   "flex w-full cursor-pointer items-center border-0 bg-transparent px-3 py-1.5 text-left text-xs text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]";
 const sidebarSortMenuItemActiveClass =
@@ -318,7 +319,7 @@ const vaultSelectorNameClass = "min-w-0 flex-1 overflow-hidden text-ellipsis whi
 const sidebarSettingsBtnClass =
   "flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-[6px] border-0 bg-transparent text-[var(--text-muted)] transition-colors duration-150 hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]";
 const vaultMenuClass =
-  "absolute top-[calc(100%+2px)] left-0 w-[200px] z-[2200] overflow-hidden rounded-[var(--radius-md)] border border-[var(--border-medium)] bg-[var(--bg-elevated)] py-1 shadow-[var(--shadow-md)]";
+  "vault-menu absolute top-[calc(100%+2px)] left-0 w-[200px] z-[2200] overflow-hidden rounded-[var(--radius-md)] border border-[var(--border-medium)] bg-[var(--bg-elevated)] py-1 shadow-[var(--shadow-md)]";
 const vaultMenuHeaderClass =
   "px-3 pb-1.5 pt-2 text-[10px] font-semibold uppercase tracking-[0.06em] text-[var(--text-muted)]";
 const vaultMenuItemClass =
@@ -397,15 +398,10 @@ export function Sidebar({
   onDuplicateGroup = () => {},
   onToggleGroupAutoSave = () => {},
   onAddFileToGroup = () => {},
+  hasWallpaper = false,
 }: SidebarProps) {
   const [expandedDirs, setExpandedDirs] = useState<Set<string>>(new Set());
-  const [selectedFolder, setSelectedFolder] = useState<string | null>("all");
-  const [foldersPaneWidth, setFoldersPaneWidth] = useState(140);
-  const isResizingRef = useRef(false);
-  const currentDragWidthRef = useRef(140);
-  const containerLeftRef = useRef(0);
-  const foldersPaneRef = useRef<HTMLDivElement>(null);
-  const rafIdRef = useRef(0);
+  const [selectedFolder, setSelectedFolder] = useState<string | null>("");
   const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({});
   const [isFoldersCollapsed, setIsFoldersCollapsed] = useState(false);
   const [previews, setPreviews] = useState<Record<string, string>>({});
@@ -419,6 +415,10 @@ export function Sidebar({
   const [renameValue, setRenameValue] = useState("");
   const [dragOverPath, setDragOverPath] = useState<string | null>(null);
   const [draggingPath, setDraggingPath] = useState<string | null>(null);
+  const [moveModal, setMoveModal] = useState<{
+    path: string;
+    isDir: boolean;
+  } | null>(null);
   const [showStarred, setShowStarred] = useState(true);
   const [showGroups, setShowGroups] = useState(true);
   const [groupContextMenu, setGroupContextMenu] = useState<{
@@ -429,6 +429,35 @@ export function Sidebar({
   const [filterQuery, setFilterQuery] = useState("");
   const [sortMode, setSortMode] = useState<SortMode>("name-asc");
   const [showSortMenu, setShowSortMenu] = useState(false);
+
+  const availableDirectories = useMemo(() => {
+    if (!moveModal) return [];
+    
+    const dirs: Array<{ path: string; name: string; depth: number }> = [
+      { path: "", name: "Root Directory ( / )", depth: 0 }
+    ];
+    
+    const walk = (items: FileEntry[], depth: number) => {
+      for (const entry of items) {
+        if (entry.isDirectory) {
+          // Do not include the folder itself or any subfolder of the folder being moved
+          if (moveModal.isDir && (entry.path === moveModal.path || entry.path.startsWith(moveModal.path + "/"))) {
+            continue;
+          }
+          dirs.push({
+            path: entry.path,
+            name: entry.name,
+            depth: depth + 1
+          });
+          if (entry.children) {
+            walk(entry.children, depth + 1);
+          }
+        }
+      }
+    };
+    walk(fileTree, 0);
+    return dirs;
+  }, [fileTree, moveModal]);
   const [showVaultMenu, setShowVaultMenu] = useState(false);
   const vaultMenuRef = useRef<HTMLDivElement>(null);
   const vaultButtonRef = useRef<HTMLButtonElement>(null);
@@ -516,13 +545,10 @@ export function Sidebar({
       if (current === "starred" && starredNotes.includes(activeFilePath)) {
         return current;
       }
-      if (current === "all") {
-        return current;
-      }
       if (current === parentPath) {
         return current;
       }
-      return parentPath || "all";
+      return parentPath;
     });
 
     if (parts.length < 2) return;
@@ -714,7 +740,7 @@ export function Sidebar({
           >
             {entry.isDirectory && (
               <span className={cx(chevronClass, isExpanded && "open rotate-90")}>
-                <ChevronRight size={14} strokeWidth={2} />
+                <ChevronRight size={16} strokeWidth={2.25} />
               </span>
             )}
 
@@ -779,8 +805,6 @@ export function Sidebar({
     let filtered = allFiles;
     if (selectedFolder === "starred") {
       filtered = allFiles.filter((f) => starredNotes.includes(f.path));
-    } else if (selectedFolder === "all") {
-      filtered = allFiles;
     } else {
       const targetFolder = selectedFolder || "";
       filtered = allFiles.filter((f) => {
@@ -880,11 +904,16 @@ export function Sidebar({
   const renderFoldersOnlyTree = (entries: FileEntry[], depth: number = 0) => {
     const dirs = entries.filter((e) => e.isDirectory);
     return dirs.map((entry) => {
+      const childDirs = (entry.children || []).filter((c) => c.isDirectory);
+      const directNotes = (entry.children || []).filter(
+        (c) => !c.isDirectory && (showAllFileTypes || c.extension === ".md" || c.extension === ".canvas")
+      );
+      const hasNoNotesButHasSubfolders = directNotes.length === 0 && childDirs.length > 0;
       const isExpanded = effectiveExpanded.has(entry.path);
       const isSelected = selectedFolder === entry.path;
-      const childDirs = (entry.children || []).filter((c) => c.isDirectory);
       const isDragOver = dragOverPath === entry.path;
       const noteCount = countDescendantNotes(entry);
+      const isRenaming = entry.path === renamingPath;
 
       return (
         <React.Fragment key={entry.path}>
@@ -892,18 +921,35 @@ export function Sidebar({
             className={cx(
               "nn-folder-item",
               isSelected && "active",
-              isDragOver && "bg-[rgba(var(--accent-color-rgb,37,99,235),0.08)] shadow-[inset_0_0_0_1px_var(--accent-primary)]"
+              isDragOver && "bg-[rgba(var(--accent-color-rgb,37,99,235),0.08)] shadow-[inset_0_0_0_1px_var(--accent-primary)]",
+              entry.path === draggingPath && "opacity-40 scale-[0.98]"
             )}
             style={{ paddingLeft: `${depth * 12 + 8}px` }}
             onClick={(e) => {
+              if (isRenaming) {
+                e.stopPropagation();
+                return;
+              }
               e.stopPropagation();
-              setSelectedFolder(entry.path);
+              if (hasNoNotesButHasSubfolders) {
+                toggleDir(entry.path);
+              } else {
+                setSelectedFolder(entry.path);
+                setIsFoldersCollapsed(true);
+              }
             }}
             onDoubleClick={(e) => {
+              if (isRenaming) {
+                e.stopPropagation();
+                return;
+              }
               e.stopPropagation();
               toggleDir(entry.path);
             }}
             onContextMenu={(e) => handleContextMenu(e, entry.path, true)}
+            draggable={!isRenaming}
+            onDragStart={(e) => handleDragStart(e, entry.path)}
+            onDragEnd={handleDragEnd}
             onDragOver={(e) => handleDragOver(e, entry.path)}
             onDragLeave={handleDragLeave}
             onDrop={(e) => handleDrop(e, entry.path)}
@@ -925,16 +971,37 @@ export function Sidebar({
                 toggleDir(entry.path);
               }}
             >
-              <ChevronRight size={12} />
+              <ChevronRight size={14} strokeWidth={2.25} />
             </span>
             <Folder size={14} className="shrink-0 opacity-70" />
-            <span className="flex-1 overflow-hidden text-ellipsis whitespace-nowrap">
-              {entry.name}
-            </span>
-            {noteCount > 0 && (
-              <span className="text-[11px] text-[var(--text-muted,#8a8a8f)] ml-auto tabular-nums">
-                {noteCount}
-              </span>
+            {isRenaming ? (
+              <form onSubmit={handleRenameSubmit} onClick={(e) => e.stopPropagation()} style={{ flex: 1 }}>
+                <input
+                  className={renameInputClass}
+                  value={renameValue}
+                  onChange={(e) => setRenameValue(e.target.value)}
+                  onBlur={handleRenameSubmit}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Escape') {
+                      setRenamingPath(null);
+                      setRenameValue("");
+                    }
+                  }}
+                  autoFocus
+                  onClick={(e) => e.stopPropagation()}
+                />
+              </form>
+            ) : (
+              <>
+                <span className="flex-1 overflow-hidden text-ellipsis whitespace-nowrap">
+                  {entry.name}
+                </span>
+                {noteCount > 0 && (
+                  <span className="text-[11px] text-[var(--text-muted,#8a8a8f)] ml-auto tabular-nums">
+                    {noteCount}
+                  </span>
+                )}
+              </>
             )}
           </button>
           {isExpanded && childDirs.length > 0 && (
@@ -994,7 +1061,10 @@ export function Sidebar({
     <>
       <div 
         className={cx(sidebarRootClass, !visible && sidebarCollapsedClass)}
-        style={isMac ? { paddingTop: '32px' } : undefined}
+        style={{
+          ...isMac ? { paddingTop: '32px' } : {},
+          ...(hasWallpaper ? {} : { backgroundColor: 'var(--bg-tree, var(--bg-secondary))' })
+        }}
       >
         {hasPrimaryPluginView ? (
           <PluginViewPanel
@@ -1088,14 +1158,14 @@ export function Sidebar({
               <div className={sidebarActionsClass}>
                 <button
                   className={sidebarBtnClass}
-                  onClick={onNewNote}
+                  onClick={() => onNewNote(selectedFolder && selectedFolder !== "starred" ? selectedFolder : "")}
                   title="New Note"
                 >
                   <Plus size={15} />
                 </button>
                 <button
                   className={sidebarBtnClass}
-                  onClick={() => onNewFolder("")}
+                  onClick={() => onNewFolder(selectedFolder && selectedFolder !== "starred" ? selectedFolder : "")}
                   title="New Folder"
                 >
                   <Folder size={15} />
@@ -1136,22 +1206,31 @@ export function Sidebar({
               )}
             </div>
 
-            {/* Apple Notes Dual-Pane Content Wrapper */}
+            {/* Apple Notes Content Wrapper */}
             <div className="nn-explorer-container flex-1">
               {/* Left column: Folders, Groups */}
-              {!isFoldersCollapsed && (
+              {!isFoldersCollapsed ? (
                 <div
-                  ref={foldersPaneRef}
                   className="nn-folders-pane"
-                  style={{ width: `${foldersPaneWidth}px` }}
+                  style={{ width: "100%" }}
                 >
                   {/* Special / virtual views */}
                   <button
-                    className={cx("nn-folder-item", selectedFolder === "all" && "active")}
-                    onClick={() => setSelectedFolder("all")}
+                    className={cx(
+                      "nn-folder-item",
+                      selectedFolder === "" && "active",
+                      dragOverPath === "" && "bg-[rgba(var(--accent-color-rgb,37,99,235),0.08)] shadow-[inset_0_0_0_1px_var(--accent-primary)]"
+                    )}
+                    onClick={() => {
+                      setSelectedFolder("");
+                      setIsFoldersCollapsed(true);
+                    }}
+                    onDragOver={(e) => handleDragOver(e, "")}
+                    onDragLeave={handleDragLeave}
+                    onDrop={(e) => handleDrop(e, "")}
                   >
-                    <Library size={15} className="shrink-0 opacity-70" />
-                    <span className="flex-1 overflow-hidden text-ellipsis whitespace-nowrap">All Notes</span>
+                    <Home size={15} className="shrink-0 opacity-70" />
+                    <span className="flex-1 overflow-hidden text-ellipsis whitespace-nowrap">Root Directory</span>
                   </button>
                   
                   <div className="mx-2 my-2 h-px bg-[var(--border-subtle)]" />
@@ -1225,82 +1304,30 @@ export function Sidebar({
                     </div>
                   )}
                 </div>
-              )}
-
-              {/* Vertical resizable divider line */}
-              {!isFoldersCollapsed && (
-                <div
-                  className="nn-pane-divider"
-                  onPointerDown={(e) => {
-                    e.preventDefault();
-                    const divider = e.currentTarget;
-                    const container = divider.closest('.nn-explorer-container') as HTMLElement | null;
-                    if (!container) return;
-
-                    divider.setPointerCapture(e.pointerId);
-                    isResizingRef.current = true;
-                    const containerRect = container.getBoundingClientRect();
-                    containerLeftRef.current = containerRect.left;
-                    const containerWidth = containerRect.width;
-                    container.classList.add('nn-is-resizing');
-
-                    const onPointerMove = (ev: PointerEvent) => {
-                      const rawWidth = ev.clientX - containerLeftRef.current;
-                      const maxWidth = containerWidth * 0.7;
-                      const w = rawWidth < 70 ? 0 : Math.max(70, Math.min(rawWidth, maxWidth));
-                      currentDragWidthRef.current = w;
-                      const pane = foldersPaneRef.current;
-                      if (pane) {
-                        pane.style.width = `${w}px`;
-                      }
-                    };
-
-                    const onPointerUp = (ev: PointerEvent) => {
-                      divider.releasePointerCapture(ev.pointerId);
-                      isResizingRef.current = false;
-                      container.classList.remove('nn-is-resizing');
-                      window.removeEventListener('pointermove', onPointerMove);
-                      window.removeEventListener('pointerup', onPointerUp);
-
-                      const finalWidth = currentDragWidthRef.current;
-                      if (finalWidth === 0) {
-                        setIsFoldersCollapsed(true);
-                      } else {
-                        setFoldersPaneWidth(finalWidth);
-                      }
-                    };
-
-                    window.addEventListener('pointermove', onPointerMove);
-                    window.addEventListener('pointerup', onPointerUp);
-                  }}
-                />
-              )}
-
-              {/* Right column: Notes cards */}
-              <div 
-                className="nn-notes-pane file-explorer"
-                onDragOver={(e) => handleDragOver(e, "")}
-                onDragLeave={handleDragLeave}
-                onDrop={(e) => handleDrop(e, "")}
-              >
-                {isFoldersCollapsed && (
+              ) : (
+                /* Right column: Notes cards */
+                <div 
+                  className="nn-notes-pane file-explorer"
+                  onDragOver={(e) => handleDragOver(e, "")}
+                  onDragLeave={handleDragLeave}
+                  onDrop={(e) => handleDrop(e, "")}
+                  style={{ width: "100%" }}
+                >
                   <div className="nn-compact-header">
                     <button
                       className="nn-back-btn"
                       onClick={() => {
                         setIsFoldersCollapsed(false);
-                        setFoldersPaneWidth(140);
                       }}
                       title="Back to Folders"
                     >
                       <ChevronLeft size={16} />
-                      <span>Folders</span>
+                      <span>Back</span>
                     </button>
                     <span className="text-xs font-semibold text-[var(--text-primary)] ml-auto pr-2">
-                      {selectedFolder === "all" ? "All Notes" : selectedFolder ? selectedFolder.split("/").pop() : "All Notes"}
+                      {selectedFolder === "" ? "Root Directory" : selectedFolder ? selectedFolder.split("/").pop() : "Root Directory"}
                     </span>
                   </div>
-                )}
                 {groupedNotes.length > 0 ? (
                   groupedNotes.map((section) => {
                     const isCollapsed = collapsedSections[section.id];
@@ -1332,16 +1359,42 @@ export function Sidebar({
                             const dateStr = getRelativeDate(note.modifiedAt);
                             const isCanvas = note.extension === ".canvas";
 
+                            const isRenaming = note.path === renamingPath;
                             return (
                               <div
                                 key={note.path}
                                 className={cx("nn-note-card", isActive && "active")}
-                                onClick={() => onFileSelect(note.path)}
+                                onClick={(e) => {
+                                  if (isRenaming) {
+                                    e.stopPropagation();
+                                    return;
+                                  }
+                                  onFileSelect(note.path);
+                                }}
                                 onContextMenu={(e) => handleContextMenu(e, note.path, false)}
-                                draggable={true}
+                                draggable={!isRenaming}
                                 onDragStart={(e) => handleDragStart(e, note.path)}
                               >
-                                <div className="nn-card-title">{getNoteName(note.name)}</div>
+                                {isRenaming ? (
+                                  <form onSubmit={handleRenameSubmit} onClick={(e) => e.stopPropagation()} style={{ width: '100%', marginBottom: '4px' }}>
+                                    <input
+                                      className={renameInputClass}
+                                      value={renameValue}
+                                      onChange={(e) => setRenameValue(e.target.value)}
+                                      onBlur={handleRenameSubmit}
+                                      onKeyDown={(e) => {
+                                        if (e.key === 'Escape') {
+                                          setRenamingPath(null);
+                                          setRenameValue("");
+                                        }
+                                      }}
+                                      autoFocus
+                                      onClick={(e) => e.stopPropagation()}
+                                    />
+                                  </form>
+                                ) : (
+                                  <div className="nn-card-title">{getNoteName(note.name)}</div>
+                                )}
                                 <div className="nn-card-meta">
                                   {snippet && snippet !== "No additional text" && (
                                     <div className="nn-card-snippet">{snippet}</div>
@@ -1367,6 +1420,7 @@ export function Sidebar({
                   </div>
                 )}
               </div>
+            )}
             </div>
           </>
         )}
@@ -1462,6 +1516,17 @@ export function Sidebar({
               onClick={() => startRename(contextMenu.path)}
             >
               Rename
+            </button>
+            <button
+              className={contextMenuItemClass}
+              onClick={() => {
+                const path = contextMenu.path;
+                const isDir = contextMenu.isDir;
+                closeContextMenu();
+                setMoveModal({ path, isDir });
+              }}
+            >
+              Move to...
             </button>
             {contextMenu.isDir && (
               <button
@@ -1575,6 +1640,85 @@ export function Sidebar({
             })()}
           </div>
         </>
+      )}
+      {moveModal && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-xs p-4">
+          <div className="absolute inset-0" onClick={() => setMoveModal(null)} />
+          <div className="relative flex flex-col w-[min(90vw,440px)] max-h-[75vh] rounded-xl border border-[var(--border-medium)] bg-[var(--bg-primary)] text-[var(--text-primary)] shadow-xl overflow-hidden z-10">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--border-subtle)] bg-[var(--bg-secondary)]">
+              <span className="text-xs font-bold uppercase tracking-wider text-[var(--text-primary)]">
+                Move {moveModal.isDir ? "Folder" : "Note"}
+              </span>
+              <button
+                type="button"
+                onClick={() => setMoveModal(null)}
+                className="text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
+              >
+                <X size={16} />
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-3 flex flex-col gap-1 max-h-[40vh]">
+              <div className="px-2 pb-1.5 text-[9px] font-mono font-bold uppercase tracking-wider text-[var(--text-muted)]">
+                Select Destination Folder
+              </div>
+              {availableDirectories.map((dir) => {
+                const displayName = dir.name;
+                const currentParent = moveModal.path.substring(0, moveModal.path.lastIndexOf("/"));
+                const isCurrentParent = currentParent === dir.path;
+                
+                return (
+                  <button
+                    key={dir.path}
+                    type="button"
+                    onClick={async () => {
+                      if (isCurrentParent) {
+                        setMoveModal(null);
+                        return;
+                      }
+                      const parts = moveModal.path.split("/");
+                      const fileName = parts.pop() || moveModal.path;
+                      const nextPath = dir.path ? `${dir.path}/${fileName}` : fileName;
+                      
+                      try {
+                        await onMoveFile(moveModal.path, nextPath);
+                      } catch (err) {
+                        console.error("Move failed:", err);
+                      }
+                      setMoveModal(null);
+                    }}
+                    className={cx(
+                      "flex items-center gap-2 rounded-md py-1.5 px-3 text-left transition-colors duration-150 text-xs w-full",
+                      isCurrentParent 
+                        ? "text-[var(--text-muted)] bg-[var(--bg-secondary)] cursor-not-allowed opacity-60" 
+                        : "text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+                    )}
+                    style={{ paddingLeft: `${dir.depth * 16 + 12}px` }}
+                    disabled={isCurrentParent}
+                  >
+                    <Folder size={14} className="shrink-0 opacity-70" />
+                    <span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap">
+                      {displayName}
+                    </span>
+                    {isCurrentParent && (
+                      <span className="text-[10px] italic text-[var(--text-muted)] ml-auto shrink-0">
+                        Current Parent
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+            <div className="flex justify-end gap-2 px-4 py-3 border-t border-[var(--border-subtle)] bg-[var(--bg-secondary)]">
+              <button
+                type="button"
+                onClick={() => setMoveModal(null)}
+                className="rounded-md border border-[var(--border-medium)] bg-[var(--bg-primary)] px-3 py-1.5 text-xs font-semibold text-[var(--text-primary)] transition-colors hover:bg-[var(--bg-hover)]"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </>
   );

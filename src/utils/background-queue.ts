@@ -203,7 +203,6 @@ async function processBatch(api: any): Promise<boolean> {
         try {
           content = await api.readFile(job.path);
         } catch {
-          console.warn(`[Queue] Could not read ${job.path}, skipping`);
           _processedCount++;
           reportStatus();
           continue;
@@ -211,7 +210,6 @@ async function processBatch(api: any): Promise<boolean> {
       }
 
       if (typeof content !== "string") {
-        console.warn(`[Queue] ${job.path} returned no readable content, skipping`);
         _processedCount++;
         reportStatus();
         continue;

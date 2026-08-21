@@ -1,6 +1,7 @@
 import { supabase } from './supabase';
 import { authManager } from './auth';
 import { formatSupabaseError } from './supabaseError';
+import { localDB } from './localdb';
 
 export const PRIVATE_ENCRYPTION_VERSION = 1;
 export const PRIVATE_KEY_VERSION = 1;
@@ -206,6 +207,26 @@ export const privateCrypto = {
     return !!spaceId && unlockedSpaceKeys.has(spaceId);
   },
 
+  async ensureSpaceUnlocked(spaceId: string | null | undefined): Promise<boolean> {
+    if (!spaceId) return false;
+    if (unlockedSpaceKeys.has(spaceId)) return true;
+
+    try {
+      const b64 = await localDB.getMeta(`unlocked_space_key_${spaceId}`);
+      if (b64) {
+        const raw = base64ToBytes(b64);
+        unlockedRawSpaceKeys.set(spaceId, raw);
+        unlockedSpaceKeys.set(spaceId, await importAesKey(raw));
+        this.clearFailSafe(spaceId);
+        listeners.forEach(fn => fn(spaceId, true));
+        return true;
+      }
+    } catch (err) {
+      console.warn('[PrivateCrypto] Auto-restore space key failed:', err);
+    }
+    return false;
+  },
+
   isFailSafe(spaceId: string, path: string): boolean {
     return failSafeNotes.has(`${spaceId}:${path}`);
   },
@@ -270,6 +291,9 @@ export const privateCrypto = {
     unlockedSpaceKeys.set(spaceId, await importAesKey(raw));
     this.clearFailSafe(spaceId);
     listeners.forEach(fn => fn(spaceId, true));
+    try {
+      await localDB.setMeta(`unlocked_space_key_${spaceId}`, bytesToBase64(raw));
+    } catch { /* best-effort */ }
   },
 
   async unlockWithRawKey(spaceId: string, raw: Uint8Array): Promise<void> {
@@ -277,6 +301,9 @@ export const privateCrypto = {
     unlockedSpaceKeys.set(spaceId, await importAesKey(raw));
     this.clearFailSafe(spaceId);
     listeners.forEach(fn => fn(spaceId, true));
+    try {
+      await localDB.setMeta(`unlocked_space_key_${spaceId}`, bytesToBase64(raw));
+    } catch { /* best-effort */ }
   },
 
   lock(spaceId: string): void {
@@ -284,6 +311,9 @@ export const privateCrypto = {
     unlockedRawSpaceKeys.delete(spaceId);
     this.clearFailSafe(spaceId);
     listeners.forEach(fn => fn(spaceId, false));
+    try {
+      void localDB.setMeta(`unlocked_space_key_${spaceId}`, null);
+    } catch { /* best-effort */ }
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('private-space:locked', { detail: { spaceId } }));
     }
@@ -294,12 +324,18 @@ export const privateCrypto = {
   },
 
   async encryptText(spaceId: string, plaintext: string, aad?: string): Promise<EncryptedBlob> {
+    if (!unlockedSpaceKeys.has(spaceId)) {
+      await this.ensureSpaceUnlocked(spaceId);
+    }
     const key = unlockedSpaceKeys.get(spaceId);
     if (!key) throw new Error('Unlock this private space before syncing encrypted content.');
     return encryptBytes(key, te.encode(plaintext), aad);
   },
 
   async decryptText(spaceId: string, blob: Pick<EncryptedBlob, 'encrypted_payload' | 'iv' | 'auth_tag'>, aad?: string): Promise<string> {
+    if (!unlockedSpaceKeys.has(spaceId)) {
+      await this.ensureSpaceUnlocked(spaceId);
+    }
     const key = unlockedSpaceKeys.get(spaceId);
     if (!key) throw new Error('Unlock this private space before loading encrypted content.');
     return td.decode(await decryptBytes(key, blob, aad));
@@ -320,6 +356,9 @@ export const privateCrypto = {
     if (!note.content_encrypted) {
       if (note.content) return note.content;
       return '';
+    }
+    if (!unlockedSpaceKeys.has(spaceId)) {
+      await this.ensureSpaceUnlocked(spaceId);
     }
 
     const payload = {
@@ -376,6 +415,32 @@ export const privateCrypto = {
     }
 
     throw lastError || new Error('Decryption failed for all path/version AAD variations.');
+  },
+
+  /**
+   * Encrypt raw bytes (e.g., Yjs binary CRDT updates) using the space's AES-256-GCM key.
+   * Returns base64-encoded ciphertext, IV, and auth tag.
+   */
+  async encryptRawBytes(spaceId: string, data: Uint8Array, aad?: string): Promise<EncryptedBlob> {
+    if (!unlockedSpaceKeys.has(spaceId)) {
+      await this.ensureSpaceUnlocked(spaceId);
+    }
+    const key = unlockedSpaceKeys.get(spaceId);
+    if (!key) throw new Error('Unlock this private space before encrypting binary data.');
+    return encryptBytes(key, data, aad);
+  },
+
+  /**
+   * Decrypt raw bytes (e.g., Yjs binary CRDT updates) using the space's AES-256-GCM key.
+   * Accepts base64-encoded ciphertext, IV, and auth tag. Returns raw Uint8Array.
+   */
+  async decryptRawBytes(spaceId: string, blob: Pick<EncryptedBlob, 'encrypted_payload' | 'iv' | 'auth_tag'>, aad?: string): Promise<Uint8Array> {
+    if (!unlockedSpaceKeys.has(spaceId)) {
+      await this.ensureSpaceUnlocked(spaceId);
+    }
+    const key = unlockedSpaceKeys.get(spaceId);
+    if (!key) throw new Error('Unlock this private space before decrypting binary data.');
+    return decryptBytes(key, blob, aad);
   },
 
   async encryptJson(spaceId: string, payload: JsonObject, aad?: string): Promise<EncryptedBlob> {

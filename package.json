@@ -11,12 +11,14 @@
     "build": "tsc && vite build && tsc -p tsconfig.electron.json",
     "build:electron": "tsc -p tsconfig.electron.json",
     "package": "tsc && vite build && tsc -p tsconfig.electron.json && electron-builder --publish never",
-    "package:linux": "tsc && vite build && tsc -p tsconfig.electron.json && electron-builder --linux dir AppImage --x64 --publish never && node scripts/linux/package-linux.js",
-    "package:pacman": "tsc && vite build && tsc -p tsconfig.electron.json && electron-builder --linux dir --x64 --publish never && node scripts/linux/package-linux.js",
+    "package:linux": "tsc && vite build && tsc -p tsconfig.electron.json && electron-builder --linux dir AppImage --x64 --publish never && node scripts/linux/package-linux.cjs",
+    "package:pacman": "tsc && vite build && tsc -p tsconfig.electron.json && electron-builder --linux dir --x64 --publish never && node scripts/linux/package-linux.cjs",
     "package:win": "tsc && vite build && tsc -p tsconfig.electron.json && electron-builder --win nsis portable --x64 --publish never",
     "package:mac": "tsc && vite build && tsc -p tsconfig.electron.json && electron-builder --mac dmg zip --x64 --arm64 --publish never",
     "package:all": "tsc && vite build && tsc -p tsconfig.electron.json && electron-builder --linux AppImage deb rpm pacman --win nsis portable --mac dmg zip --publish never",
     "lint": "tsc --noEmit",
+    "test": "vitest run --exclude tests/real-plugin-bundles.test.ts",
+    "test:watch": "vitest",
     "test:canvas-compat": "node scripts/test-canvas-compat.cjs",
     "test:obsidian-api": "node scripts/test-obsidian-api-compat.cjs",
     "test:plugin-runtime": "vitest run tests/plugin-runtime.test.ts",
@@ -27,7 +29,8 @@
     "install:pandoc-backend": "node scripts/install-pandoc-backend.cjs",
     "test:pandoc-backend": "node scripts/test-pandoc-backend.cjs",
     "test:plugin-bundles": "node scripts/fetch-plugin-fixtures.cjs && vitest run tests/real-plugin-bundles.test.ts",
-    "test:plugin-compat": "node scripts/test-obsidian-api-compat.cjs && vitest run tests/plugin-runtime.test.ts && node scripts/test-pandoc-backend.cjs && node scripts/fetch-plugin-fixtures.cjs && vitest run tests/real-plugin-bundles.test.ts"
+    "test:plugin-compat": "node scripts/test-obsidian-api-compat.cjs && vitest run tests/plugin-runtime.test.ts && node scripts/test-pandoc-backend.cjs && node scripts/fetch-plugin-fixtures.cjs && vitest run tests/real-plugin-bundles.test.ts",
+    "test:all-checks": "node scripts/run-all-checks.cjs"
   },
   "keywords": [
     "notes",
@@ -73,6 +76,7 @@
     "jszip": "^3.10.1",
     "katex": "^0.16.44",
     "kill-port": "^2.0.1",
+    "lib0": "^0.2.117",
     "lucide": "^1.14.0",
     "lucide-react": "^1.8.0",
     "marked": "^15.0.8",
@@ -81,7 +85,11 @@
     "react": "^19.1.0",
     "react-colorful": "^5.6.1",
     "react-dom": "^19.1.0",
-    "uuid": "^14.0.0"
+    "uuid": "^14.0.0",
+    "y-codemirror.next": "^0.3.5",
+    "y-indexeddb": "^9.0.12",
+    "y-protocols": "^1.0.7",
+    "yjs": "^13.6.32"
   },
   "overrides": {
     "protobufjs": "^7.6.5",
@@ -91,7 +99,8 @@
     "electron-builder": "^26.15.3",
     "app-builder-lib": "^26.15.3",
     "dmg-builder": "^26.15.3",
-    "builder-util-runtime": "^9.7.0"
+    "builder-util-runtime": "^9.7.0",
+    "js-yaml": "^5.2.1"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.0",
@@ -230,8 +239,5 @@
       "backgroundColor": "#121212"
     }
   },
-  "allowScripts": {
-    "electron@41.2.0": true,
-    "esbuild@0.25.12": true
-  }
+  "type": "module"
 }

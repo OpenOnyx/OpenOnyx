@@ -19,6 +19,7 @@ import { supabase, isSupabaseConfigured } from "../lib/supabase";
 import { getAPI } from "./api";
 import { isPrivateCloudSpace, privateCrypto } from "../lib/privateCrypto";
 import { formatSupabaseError } from "../lib/supabaseError";
+import { generateDeterministicId } from "./space-ids";
 import type {
   Space,
   SpaceIndexEntry,
@@ -268,29 +269,6 @@ export async function pushSpaceChunks(
       console.error(`[SpacesStore] Failed to push chunks batch ${i}: ${formatSupabaseError(error)}`);
     }
   }
-}
-
-/**
- * Generate a deterministic UUID v5-style ID from space ID + note path.
- * This ensures re-indexing upserts the same rows rather than creating duplicates.
- */
-function generateDeterministicId(spaceId: string, notePath: string): string {
-  const input = `${spaceId}:${notePath}`;
-  // Simple hash-based UUID generation (not cryptographic, just deterministic)
-  let hash = 0;
-  for (let i = 0; i < input.length; i++) {
-    const char = input.charCodeAt(i);
-    hash = ((hash << 5) - hash) + char;
-    hash |= 0;
-  }
-  // Convert to a UUID-like format using the hash, ensuring exact segment lengths
-  const h1 = Math.abs(hash).toString(16).padStart(8, '0').slice(0, 8);
-  const h2 = Math.abs(hash * 31).toString(16).padStart(8, '0').slice(0, 8);
-  const h3 = Math.abs(hash * 37).toString(16).padStart(8, '0').slice(0, 8);
-  const h4 = Math.abs(hash * 41).toString(16).padStart(8, '0').slice(0, 8);
-
-  // Format: 8-4-4-4-12
-  return `${h1}-${h2.slice(0, 4)}-4${h2.slice(5, 8)}-${h3.slice(0, 4)}-${h4}${h1.slice(0, 4)}`;
 }
 
 async function fetchRemoteSpaces(): Promise<SpaceIndexEntry[]> {

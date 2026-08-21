@@ -41,6 +41,7 @@ import {
   SlidersHorizontal,
   Lock,
   Unlock,
+  Map as MapIcon,
 } from "lucide-react";
 import {
   CanvasNode,
@@ -73,6 +74,13 @@ import {
   serializeCanvasDocument,
   type CanvasDiagnostics,
 } from "./canvasDocument";
+import * as Y from "yjs";
+import { sha256Hex } from "../../utils/collabDocument";
+import { v4 as uuidv4 } from "uuid";
+import { collaborationEngine } from "../../lib/collaborationEngine";
+import { localDB } from "../../lib/localdb";
+import { syncEngine, normalizeSyncPath } from "../../lib/syncEngine";
+import { yDocManager } from "../../lib/yDocManager";
 
 /* ─────── Constants ─────── */
 const MIN_ZOOM = 0.1;
@@ -150,6 +158,7 @@ interface Props {
   onSaveCanvasAs?: () => void;
   recentCanvasFiles?: string[];
   onOpenRecentCanvas?: (p: string) => void;
+  spaceId?: string;
 }
 
 /* ─────── History entry ─────── */
@@ -619,12 +628,14 @@ export function CanvasView({
   onSaveCanvasAs,
   recentCanvasFiles,
   onOpenRecentCanvas,
+  spaceId,
 }: Props) {
   /* ── state ── */
   const [nodes, setNodes] = useState<CanvasNode[]>([]);
   const [edges, setEdges] = useState<CanvasEdge[]>([]);
   const [vp, setVp] = useState<CanvasViewport>({ x: 0, y: 0, zoom: 1 });
   const [tool, setTool] = useState<CanvasToolMode>("select");
+  const [showMinimap, setShowMinimap] = useState(true);
   const [selNodes, setSelNodes] = useState<Set<string>>(new Set());
   const [selEdges, setSelEdges] = useState<Set<string>>(new Set());
   const [drag, setDrag] = useState<DragState>({
@@ -672,6 +683,16 @@ export function CanvasView({
     y: [],
   });
   const [docMeta, setDocMeta] = useState<Record<string, unknown>>({});
+  const [awareness, setAwareness] = useState<any>(null);
+  const [remoteAwareness, setRemoteAwareness] = useState<any[]>([]);
+
+  const docRef = useRef<Y.Doc | null>(null);
+  const nodesMapRef = useRef<Y.Map<Y.Map<any>> | null>(null);
+  const edgesMapRef = useRef<Y.Map<Y.Map<any>> | null>(null);
+  const scribblesMapRef = useRef<Y.Map<Y.Map<any>> | null>(null);
+  const metadataMapRef = useRef<Y.Map<any> | null>(null);
+  const undoManagerRef = useRef<Y.UndoManager | null>(null);
+
   const [diagnostics, setDiagnostics] = useState<CanvasDiagnostics | null>(
     null,
   );
@@ -876,22 +897,16 @@ export function CanvasView({
   );
 
   const undo = useCallback(() => {
-    if (histIdx <= 0) return;
-    const s = hist[histIdx - 1];
-    setNodes(clone(s.nodes));
-    setEdges(clone(s.edges));
-    setScribbles(clone(s.scribbles));
-    setHistIdx(histIdx - 1);
-  }, [hist, histIdx]);
+    if (undoManagerRef.current) {
+      undoManagerRef.current.undo();
+    }
+  }, []);
 
   const redo = useCallback(() => {
-    if (histIdx >= hist.length - 1) return;
-    const s = hist[histIdx + 1];
-    setNodes(clone(s.nodes));
-    setEdges(clone(s.edges));
-    setScribbles(clone(s.scribbles));
-    setHistIdx(histIdx + 1);
-  }, [hist, histIdx]);
+    if (undoManagerRef.current) {
+      undoManagerRef.current.redo();
+    }
+  }, []);
 
   const stopSmoothZoom = useCallback(() => {
     if (directViewportFrameRef.current !== null) {
@@ -1233,6 +1248,8 @@ export function CanvasView({
   /* ── canvas file load/save ── */
   useEffect(() => {
     let cancelled = false;
+    let openedDoc: Y.Doc | null = null;
+    const targetSpaceId = spaceId || 'local';
 
     const loadCanvas = async () => {
       if (!canvasFilePath) {
@@ -1285,42 +1302,71 @@ export function CanvasView({
           return;
         }
         setFileExists(true);
-        const raw = await getAPI().readFile(canvasFilePath);
-        const parsed = parseCanvasDocument(raw || "");
 
-        const nextNodes = Array.isArray(parsed.data.nodes)
-          ? (parsed.data.nodes as CanvasNode[])
-          : [];
-        const nextEdges = Array.isArray(parsed.data.edges)
-          ? (parsed.data.edges as CanvasEdge[])
-          : [];
-        const metadata = { ...parsed.metadata };
-        const nextScribbles = sanitizeCanvasScribbles(
-          metadata[CANVAS_SCRIBBLES_KEY],
-        );
+        const { doc, awareness, undoManager } = await yDocManager.openDoc(canvasFilePath, targetSpaceId);
+        if (cancelled) {
+          void yDocManager.closeDoc(canvasFilePath, targetSpaceId);
+          return;
+        }
+
+        openedDoc = doc;
+        docRef.current = doc;
+        setAwareness(awareness);
+        undoManagerRef.current = undoManager;
+
+        const nodesMap = doc.getMap('nodes');
+        const edgesMap = doc.getMap('edges');
+        const scribblesMap = doc.getMap('scribbles');
+        const metadataMap = doc.getMap('metadata');
+
+        nodesMapRef.current = nodesMap as Y.Map<Y.Map<any>>;
+        edgesMapRef.current = edgesMap as Y.Map<Y.Map<any>>;
+        scribblesMapRef.current = scribblesMap as Y.Map<Y.Map<any>>;
+        metadataMapRef.current = metadataMap;
+
+        const getNodesFromMap = () => {
+          const arr: CanvasNode[] = [];
+          for (const nodeId of nodesMap.keys()) {
+            const nodeMap = nodesMap.get(nodeId);
+            if (nodeMap instanceof Y.Map) {
+              arr.push(nodeMap.toJSON() as CanvasNode);
+            }
+          }
+          return arr.sort((a, b) => ((a as any).zIndex || 0) - ((b as any).zIndex || 0));
+        };
+
+        const getEdgesFromMap = () => {
+          const arr: CanvasEdge[] = [];
+          for (const edgeId of edgesMap.keys()) {
+            const edgeMap = edgesMap.get(edgeId);
+            if (edgeMap instanceof Y.Map) {
+              arr.push(edgeMap.toJSON() as CanvasEdge);
+            }
+          }
+          return arr;
+        };
+
+        const getScribblesFromMap = () => {
+          const arr: CanvasScribbleStroke[] = [];
+          for (const scribbleId of scribblesMap.keys()) {
+            const scribbleMap = scribblesMap.get(scribbleId);
+            if (scribbleMap instanceof Y.Map) {
+              arr.push(scribbleMap.toJSON() as CanvasScribbleStroke);
+            }
+          }
+          return arr;
+        };
+
+        const nextNodes = getNodesFromMap();
+        const nextEdges = getEdgesFromMap();
+        const nextScribbles = getScribblesFromMap();
+        const metadata = metadataMap.toJSON();
+
         const customization = sanitizeCanvasCustomization(
           metadata[CANVAS_CUSTOMIZATION_KEY],
         );
         const savedViewport = sanitizeCanvasViewport(
           metadata[CANVAS_VIEWPORT_KEY],
-        );
-        delete metadata[CANVAS_SCRIBBLES_KEY];
-        delete metadata[CANVAS_CUSTOMIZATION_KEY];
-        delete metadata[CANVAS_VIEWPORT_KEY];
-        const normalizedMetadata: Record<string, unknown> = {
-          ...metadata,
-          [CANVAS_SCRIBBLES_KEY]: nextScribbles,
-        };
-        const compactCustomization = compactCanvasCustomization(customization);
-        if (compactCustomization) {
-          normalizedMetadata[CANVAS_CUSTOMIZATION_KEY] = compactCustomization;
-        }
-        if (savedViewport) {
-          normalizedMetadata[CANVAS_VIEWPORT_KEY] = savedViewport;
-        }
-        const normalizedPayload = serializeCanvasDocument(
-          { nodes: nextNodes, edges: nextEdges },
-          normalizedMetadata,
         );
 
         if (cancelled) return;
@@ -1331,8 +1377,8 @@ export function CanvasView({
         setSelectedScribbleIds(new Set());
         setLassoPoints([]);
         setDocMeta(metadata);
-        setDiagnostics(parsed.diagnostics.repaired ? parsed.diagnostics : null);
-        setShowDiagnostics(parsed.diagnostics.repaired);
+        setDiagnostics(null);
+        setShowDiagnostics(false);
         setSaveState("saved");
         setLastSavedAt(Date.now());
         setCanvasBackgroundColor(customization.backgroundColor || "");
@@ -1355,7 +1401,49 @@ export function CanvasView({
           vpRef.current = savedViewport;
           targetVpRef.current = savedViewport;
         }
-        lastSavedPayloadRef.current = normalizedPayload;
+
+        const onNodesChange = () => {
+          setNodes(getNodesFromMap());
+        };
+        const onEdgesChange = () => {
+          setEdges(getEdgesFromMap());
+        };
+        const onScribblesChange = () => {
+          setScribbles(getScribblesFromMap());
+        };
+        const onMetaChange = () => {
+          const meta = metadataMap.toJSON();
+          setDocMeta(meta);
+          const cust = sanitizeCanvasCustomization(meta[CANVAS_CUSTOMIZATION_KEY]);
+          setCanvasBackgroundColor(cust.backgroundColor || "");
+          setCanvasDotColor(cust.dotColor || "");
+          setCanvasDotOpacityMultiplier(
+            clampDotOpacityMultiplier(
+              cust.dotOpacityMultiplier ?? DEFAULT_DOT_OPACITY_MULTIPLIER,
+            ),
+          );
+          setDefaultNodeColor(cust.defaultNodeColor || "");
+          setDefaultEdgeColor(cust.defaultEdgeColor || "");
+          setScribbleColor(cust.defaultScribbleColor || "");
+          setScribbleWidth(
+            clampScribbleWidth(
+              cust.defaultScribbleWidth ?? DEFAULT_SCRIBBLE_WIDTH,
+            ),
+          );
+        };
+
+        nodesMap.observeDeep(onNodesChange);
+        edgesMap.observeDeep(onEdgesChange);
+        scribblesMap.observeDeep(onScribblesChange);
+        metadataMap.observeDeep(onMetaChange);
+
+        cancelledCleanups.push(() => {
+          nodesMap.unobserveDeep(onNodesChange);
+          edgesMap.unobserveDeep(onEdgesChange);
+          scribblesMap.unobserveDeep(onScribblesChange);
+          metadataMap.unobserveDeep(onMetaChange);
+        });
+
         setSelNodes(new Set());
         setSelEdges(new Set());
         setHist([
@@ -1368,7 +1456,7 @@ export function CanvasView({
         setHistIdx(0);
         pendingInitialZoomFitRef.current = nextNodes.length > 0 && !savedViewport;
       } catch (error) {
-        console.error("Failed to load canvas file:", canvasFilePath, error);
+        console.error("Failed to load collaborative canvas:", canvasFilePath, error);
         if (cancelled) return;
         setNodes([]);
         setEdges([]);
@@ -1377,16 +1465,6 @@ export function CanvasView({
         setSelectedScribbleIds(new Set());
         setLassoPoints([]);
         setDocMeta({});
-        setDiagnostics({
-          warnings: [],
-          errors: ["Failed to load canvas file."],
-          droppedNodes: 0,
-          droppedEdges: 0,
-          repaired: true,
-          parseError:
-            error instanceof Error ? error.message : "Unknown file read error.",
-        });
-        setShowDiagnostics(true);
         setSaveState("error");
         setLastSavedAt(null);
         const defaultViewport = { x: 0, y: 0, zoom: 1 };
@@ -1410,57 +1488,122 @@ export function CanvasView({
       } finally {
         if (!cancelled) {
           loadingCanvasRef.current = false;
-          setCanvasLoadTick((tick) => tick + 1);
         }
       }
     };
 
+    const cancelledCleanups: (() => void)[] = [];
     void loadCanvas();
+
     return () => {
       cancelled = true;
+      if (openedDoc && canvasFilePath) {
+        void yDocManager.closeDoc(canvasFilePath, targetSpaceId);
+      }
+      docRef.current = null;
+      nodesMapRef.current = null;
+      edgesMapRef.current = null;
+      scribblesMapRef.current = null;
+      metadataMapRef.current = null;
+      undoManagerRef.current = null;
+      setAwareness(null);
+      cancelledCleanups.forEach(fn => fn());
     };
-  }, [canvasFilePath]);
+  }, [canvasFilePath, spaceId]);
 
+  // Sync React customization states to Yjs metadataMap
   useEffect(() => {
     if (!canvasFilePath || loadingCanvasRef.current) return;
 
-    const payload = serializeCanvasDocument(
-      { nodes, edges },
-      buildCanvasMetadata(docMeta, scribbles, undefined, vp),
-    );
-    if (payload === lastSavedPayloadRef.current) {
-      setSaveState((prev) =>
-        prev === "saving" || prev === "error" ? prev : "saved",
-      );
+    const metadataMap = metadataMapRef.current;
+    if (metadataMap) {
+      const customization = compactCanvasCustomization({
+        backgroundColor: canvasBackgroundColor || undefined,
+        dotColor: canvasDotColor || undefined,
+        dotOpacityMultiplier: canvasDotOpacityMultiplier === DEFAULT_DOT_OPACITY_MULTIPLIER ? undefined : canvasDotOpacityMultiplier,
+        defaultNodeColor: defaultNodeColor || undefined,
+        defaultEdgeColor: defaultEdgeColor || undefined,
+        defaultScribbleColor: scribbleColor || undefined,
+        defaultScribbleWidth: scribbleWidth === DEFAULT_SCRIBBLE_WIDTH ? undefined : scribbleWidth,
+      });
+
+      docRef.current?.transact(() => {
+        if (customization) {
+          metadataMap.set(CANVAS_CUSTOMIZATION_KEY, customization);
+        } else {
+          metadataMap.delete(CANVAS_CUSTOMIZATION_KEY);
+        }
+      });
+    }
+  }, [
+    canvasBackgroundColor,
+    canvasDotColor,
+    canvasDotOpacityMultiplier,
+    defaultNodeColor,
+    defaultEdgeColor,
+    scribbleColor,
+    scribbleWidth,
+    canvasFilePath,
+  ]);
+
+  // Save viewport changes locally to disk (never synced to Y.Doc)
+  useEffect(() => {
+    if (!canvasFilePath || loadingCanvasRef.current) return;
+
+    const timer = setTimeout(async () => {
+      try {
+        const api = getAPI();
+        const raw = await api.readFile(canvasFilePath);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          parsed[CANVAS_VIEWPORT_KEY] = {
+            x: Number.isFinite(vp.x) ? vp.x : 0,
+            y: Number.isFinite(vp.y) ? vp.y : 0,
+            zoom: Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, Number.isFinite(vp.zoom) ? vp.zoom : 1)),
+          };
+          await api.writeFile(canvasFilePath, JSON.stringify(parsed, null, 2));
+        }
+      } catch {}
+    }, 500);
+
+    return () => clearTimeout(timer);
+  }, [vp, canvasFilePath]);
+
+  // Manage Awareness presence state and handle updates from peers
+  useEffect(() => {
+    if (!awareness) {
+      setRemoteAwareness([]);
       return;
     }
 
-    setSaveState((prev) => (prev === "saving" ? prev : "unsaved"));
+    const localState = {
+      user: awareness.getLocalState()?.user,
+      canvasId: canvasFilePath,
+      selectedNodeIds: Array.from(selNodes),
+      editingNodeId: editingId || null,
+      dragging: drag.type !== 'none',
+    };
+    awareness.setLocalState(localState);
 
-    if (saveDebounceTimerRef.current) {
-      clearTimeout(saveDebounceTimerRef.current);
-    }
+    const handleAwarenessChange = () => {
+      const states = (Array.from(awareness.getStates().entries()) as [number, any][])
+        .filter(([clientId, state]) => {
+          return clientId !== docRef.current?.clientID && state.canvasId === canvasFilePath;
+        })
+        .map(([clientId, state]) => ({
+          clientId,
+          ...state,
+        }));
+      setRemoteAwareness(states);
+    };
 
-    saveDebounceTimerRef.current = setTimeout(() => {
-      void flushCanvasSaveQueue({ path: canvasFilePath, payload });
-    }, 300);
+    awareness.on('change', handleAwarenessChange);
+    handleAwarenessChange();
 
     return () => {
-      if (saveDebounceTimerRef.current) {
-        clearTimeout(saveDebounceTimerRef.current);
-        saveDebounceTimerRef.current = null;
-      }
+      awareness.off('change', handleAwarenessChange);
     };
-  }, [
-    canvasFilePath,
-    nodes,
-    edges,
-    vp,
-    docMeta,
-    scribbles,
-    buildCanvasMetadata,
-    flushCanvasSaveQueue,
-  ]);
+  }, [awareness, selNodes, editingId, drag.type, canvasFilePath]);
 
   /* ── coordinate helpers ── */
   const s2c = useCallback(
@@ -1532,56 +1675,74 @@ export function CanvasView({
         default:
           return;
       }
-      // groups at back, rest at front
-      const sorted = type === "group" ? [n, ...nodes] : [...nodes, n];
-      setNodes(sorted);
+
+      // Populate Yjs nodesMap
+      const nodesMap = nodesMapRef.current;
+      if (nodesMap) {
+        let maxZ = 0;
+        for (const nodeId of nodesMap.keys()) {
+          const nodeMap = nodesMap.get(nodeId);
+          if (nodeMap instanceof Y.Map) {
+            const z = nodeMap.get("zIndex") || 0;
+            if (z > maxZ) maxZ = z;
+          }
+        }
+        (n as any).zIndex = maxZ + 1;
+
+        const nodeMap = new Y.Map();
+        for (const [k, v] of Object.entries(n)) {
+          nodeMap.set(k, v);
+        }
+        nodesMap.set(n.id, nodeMap);
+      }
+
       setSelNodes(new Set([n.id]));
       setSelEdges(new Set());
       setSelectedScribbleIds(new Set());
       setLassoPoints([]);
-      push(sorted, edges);
       return n;
     },
-    [nodes, edges, viewCenter, snap, push, defaultNodeColor],
+    [viewCenter, snap, defaultNodeColor],
   );
 
   const updateNode = useCallback(
     (id: string, u: Record<string, any>) => {
-      setNodes((prev) => {
-        const next = prev.map((n) =>
-          n.id === id ? (clone({ ...n, ...u }) as CanvasNode) : n,
-        );
-        push(next, edges);
-        return next;
-      });
+      const nodesMap = nodesMapRef.current;
+      if (nodesMap) {
+        const nodeMap = nodesMap.get(id);
+        if (nodeMap instanceof Y.Map) {
+          docRef.current?.transact(() => {
+            for (const [k, v] of Object.entries(u)) {
+              nodeMap.set(k, v);
+            }
+          });
+        }
+      }
     },
-    [edges, push],
+    [],
   );
 
   const updateEdge = useCallback(
     (id: string, u: Partial<CanvasEdge>) => {
-      setEdges((prev) => {
-        const current = prev.find((ed) => ed.id === id);
-        if (!current) return prev;
+      const edgesMap = edgesMapRef.current;
+      if (edgesMap) {
+        const edgeMap = edgesMap.get(id);
+        if (edgeMap instanceof Y.Map) {
+          const currentLocked = edgeMap.get("locked");
+          const hasLockedUpdate = Object.prototype.hasOwnProperty.call(u, "locked");
+          if (currentLocked && !(hasLockedUpdate && u.locked === false)) {
+            return;
+          }
 
-        const hasLockedUpdate = Object.prototype.hasOwnProperty.call(u, "locked");
-        if (current.locked && !(hasLockedUpdate && u.locked === false)) {
-          return prev;
+          docRef.current?.transact(() => {
+            for (const [k, v] of Object.entries(u)) {
+              edgeMap.set(k, v);
+            }
+          });
         }
-
-        const changed = (Object.keys(u) as Array<keyof CanvasEdge>).some(
-          (key) => current[key] !== u[key],
-        );
-        if (!changed) return prev;
-
-        const next = prev.map((ed) =>
-          ed.id === id ? (clone({ ...ed, ...u }) as CanvasEdge) : ed,
-        );
-        push(nodes, next);
-        return next;
-      });
+      }
     },
-    [nodes, push],
+    [],
   );
 
   const commitPendingEdgeLabel = useCallback(() => {
@@ -1595,24 +1756,38 @@ export function CanvasView({
   }, [selEdges, edges, edgeLabelDraft, updateEdge]);
 
   const deleteSelected = useCallback(() => {
-    const nn = nodes.filter((n) => !selNodes.has(n.id));
-    const ee = edges.filter(
-      (e) =>
-        (e.locked || !selEdges.has(e.id)) &&
-        !selNodes.has(e.fromNode) &&
-        !selNodes.has(e.toNode),
-    );
-    const ss = scribbles.filter((s) => !selectedScribbleIds.has(s.id));
-    setNodes(nn);
-    setEdges(ee);
-    setScribbles(ss);
-    scribblesRef.current = ss;
+    const nodesMap = nodesMapRef.current;
+    const edgesMap = edgesMapRef.current;
+    const scribblesMap = scribblesMapRef.current;
+    if (nodesMap && edgesMap && scribblesMap) {
+      docRef.current?.transact(() => {
+        selNodes.forEach((id) => {
+          nodesMap.delete(id);
+        });
+        selEdges.forEach((id) => {
+          edgesMap.delete(id);
+        });
+        selectedScribbleIds.forEach((id) => {
+          scribblesMap.delete(id);
+        });
+        // Delete connected edges
+        for (const edgeId of edgesMap.keys()) {
+          const edgeMap = edgesMap.get(edgeId);
+          if (edgeMap instanceof Y.Map) {
+            const fromNode = edgeMap.get("fromNode");
+            const toNode = edgeMap.get("toNode");
+            if (selNodes.has(fromNode) || selNodes.has(toNode)) {
+              edgesMap.delete(edgeId);
+            }
+          }
+        }
+      });
+    }
     setSelNodes(new Set());
     setSelEdges(new Set());
     setSelectedScribbleIds(new Set());
     setLassoPoints([]);
-    push(nn, ee, ss);
-  }, [nodes, edges, scribbles, selNodes, selEdges, selectedScribbleIds, push]);
+  }, [selNodes, selEdges, selectedScribbleIds]);
 
   const setScribbleWidthSafe = useCallback((value: number) => {
     setScribbleWidth(clampScribbleWidth(value));
@@ -1620,110 +1795,161 @@ export function CanvasView({
 
   const applyDefaultNodeColorToSelection = useCallback(() => {
     if (!selNodes.size) return;
-    let changed = false;
-    const next = nodes.map((node) => {
-      if (!selNodes.has(node.id)) return node;
-      const nextColor = defaultNodeColor || undefined;
-      if (node.color === nextColor) return node;
-      changed = true;
-      return { ...node, color: nextColor };
-    });
-    if (!changed) return;
-    setNodes(next);
-    push(next, edgesRef.current, scribblesRef.current);
-  }, [nodes, selNodes, defaultNodeColor, push]);
+    const nodesMap = nodesMapRef.current;
+    if (nodesMap) {
+      docRef.current?.transact(() => {
+        selNodes.forEach((id) => {
+          const nodeMap = nodesMap.get(id);
+          if (nodeMap instanceof Y.Map && !nodeMap.get("locked")) {
+            nodeMap.set("color", defaultNodeColor || undefined);
+          }
+        });
+      });
+    }
+  }, [selNodes, defaultNodeColor]);
 
   const applyDefaultEdgeColorToSelection = useCallback(() => {
     if (!selEdges.size) return;
-    let changed = false;
-    const next = edges.map((edge) => {
-      if (!selEdges.has(edge.id) || edge.locked) return edge;
-      const nextColor = defaultEdgeColor || undefined;
-      if (edge.color === nextColor) return edge;
-      changed = true;
-      return { ...edge, color: nextColor };
-    });
-    if (!changed) return;
-    setEdges(next);
-    push(nodesRef.current, next, scribblesRef.current);
-  }, [edges, selEdges, defaultEdgeColor, push]);
+    const edgesMap = edgesMapRef.current;
+    if (edgesMap) {
+      docRef.current?.transact(() => {
+        selEdges.forEach((id) => {
+          const edgeMap = edgesMap.get(id);
+          if (edgeMap instanceof Y.Map && !edgeMap.get("locked")) {
+            edgeMap.set("color", defaultEdgeColor || undefined);
+          }
+        });
+      });
+    }
+  }, [selEdges, defaultEdgeColor]);
 
   const applyScribbleStyleToSelection = useCallback(() => {
     if (!selectedScribbleIds.size) return;
-    let changed = false;
-    const next = scribbles.map((stroke) => {
-      if (!selectedScribbleIds.has(stroke.id)) return stroke;
-      const nextColor = scribbleColor || undefined;
-      const nextWidth = clampScribbleWidth(scribbleWidth);
-      if (stroke.color === nextColor && stroke.width === nextWidth) {
-        return stroke;
-      }
-      changed = true;
-      return {
-        ...stroke,
-        color: nextColor,
-        width: nextWidth,
-      };
-    });
-    if (!changed) return;
-    setScribbles(next);
-    scribblesRef.current = next;
-    push(nodesRef.current, edgesRef.current, next);
-  }, [selectedScribbleIds, scribbles, scribbleColor, scribbleWidth, push]);
+    const scribblesMap = scribblesMapRef.current;
+    if (scribblesMap) {
+      docRef.current?.transact(() => {
+        selectedScribbleIds.forEach((id) => {
+          const strokeMap = scribblesMap.get(id);
+          if (strokeMap instanceof Y.Map) {
+            strokeMap.set("color", scribbleColor || undefined);
+            strokeMap.set("width", clampScribbleWidth(scribbleWidth));
+          }
+        });
+      });
+    }
+  }, [selectedScribbleIds, scribbleColor, scribbleWidth]);
 
   const duplicateNode = useCallback(
     (id: string) => {
-      const n = nodes.find((x) => x.id === id);
-      if (!n) return;
-      const dup = clone({
-        ...n,
-        id: generateId(),
-        x: n.x + 30,
-        y: n.y + 30,
-      }) as CanvasNode;
-      const nn = [...nodes, dup];
-      setNodes(nn);
-      setSelNodes(new Set([dup.id]));
-      setSelEdges(new Set());
-      setSelectedScribbleIds(new Set());
-      setLassoPoints([]);
-      push(nn, edges);
+      const nodesMap = nodesMapRef.current;
+      if (nodesMap) {
+        const originalNodeMap = nodesMap.get(id);
+        if (originalNodeMap instanceof Y.Map) {
+          const original = originalNodeMap.toJSON() as CanvasNode;
+          
+          let maxZ = 0;
+          for (const nodeId of nodesMap.keys()) {
+            const nodeMap = nodesMap.get(nodeId);
+            if (nodeMap instanceof Y.Map) {
+              const z = nodeMap.get("zIndex") || 0;
+              if (z > maxZ) maxZ = z;
+            }
+          }
+
+          const dup = {
+            ...original,
+            id: generateId(),
+            x: original.x + 30,
+            y: original.y + 30,
+            zIndex: maxZ + 1,
+          };
+          const dupMap = new Y.Map();
+          for (const [k, v] of Object.entries(dup)) {
+            dupMap.set(k, v);
+          }
+          nodesMap.set(dup.id, dupMap);
+          setSelNodes(new Set([dup.id]));
+          setSelEdges(new Set());
+          setSelectedScribbleIds(new Set());
+          setLassoPoints([]);
+        }
+      }
     },
-    [nodes, edges, push],
+    [],
   );
 
   const toggleLockSelected = useCallback(() => {
-    const targets = nodes.filter((n) => selNodes.has(n.id));
-    if (!targets.length) return;
-    const lockAll = !targets.every((n) => n.locked);
-    const next = nodes.map((n) =>
-      selNodes.has(n.id) ? { ...n, locked: lockAll } : n,
-    );
-    setNodes(next);
-    push(next, edges);
-  }, [nodes, selNodes, edges, push]);
+    const nodesMap = nodesMapRef.current;
+    if (nodesMap) {
+      const originalNodes = Array.from(selNodes).map(id => nodesMap.get(id)).filter(Boolean) as Y.Map<any>[];
+      if (!originalNodes.length) return;
+      const lockAll = !originalNodes.every((n) => n.get("locked"));
+      docRef.current?.transact(() => {
+        originalNodes.forEach((nodeMap) => {
+          nodeMap.set("locked", lockAll);
+        });
+      });
+    }
+  }, [selNodes]);
 
   const bringToFront = useCallback(() => {
     if (!selNodes.size) return;
-    const selected = nodes.filter((n) => selNodes.has(n.id));
-    const others = nodes.filter((n) => !selNodes.has(n.id));
-    const next = [...others, ...selected];
-    setNodes(next);
-    push(next, edges);
-  }, [nodes, selNodes, edges, push]);
+    const nodesMap = nodesMapRef.current;
+    if (nodesMap) {
+      let maxZ = 0;
+      for (const nodeId of nodesMap.keys()) {
+        const nodeMap = nodesMap.get(nodeId);
+        if (nodeMap instanceof Y.Map) {
+          const z = nodeMap.get("zIndex") || 0;
+          if (z > maxZ) maxZ = z;
+        }
+      }
+      docRef.current?.transact(() => {
+        selNodes.forEach((id) => {
+          const nodeMap = nodesMap.get(id);
+          if (nodeMap instanceof Y.Map) {
+            nodeMap.set("zIndex", maxZ + 1);
+          }
+        });
+      });
+    }
+  }, [selNodes]);
 
   const sendToBack = useCallback(() => {
     if (!selNodes.size) return;
-    const selected = nodes.filter((n) => selNodes.has(n.id));
-    const others = nodes.filter((n) => !selNodes.has(n.id));
-    const next = [...selected, ...others];
-    setNodes(next);
-    push(next, edges);
-  }, [nodes, selNodes, edges, push]);
+    const nodesMap = nodesMapRef.current;
+    if (nodesMap) {
+      let minZ = 0;
+      for (const nodeId of nodesMap.keys()) {
+        const nodeMap = nodesMap.get(nodeId);
+        if (nodeMap instanceof Y.Map) {
+          const z = nodeMap.get("zIndex") || 0;
+          if (z < minZ) minZ = z;
+        }
+      }
+      docRef.current?.transact(() => {
+        selNodes.forEach((id) => {
+          const nodeMap = nodesMap.get(id);
+          if (nodeMap instanceof Y.Map) {
+            nodeMap.set("zIndex", minZ - 1);
+          }
+        });
+      });
+    }
+  }, [selNodes]);
 
   const alignSelected = useCallback(
     (mode: "left" | "right" | "top" | "bottom" | "hcenter" | "vcenter") => {
-      const selected = nodes.filter((n) => selNodes.has(n.id) && !n.locked);
+      const nodesMap = nodesMapRef.current;
+      if (!nodesMap) return;
+
+      const selected = Array.from(selNodes)
+        .map(id => {
+          const nMap = nodesMap.get(id);
+          return nMap instanceof Y.Map ? (nMap.toJSON() as CanvasNode) : null;
+        })
+        .filter((n): n is CanvasNode => n !== null && !n.locked);
+      
       if (selected.length < 2) return;
 
       const bounds = {
@@ -1735,25 +1961,35 @@ export function CanvasView({
       const centerX = (bounds.left + bounds.right) / 2;
       const centerY = (bounds.top + bounds.bottom) / 2;
 
-      const next = nodes.map((n) => {
-        if (!selNodes.has(n.id) || n.locked) return n;
-        if (mode === "left") return { ...n, x: bounds.left };
-        if (mode === "right") return { ...n, x: bounds.right - n.width };
-        if (mode === "top") return { ...n, y: bounds.top };
-        if (mode === "bottom") return { ...n, y: bounds.bottom - n.height };
-        if (mode === "hcenter") return { ...n, x: centerX - n.width / 2 };
-        return { ...n, y: centerY - n.height / 2 };
+      docRef.current?.transact(() => {
+        selected.forEach((n) => {
+          const nodeMap = nodesMap.get(n.id);
+          if (nodeMap instanceof Y.Map) {
+            if (mode === "left") nodeMap.set("x", bounds.left);
+            else if (mode === "right") nodeMap.set("x", bounds.right - n.width);
+            else if (mode === "top") nodeMap.set("y", bounds.top);
+            else if (mode === "bottom") nodeMap.set("y", bounds.bottom - n.height);
+            else if (mode === "hcenter") nodeMap.set("x", centerX - n.width / 2);
+            else if (mode === "vcenter") nodeMap.set("y", centerY - n.height / 2);
+          }
+        });
       });
-
-      setNodes(next);
-      push(next, edges);
     },
-    [nodes, selNodes, edges, push],
+    [selNodes],
   );
 
   const distributeSelected = useCallback(
     (axis: "x" | "y") => {
-      const selected = nodes.filter((n) => selNodes.has(n.id) && !n.locked);
+      const nodesMap = nodesMapRef.current;
+      if (!nodesMap) return;
+
+      const selected = Array.from(selNodes)
+        .map(id => {
+          const nMap = nodesMap.get(id);
+          return nMap instanceof Y.Map ? (nMap.toJSON() as CanvasNode) : null;
+        })
+        .filter((n): n is CanvasNode => n !== null && !n.locked);
+
       if (selected.length < 3) return;
 
       const sorted = [...selected].sort((a, b) =>
@@ -1762,38 +1998,33 @@ export function CanvasView({
       const first = sorted[0];
       const last = sorted[sorted.length - 1];
 
-      if (axis === "x") {
-        const start = first.x + first.width / 2;
-        const end = last.x + last.width / 2;
-        const step = (end - start) / (sorted.length - 1);
-        const nextById: Record<string, number> = {};
-        sorted.forEach((node, idx) => {
-          const targetCenter = start + step * idx;
-          nextById[node.id] = targetCenter - node.width / 2;
-        });
-        const next = nodes.map((n) =>
-          nextById[n.id] !== undefined ? { ...n, x: nextById[n.id] } : n,
-        );
-        setNodes(next);
-        push(next, edges);
-        return;
-      }
-
-      const start = first.y + first.height / 2;
-      const end = last.y + last.height / 2;
-      const step = (end - start) / (sorted.length - 1);
-      const nextById: Record<string, number> = {};
-      sorted.forEach((node, idx) => {
-        const targetCenter = start + step * idx;
-        nextById[node.id] = targetCenter - node.height / 2;
+      docRef.current?.transact(() => {
+        if (axis === "x") {
+          const start = first.x + first.width / 2;
+          const end = last.x + last.width / 2;
+          const step = (end - start) / (sorted.length - 1);
+          sorted.forEach((node, idx) => {
+            const targetCenter = start + step * idx;
+            const nodeMap = nodesMap.get(node.id);
+            if (nodeMap instanceof Y.Map) {
+              nodeMap.set("x", targetCenter - node.width / 2);
+            }
+          });
+        } else {
+          const start = first.y + first.height / 2;
+          const end = last.y + last.height / 2;
+          const step = (end - start) / (sorted.length - 1);
+          sorted.forEach((node, idx) => {
+            const targetCenter = start + step * idx;
+            const nodeMap = nodesMap.get(node.id);
+            if (nodeMap instanceof Y.Map) {
+              nodeMap.set("y", targetCenter - node.height / 2);
+            }
+          });
+        }
       });
-      const next = nodes.map((n) =>
-        nextById[n.id] !== undefined ? { ...n, y: nextById[n.id] } : n,
-      );
-      setNodes(next);
-      push(next, edges);
     },
-    [nodes, selNodes, edges, push],
+    [selNodes],
   );
 
   const repairAndSave = useCallback(async () => {
@@ -2446,34 +2677,39 @@ export function CanvasView({
           }
           setAlignLines({ x: ax, y: ay });
 
-          setNodes((prev) =>
-            prev.map((n) => {
-              if (!drag.movingIds?.has(n.id)) return n;
-              const orig = originById[n.id] || { x: n.x, y: n.y };
-              return { ...n, x: orig.x + bestDx, y: orig.y + bestDy };
-            }),
-          );
+          const nodesMap = nodesMapRef.current;
+          if (nodesMap) {
+            docRef.current?.transact(() => {
+              drag.movingIds?.forEach((nid) => {
+                const nodeMap = nodesMap.get(nid);
+                if (nodeMap instanceof Y.Map && !nodeMap.get("locked")) {
+                  const orig = originById[nid] || { x: nodeMap.get("x"), y: nodeMap.get("y") };
+                  nodeMap.set("x", orig.x + bestDx);
+                  nodeMap.set("y", orig.y + bestDy);
+                }
+              });
+            }, 'local-drag');
+          }
 
           const scribbleOrigin = scribbleMoveOriginRef.current;
-          if (Object.keys(scribbleOrigin).length > 0) {
+          const scribblesMap = scribblesMapRef.current;
+          if (Object.keys(scribbleOrigin).length > 0 && scribblesMap) {
             if (
               !scribbleMoveChangedRef.current &&
               (Math.abs(bestDx) > 0.02 || Math.abs(bestDy) > 0.02)
             ) {
               scribbleMoveChangedRef.current = true;
             }
-            setScribbles((prev) => {
-              const next = prev.map((stroke) => {
-                const base = scribbleOrigin[stroke.id];
-                if (!base) return stroke;
-                return {
-                  ...stroke,
-                  points: base.map((p) => ({ x: p.x + bestDx, y: p.y + bestDy })),
-                };
-              });
-              scribblesRef.current = next;
-              return next;
-            });
+            docRef.current?.transact(() => {
+              for (const [strokeId, basePoints] of Object.entries(scribbleOrigin)) {
+                const strokeMap = scribblesMap.get(strokeId);
+                if (strokeMap instanceof Y.Map) {
+                  const pointsArr = new Y.Array();
+                  pointsArr.push(basePoints.map((p) => ({ x: p.x + bestDx, y: p.y + bestDy })));
+                  strokeMap.set("points", pointsArr);
+                }
+              }
+            }, 'local-drag');
           }
           break;
         }
@@ -2633,19 +2869,23 @@ export function CanvasView({
             const sx = base.width > 0 ? nw / base.width : 1;
             const sy = base.height > 0 ? nh / base.height : 1;
 
-            setNodes((prev) =>
-              prev.map((node) => {
-                const origin = drag.selectionOriginById?.[node.id];
-                if (!origin || node.locked) return node;
-                return {
-                  ...node,
-                  x: nx + (origin.x - base.x) * sx,
-                  y: ny + (origin.y - base.y) * sy,
-                  width: Math.max(MIN_NODE_WIDTH, origin.width * sx),
-                  height: Math.max(MIN_NODE_HEIGHT, origin.height * sy),
-                };
-              }),
-            );
+            const nodesMap = nodesMapRef.current;
+            if (nodesMap) {
+              docRef.current?.transact(() => {
+                drag.selectionOriginById && Object.keys(drag.selectionOriginById).forEach((nid) => {
+                  const nodeMap = nodesMap.get(nid);
+                  if (nodeMap instanceof Y.Map && !nodeMap.get("locked")) {
+                    const origin = drag.selectionOriginById?.[nid];
+                    if (origin) {
+                      nodeMap.set("x", nx + (origin.x - base.x) * sx);
+                      nodeMap.set("y", ny + (origin.y - base.y) * sy);
+                      nodeMap.set("width", Math.max(MIN_NODE_WIDTH, origin.width * sx));
+                      nodeMap.set("height", Math.max(MIN_NODE_HEIGHT, origin.height * sy));
+                    }
+                  }
+                });
+              }, 'local-drag');
+            }
             break;
           }
 
@@ -2680,13 +2920,18 @@ export function CanvasView({
             ny = base.y + (base.height - nh);
           }
 
-          setNodes((prev) =>
-            prev.map((nd) =>
-              nd.id === drag.nodeId
-                ? { ...nd, x: nx, y: ny, width: nw, height: nh }
-                : nd,
-            ),
-          );
+          const nodesMap = nodesMapRef.current;
+          if (nodesMap && drag.nodeId) {
+            const nodeMap = nodesMap.get(drag.nodeId);
+            if (nodeMap instanceof Y.Map && !nodeMap.get("locked")) {
+              docRef.current?.transact(() => {
+                nodeMap.set("x", nx);
+                nodeMap.set("y", ny);
+                nodeMap.set("width", nw);
+                nodeMap.set("height", nh);
+              }, 'local-drag');
+            }
+          }
           break;
         }
         case "draw": {
@@ -2710,14 +2955,25 @@ export function CanvasView({
         case "erase": {
           const point = s2c(e.clientX, e.clientY);
           const radius = ERASER_RADIUS_PX / Math.max(vpRef.current.zoom, 0.25);
-          setScribbles((prev) => {
-            const next = prev.filter(
-              (stroke) => !isPointNearStroke(point, stroke, radius),
-            );
-            if (next.length !== prev.length) eraseChangedRef.current = true;
-            scribblesRef.current = next;
-            return next;
-          });
+          const scribblesMap = scribblesMapRef.current;
+          if (scribblesMap) {
+            const toDelete: string[] = [];
+            for (const scribbleId of scribblesMap.keys()) {
+              const strokeMap = scribblesMap.get(scribbleId);
+              if (strokeMap instanceof Y.Map) {
+                const stroke = strokeMap.toJSON() as CanvasScribbleStroke;
+                if (isPointNearStroke(point, stroke, radius)) {
+                  toDelete.push(scribbleId);
+                }
+              }
+            }
+            if (toDelete.length > 0) {
+              docRef.current?.transact(() => {
+                toDelete.forEach((id) => scribblesMap.delete(id));
+              });
+              eraseChangedRef.current = true;
+            }
+          }
           break;
         }
         case "lasso": {
@@ -2751,18 +3007,21 @@ export function CanvasView({
           ) {
             scribbleMoveChangedRef.current = true;
           }
-          setScribbles((prev) => {
-            const next = prev.map((stroke) => {
-              if (!ids.has(stroke.id)) return stroke;
-              const base = origin[stroke.id] || stroke.points;
-              return {
-                ...stroke,
-                points: base.map((p) => ({ x: p.x + dx, y: p.y + dy })),
-              };
-            });
-            scribblesRef.current = next;
-            return next;
-          });
+          const scribblesMap = scribblesMapRef.current;
+          if (scribblesMap) {
+            docRef.current?.transact(() => {
+              for (const [strokeId, basePoints] of Object.entries(origin)) {
+                if (ids.has(strokeId)) {
+                  const strokeMap = scribblesMap.get(strokeId);
+                  if (strokeMap instanceof Y.Map) {
+                    const pointsArr = new Y.Array();
+                    pointsArr.push(basePoints.map((p) => ({ x: p.x + dx, y: p.y + dy })));
+                    strokeMap.set("points", pointsArr);
+                  }
+                }
+              }
+            }, 'local-drag');
+          }
           break;
         }
       }
@@ -2839,9 +3098,14 @@ export function CanvasView({
                 toEnd: "arrow",
                 color: defaultEdgeColor || undefined,
               };
-              const newEdges = [...currentEdges, ne];
-              setEdges(newEdges);
-              push(nodesRef.current, newEdges);
+              const edgesMap = edgesMapRef.current;
+              if (edgesMap) {
+                const edgeMap = new Y.Map();
+                for (const [k, v] of Object.entries(ne)) {
+                  edgeMap.set(k, v);
+                }
+                edgesMap.set(ne.id, edgeMap);
+              }
             }
             break;
           }
@@ -2852,19 +3116,26 @@ export function CanvasView({
       if (drag.type === "draw") {
         const finalized = activeScribbleRef.current;
         if (finalized && finalized.points.length > 1) {
-          const nextScribbles = [...scribblesRef.current, finalized];
-          setScribbles(nextScribbles);
-          scribblesRef.current = nextScribbles;
-          push(nodesRef.current, edgesRef.current, nextScribbles);
+          const scribblesMap = scribblesMapRef.current;
+          if (scribblesMap) {
+            const strokeMap = new Y.Map();
+            for (const [k, v] of Object.entries(finalized)) {
+              if (k === 'points' && Array.isArray(v)) {
+                const pointsArr = new Y.Array();
+                pointsArr.push(v);
+                strokeMap.set(k, pointsArr);
+              } else {
+                strokeMap.set(k, v);
+              }
+            }
+            scribblesMap.set(finalized.id, strokeMap);
+          }
         }
         setActiveScribble(null);
         activeScribbleRef.current = null;
       }
 
       if (drag.type === "erase") {
-        if (eraseChangedRef.current) {
-          push(nodesRef.current, edgesRef.current, scribblesRef.current);
-        }
         eraseChangedRef.current = false;
       }
 
@@ -2885,21 +3156,13 @@ export function CanvasView({
       }
 
       if (drag.type === "scribble-move") {
-        if (scribbleMoveChangedRef.current) {
-          push(nodesRef.current, edgesRef.current, scribblesRef.current);
-        }
         scribbleMoveChangedRef.current = false;
       }
 
       if (drag.type === "edge-stretch") {
-        if (edgeStretchChangedRef.current) {
-          push(nodesRef.current, edgesRef.current, scribblesRef.current);
-        }
         edgeStretchChangedRef.current = false;
       }
 
-      if (drag.type === "node" || drag.type === "resize")
-        push(nodesRef.current, edgesRef.current, scribblesRef.current);
       setDrag({ type: "none", startX: 0, startY: 0 });
       setAlignLines({ x: [], y: [] });
       setSelBox(null);
@@ -3793,6 +4056,12 @@ export function CanvasView({
               onEditBlur={commitEdit}
               onEditKeyDown={handleNodeEditKeyDown}
               onUpdateNode={updateNode}
+              remoteSelectors={remoteAwareness
+                .filter((state) => state.selectedNodeIds?.includes(n.id))
+                .map((state) => ({
+                  name: state.user?.name || "Anonymous",
+                  color: state.user?.color || "var(--color-accent)",
+                }))}
             />
           ))}
         </div>
@@ -4487,6 +4756,13 @@ export function CanvasView({
           >
             <Grid3X3 size={15} />
           </button>
+          <button
+            className={`cv-ctrl${showMinimap ? " on" : ""}`}
+            title="Toggle minimap"
+            onClick={() => setShowMinimap(!showMinimap)}
+          >
+            <MapIcon size={15} />
+          </button>
         </div>
         <div className="cv-ctrl-group">
           <button
@@ -4514,18 +4790,20 @@ export function CanvasView({
         </div>
       </div>
 
-      <CanvasMiniMap
-        nodes={nodes}
-        world={minimapWorldBounds}
-        viewport={visibleWorldRect}
-        onNavigate={(x, y) => {
-          setViewportImmediate((prev) => ({
-            ...prev,
-            x: areaSize.width / 2 - x * prev.zoom,
-            y: areaSize.height / 2 - y * prev.zoom,
-          }));
-        }}
-      />
+      {showMinimap && (
+        <CanvasMiniMap
+          nodes={nodes}
+          world={minimapWorldBounds}
+          viewport={visibleWorldRect}
+          onNavigate={(x, y) => {
+            setViewportImmediate((prev) => ({
+              ...prev,
+              x: areaSize.width / 2 - x * prev.zoom,
+              y: areaSize.height / 2 - y * prev.zoom,
+            }));
+          }}
+        />
+      )}
 
       {/* ══ Bottom toolbar (add row) ══ */}
       <div className="cv-add-bar">
@@ -4557,6 +4835,14 @@ export function CanvasView({
           title="Add group"
         >
           <SquareDashed size={18} />
+        </button>
+        <button
+          className="cv-add-btn"
+          style={showMinimap ? { color: "var(--accent-primary)", background: "var(--bg-active)" } : undefined}
+          onClick={() => setShowMinimap(!showMinimap)}
+          title="Toggle minimap"
+        >
+          <MapIcon size={18} />
         </button>
       </div>
 
@@ -5178,6 +5464,7 @@ interface NodeCardProps {
   onEditBlur: () => void;
   onEditKeyDown: (e: React.KeyboardEvent) => void;
   onUpdateNode?: (id: string, props: any) => void;
+  remoteSelectors?: { name: string; color: string }[];
 }
 
 function NodeCard({
@@ -5196,11 +5483,16 @@ function NodeCard({
   onEditBlur,
   onEditKeyDown,
   onUpdateNode,
+  remoteSelectors,
 }: NodeCardProps) {
   const isGroup = node.type === "group";
   const isLink = node.type === "link";
   const isEmbed = isLink && !((node as CanvasLinkNode).url || "").includes("#no-embed");
   const borderColor = isLink ? undefined : resolveCanvasColor(node.color);
+
+  const isRemotelySelected = remoteSelectors && remoteSelectors.length > 0;
+  const remoteColor = isRemotelySelected ? remoteSelectors[0].color : undefined;
+  const remoteName = isRemotelySelected ? remoteSelectors[0].name : undefined;
 
   const style: React.CSSProperties = {
     left: node.x,
@@ -5232,6 +5524,12 @@ function NodeCard({
           "--node-color-label-border": colorWithAlpha(borderColor, 0.92),
         } as any)
       : {}),
+    ...(isRemotelySelected
+      ? {
+          outline: `2px solid ${remoteColor}`,
+          boxShadow: `0 0 8px ${remoteColor}80`,
+        }
+      : {}),
   };
 
   return (
@@ -5242,6 +5540,28 @@ function NodeCard({
       onDoubleClick={() => onDoubleClick(nodeId)}
       data-id={node.id}
     >
+      {isRemotelySelected && (
+        <div
+          className="cv-remote-badge"
+          style={{
+            position: "absolute",
+            top: -18,
+            right: 2,
+            background: remoteColor,
+            color: "#ffffff",
+            fontSize: "9px",
+            fontWeight: 700,
+            padding: "2px 6px",
+            borderRadius: "3px",
+            zIndex: 10,
+            pointerEvents: "none",
+            boxShadow: "0 2px 4px rgba(0,0,0,0.2)",
+            whiteSpace: "nowrap",
+          }}
+        >
+          {remoteName}
+        </div>
+      )}
       {/* Connection ports */}
       {selected &&
         !node.locked &&
@@ -5453,7 +5773,8 @@ function areNodeCardPropsEqual(prev: NodeCardProps, next: NodeCardProps) {
     prev.editText === next.editText &&
     prev.vaultPath === next.vaultPath &&
     prev.enableMarkdownPreview === next.enableMarkdownPreview &&
-    prev.onUpdateNode === next.onUpdateNode
+    prev.onUpdateNode === next.onUpdateNode &&
+    JSON.stringify(prev.remoteSelectors) === JSON.stringify(next.remoteSelectors)
   );
 }
 

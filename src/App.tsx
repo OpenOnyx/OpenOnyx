@@ -96,6 +96,13 @@ import {
 } from "./components/layout/SplitPaneContainer";
 import type { PluginCommand, PluginRibbonAction, PluginStatusBarItem, PluginRegistration, PluginSettingTabRegistration } from "./types/plugin";
 import { getNoteName, generateId, debounce, isDarkTheme } from "./utils/helpers";
+import { useAppCommands } from "./hooks/useAppCommands";
+import { useRenameNote } from "./hooks/useRenameNote";
+import { useVaultSession } from "./hooks/useVaultSession";
+import { useLayoutGroups } from "./hooks/useLayoutGroups";
+import { useInlineSuggestions } from "./hooks/useInlineSuggestions";
+import { useFileOperations } from "./hooks/useFileOperations";
+import { rewriteWikiLinks } from "./utils/wikiLinks";
 import {
   getUngroupedTabsToPreserve,
   isUngroupedTab,
@@ -245,6 +252,9 @@ const CUSTOM_THEME_VARIABLES = [
   "--bg-secondary",
   "--bg-tertiary",
   "--bg-elevated",
+  "--bg-launcher",
+  "--bg-tree",
+  "--bg-toolbar",
   "--bg-hover",
   "--bg-active",
   "--bg-glass",
@@ -366,670 +376,35 @@ const isKanbanBoard = (frontmatter: Record<string, unknown> | undefined) =>
 const GRAPH_TAB_PATH = "__graph__.view";
 const SPACES_TAB_PATH = "__spaces__.view";
 
-const TRANSITION_STOP_WORDS = new Set([
-  "the", "and", "for", "with", "from", "that", "this", "into", "while", "where",
-  "when", "then", "have", "has", "was", "were", "your", "about", "note", "notes",
-  "list", "task", "item", "section", "idea", "project", "daily",
-]);
 
-const FIRST_THOUGHT_PROMPTS = [
-  "A random thought...",
-  "Something you're trying to figure out...",
-  "An idea you had today...",
-  "A problem you're stuck on...",
-  "Something you've been thinking about...",
-];
 
-const FIRST_THOUGHT_GHOST_EXAMPLES = [
-  "I want to build something but don't know where to start",
-  "Why do I procrastinate even when I care?",
-  "Learning feels scattered lately",
-];
-
-type FirstThoughtExpandableIntent =
-  | "goal"
-  | "problem"
-  | "idea"
-  | "confusion"
-  | "reflection";
-
-type FirstThoughtNonExpandableIntent =
-  | "identity"
-  | "factual"
-  | "greeting"
-  | "too_short"
-  | "unknown";
-
-type FirstThoughtIntentClassification =
-  | {
-      kind: "expandable";
-      intent: FirstThoughtExpandableIntent;
-      semantic: FirstThoughtSemanticIntent;
-    }
-  | {
-      kind: "non_expandable";
-      intent: FirstThoughtNonExpandableIntent;
-    };
-
-type FirstThoughtIntentType =
-  | "learn"
-  | "build"
-  | "social"
-  | "reflect"
-  | "plan"
-  | "problem";
-
-type FirstThoughtContext = {
-  knownSkills: string[];
-  constraints: string[];
-  timeframe: string | null;
-  audience: string | null;
-};
-
-type FirstThoughtSemanticIntent = {
-  intentType: FirstThoughtIntentType;
-  topic: string | null;
-  context: FirstThoughtContext;
-  clarityScore: number;
-  signals: {
-    hasVagueSignal: boolean;
-    hasSpecificTopicSignal: boolean;
-  };
-};
-
-type FirstThoughtTemplate = {
-  label: string;
-  template: string;
-};
-
-type FirstThoughtExpansionPlan = {
-  intent: FirstThoughtExpandableIntent;
-  suggestions: [FirstThoughtTemplate, FirstThoughtTemplate, FirstThoughtTemplate];
-};
-
-const FIRST_THOUGHT_EXPANSION_IDLE_MS = 700;
-const FIRST_THOUGHT_MIN_MEANINGFUL_WORDS = 4;
-
-const FIRST_THOUGHT_MEANINGLESS_TOKENS = new Set([
-  "a",
-  "an",
-  "the",
-  "to",
-  "of",
-  "in",
-  "on",
-  "at",
-  "for",
-  "and",
-  "or",
-  "but",
-  "is",
-  "am",
-  "are",
-  "was",
-  "were",
-  "be",
-  "been",
-  "being",
-  "this",
-  "that",
-  "it",
-  "as",
-  "with",
-  "by",
-]);
-
-const randomInt = (min: number, max: number): number =>
-  Math.floor(Math.random() * (max - min + 1)) + min;
-
-function normalizeFirstThoughtDraft(value: string): string {
-  return value.toLowerCase().replace(/\s+/g, " ").trim();
-}
-
-function getMeaningfulWordCount(value: string): number {
-  return value
-    .toLowerCase()
-    .replace(/[^a-z0-9'\s]/g, " ")
-    .split(/\s+/)
-    .map((token) => token.trim())
-    .filter(
-      (token) => token.length > 0 && !FIRST_THOUGHT_MEANINGLESS_TOKENS.has(token),
-    ).length;
-}
-
-const FIRST_THOUGHT_VAGUE_TOKENS = new Set([
-  "something",
-  "anything",
-  "stuff",
-  "things",
-  "idk",
-  "maybe",
-  "whatever",
-]);
-
-function clampScore(value: number): number {
-  return Math.max(0, Math.min(1, value));
-}
-
-function extractKnownSkills(source: string): string[] {
-  const skills: string[] = [];
-  const candidates: Array<[RegExp, string]> = [
-    [/\bpython\b/, "Python"],
-    [/\bjavascript\b/, "JavaScript"],
-    [/\btypescript\b/, "TypeScript"],
-    [/\breact\b/, "React"],
-    [/\bnode(?:\.js)?\b/, "Node.js"],
-    [/\bsql\b/, "SQL"],
-  ];
-
-  candidates.forEach(([pattern, label]) => {
-    if (pattern.test(source)) skills.push(label);
-  });
-
-  return Array.from(new Set(skills));
-}
-
-function extractAudience(source: string): string | null {
-  const match = source.match(
-    /\bfor\s+(students|developers|beginners|founders|creators|teams|freelancers)\b/,
-  );
-  return match ? match[1] : null;
-}
-
-function extractTimeframe(source: string): string | null {
-  if (/\btoday\b/.test(source)) return "today";
-  if (/\bthis\s+week\b/.test(source)) return "this week";
-  if (/\bthis\s+month\b/.test(source)) return "this month";
-  const match = source.match(/\bin\s+\d+\s+(day|days|week|weeks|month|months)\b/);
-  return match ? match[0].replace(/^in\s+/, "in ") : null;
-}
-
-function extractConstraints(source: string): string[] {
-  const constraints: string[] = [];
-  if (/\b(no\s+time|limited\s+time|busy|full\s*time\s*job)\b/.test(source)) {
-    constraints.push("limited time");
-  }
-  if (/\b(low\s+budget|no\s+budget|cheap)\b/.test(source)) {
-    constraints.push("low budget");
-  }
-  return constraints;
-}
-
-const TOPIC_STOP_WORDS = new Set([
-  "i", "me", "my", "mine", "myself", "yourself", "himself", "herself", "itself",
-  "want", "to", "a", "an", "the", "is", "am", "are",
-  "was", "were", "be", "been", "being", "do", "does", "did", "have",
-  "has", "had", "will", "would", "could", "should", "can", "may",
-  "might", "shall", "need", "just", "really", "very", "so", "too",
-  "also", "but", "and", "or", "if", "then", "that", "this", "it",
-  "its", "of", "in", "on", "at", "for", "with", "from", "by",
-  "about", "into", "like", "some", "something", "anything",
-  "feel", "think", "know", "get", "make", "go", "keep", "try",
-  "start", "stop", "lot", "lots", "more", "much", "many",
-  // Intent verbs — these describe the action, NOT the topic
-  "learn", "study", "build", "create", "launch", "ship", "improve",
-  "fix", "solve", "plan", "explore", "master", "practice", "develop",
-  "design", "write", "read", "understand", "figure", "work",
-  "become", "achieve", "find", "change", "grow", "manage",
-  // Common fillers
-  "how", "why", "what", "when", "where", "who", "which",
-  "better", "good", "bad", "new", "old", "big", "small",
-  "out", "up", "down", "way", "thing", "things", "stuff",
-]);
-
-function inferTopic(source: string): string | null {
-  // Known topics first (high-confidence matches)
-  if (/\b(swim|swimming|swimmer|pool|freestyle|backstroke)\b/.test(source)) return "swimming";
-  if (/\b(machine\s+learning|deep\s+learning|nlp|computer\s+vision)\b/.test(source)) return "machine learning";
-  if (/\bai|artificial\s+intelligence|llm\b/.test(source)) return "AI";
-  if (/\bsaas|startup\b/.test(source)) return "SaaS";
-  if (/\b(business|venture|company)\b/.test(source)) return "business";
-  if (/\b(propose|ask\s+out|date|dating|relationship|crush|girl|boy|partner)\b/.test(source)) return "relationship";
-  if (/\bfitness|workout|exercise|health\b/.test(source)) return "fitness";
-  if (/\bfocus|concentration|distract\w*\b/.test(source)) return "focus";
-  if (/\bproductivity|procrastinat\w*\b/.test(source)) return "productivity";
-  if (/\b(python|javascript|typescript|react|node|coding|code|programming|web\s*dev|app\s*dev|software)\b/.test(source)) return "coding";
-  if (/\b(learning|study\w*|exam)\b/.test(source)) return "learning";
-
-  // Dynamic extraction: strip the full intent phrase, then extract meaningful nouns
-  const stripped = source
-    .replace(/^(?:i\s+(?:want|need|plan|aim|love|like|enjoy|feel|think|keep)\s+(?:to\s+)?)/i, "")
-    .replace(/^(?:i\s+(?:am|was)\s+(?:trying\s+to\s+)?)/i, "")
-    .replace(/^(?:how\s+(?:do|can|should)\s+i\s+)/i, "")
-    .replace(/^(?:why\s+(?:do|can't|don't|am)\s+i\s+)/i, "")
-    .trim();
-
-  const tokens = stripped
-    .split(/\s+/)
-    .map((t) => t.replace(/[^a-z0-9]/g, ""))
-    .filter((t) => t.length > 2 && !TOPIC_STOP_WORDS.has(t));
-
-  if (tokens.length === 0) return null;
-
-  // Take up to 3 meaningful tokens as the topic phrase
-  const topicTokens = tokens.slice(0, Math.min(3, tokens.length));
-  return topicTokens.join(" ");
-}
-
-function inferFirstThoughtSemanticIntent(
-  rawText: string,
-  intentType: FirstThoughtIntentType,
-): FirstThoughtSemanticIntent {
-  const source = normalizeFirstThoughtDraft(rawText);
-  const topic = inferTopic(source);
-  const context: FirstThoughtContext = {
-    knownSkills: extractKnownSkills(source),
-    constraints: extractConstraints(source),
-    timeframe: extractTimeframe(source),
-    audience: extractAudience(source),
-  };
-
-  const meaningfulWords = getMeaningfulWordCount(source);
-  const hasVagueSignal = Array.from(FIRST_THOUGHT_VAGUE_TOKENS).some((token) =>
-    new RegExp(`\\b${token}\\b`).test(source),
-  );
-  const hasExplicitDifficultySignal = /\b(stuck|struggle|can'?t|cannot|overwhelmed|confused|blocked)\b/.test(source);
-  const hasSpecificTopicSignal =
-    topic !== null && !["learning", "programming", "productivity"].includes(topic);
-  const hasIntentVerbSignal =
-    /(learn|study|build|create|launch|plan|improve|fix|solve|propose|ask\s+out|reflect|think|feel)/.test(
-      source,
-    );
-
-  let clarityScore = 0.24;
-  if (hasIntentVerbSignal) clarityScore += 0.16;
-  if (topic) clarityScore += 0.25;
-  if (hasSpecificTopicSignal) clarityScore += 0.12;
-  if (hasExplicitDifficultySignal) clarityScore += 0.15;
-  if (meaningfulWords >= 6) clarityScore += 0.15;
-  if (meaningfulWords >= 9) clarityScore += 0.1;
-  if (context.knownSkills.length > 0) clarityScore += 0.12;
-  if (context.audience) clarityScore += 0.1;
-  if (context.timeframe) clarityScore += 0.08;
-  if (context.constraints.length > 0) clarityScore += 0.08;
-  if (hasVagueSignal) clarityScore -= 0.22;
-  if (!topic) clarityScore -= 0.1;
-
-  if (hasIntentVerbSignal && hasVagueSignal && !topic && meaningfulWords >= 4) {
-    clarityScore = Math.max(0.35, clarityScore);
-  }
-
-  return {
-    intentType,
-    topic,
-    context,
-    clarityScore: clampScore(clarityScore),
-    signals: {
-      hasVagueSignal,
-      hasSpecificTopicSignal,
-    },
-  };
-}
-
-function extractExpansionAnchors(semantic: FirstThoughtSemanticIntent): string[] {
-  const anchors = new Set<string>();
-
-  const intentCueMap: Record<FirstThoughtIntentType, string[]> = {
-    learn: ["learn", "learning", "study", "project", "skill", "explore", "goal"],
-    build: ["build", "product", "launch", "prototype", "users", "problem"],
-    social: ["approach", "interaction", "conversation", "relationship"],
-    reflect: ["feeling", "pattern", "clarity", "support"],
-    plan: ["plan", "priority", "action", "goal", "routine", "progress"],
-    problem: ["problem", "stuck", "unblock", "test", "difficult", "challenge"],
-  };
-
-  if (semantic.topic) {
-    semantic.topic
-      .toLowerCase()
-      .split(/\s+/)
-      .forEach((token) => {
-        if (token.length >= 3) anchors.add(token);
-      });
-  }
-
-  semantic.context.knownSkills.forEach((skill) => anchors.add(skill.toLowerCase()));
-  semantic.context.constraints.forEach((constraint) => {
-    constraint
-      .toLowerCase()
-      .split(/\s+/)
-      .forEach((token) => {
-        if (token.length >= 3) anchors.add(token);
-      });
-  });
-
-  if (semantic.context.audience) anchors.add(semantic.context.audience.toLowerCase());
-  if (semantic.context.timeframe) {
-    semantic.context.timeframe
-      .toLowerCase()
-      .split(/\s+/)
-      .forEach((token) => {
-        if (token.length >= 3) anchors.add(token);
-      });
-  }
-
-  intentCueMap[semantic.intentType].forEach((cue) => anchors.add(cue));
-
-  return Array.from(anchors);
-}
-
-function isExpansionPlanRelevant(
-  _semantic: FirstThoughtSemanticIntent,
-  _plan: FirstThoughtExpansionPlan,
-): boolean {
-  // Always relevant — we generate dynamic topic-aware templates now
-  return true;
-}
-
-function classifyFirstThoughtIntent(
-  value: string,
-): FirstThoughtIntentClassification {
-  const normalized = normalizeFirstThoughtDraft(value);
-
-  if (!normalized) {
-    return { kind: "non_expandable", intent: "too_short" };
-  }
-
-  // Already expanded content should not trigger suggestions again.
-  if (/\n\s*##\s+/.test(value)) {
-    return { kind: "non_expandable", intent: "unknown" };
-  }
-
-  if (/^(hi|hello|hey|yo|good\s+(morning|afternoon|evening))\b/.test(normalized)) {
-    return { kind: "non_expandable", intent: "greeting" };
-  }
-
-  if (/^my\s+name\s+is\b/.test(normalized)) {
-    return { kind: "non_expandable", intent: "identity" };
-  }
-
-  if (/^(?:i\s+am|i'?m)\s+(?!feeling\b|thinking\b|struggling\b|confused\b|stuck\b|overwhelmed\b).+/.test(normalized)) {
-    return { kind: "non_expandable", intent: "identity" };
-  }
-
-  if (/^(today\s+is|this\s+is|it\s+is|there\s+is|there\s+are)\b/.test(normalized)) {
-    return { kind: "non_expandable", intent: "factual" };
-  }
-
-  if (/^i\s+(?:use|know|have|work\s+with)\s+[a-z0-9+#\s]+$/.test(normalized)) {
-    return { kind: "non_expandable", intent: "factual" };
-  }
-
-  if (/^(?:idk|i\s+don'?t\s+know|maybe|something|anything|whatever)$/.test(normalized)) {
-    return { kind: "non_expandable", intent: "unknown" };
-  }
-
-  const hasSocialIntent = /\b(propose|ask\s+out|date|dating|relationship|crush|girl|boy|partner)\b/.test(
-    normalized,
-  );
-
-  let match = normalized.match(
-    /^(?:i\s+want\s+to|i\s+need\s+to)\s+(.+)$/,
-  );
-  if (match) {
-    const semanticIntentType: FirstThoughtIntentType = hasSocialIntent
-      ? "social"
-      : /(learn|study|master|practice)\b/.test(normalized)
-        ? "learn"
-        : /(build|create|launch|ship|prototype)\b/.test(normalized)
-          ? "build"
-          : "plan";
-    return {
-      kind: "expandable",
-      intent: "goal",
-      semantic: inferFirstThoughtSemanticIntent(normalized, semanticIntentType),
-    };
-  }
-
-  match = normalized.match(/^(?:i\s+plan\s+to|i\s+aim\s+to|i\s+am\s+going\s+to)\s+(.+)$/);
-  if (match) {
-    const semanticIntentType: FirstThoughtIntentType = hasSocialIntent
-      ? "social"
-      : "plan";
-    return {
-      kind: "expandable",
-      intent: "goal",
-      semantic: inferFirstThoughtSemanticIntent(normalized, semanticIntentType),
-    };
-  }
-
-  match = normalized.match(
-    /^(?:i\s+can'?t|i\s+cannot|i\s+struggle\s+with|i\s+struggle\s+to|i\s+am\s+stuck\s+with)\s+(.+)$/,
-  );
-  if (match) {
-    return {
-      kind: "expandable",
-      intent: "problem",
-      semantic: inferFirstThoughtSemanticIntent(normalized, "problem"),
-    };
-  }
-
-  if (/\b(stuck|blocked|overwhelmed|confused)\b/.test(normalized)) {
-    return {
-      kind: "expandable",
-      intent: "problem",
-      semantic: inferFirstThoughtSemanticIntent(normalized, "problem"),
-    };
-  }
-
-  if (/^what\s+if\b/.test(normalized) || /\b(build|create|launch|ship|prototype)\b/.test(normalized)) {
-    return {
-      kind: "expandable",
-      intent: "idea",
-      semantic: inferFirstThoughtSemanticIntent(normalized, "build"),
-    };
-  }
-
-  if (hasSocialIntent) {
-    return {
-      kind: "expandable",
-      intent: "goal",
-      semantic: inferFirstThoughtSemanticIntent(normalized, "social"),
-    };
-  }
-
-  match = normalized.match(
-    /^(?:why|how\s+do\s+i|how\s+can\s+i|what\s+am\s+i\s+missing)\b(?:\s+(.+))?$/,
-  );
-  if (match) {
-    return {
-      kind: "expandable",
-      intent: "confusion",
-      semantic: inferFirstThoughtSemanticIntent(normalized, "problem"),
-    };
-  }
-
-  match = normalized.match(/^(?:i\s+feel|i\s+think)\s+(.+)$/);
-  if (match) {
-    const semanticIntentType: FirstThoughtIntentType = /\bstuck\b/.test(normalized)
-      ? "problem"
-      : "reflect";
-    return {
-      kind: "expandable",
-      intent: "reflection",
-      semantic: inferFirstThoughtSemanticIntent(normalized, semanticIntentType),
-    };
-  }
-
-  match = normalized.match(/^(?:i\s+love|i\s+like|i\s+enjoy)\s+(.+)$/);
-  if (match) {
-    return {
-      kind: "expandable",
-      intent: "reflection",
-      semantic: inferFirstThoughtSemanticIntent(normalized, "reflect"),
-    };
-  }
-
-  if (/\b(confused|unclear|lost|dont\s+understand|don't\s+understand)\b/.test(normalized)) {
-    return {
-      kind: "expandable",
-      intent: "confusion",
-      semantic: inferFirstThoughtSemanticIntent(normalized, "problem"),
-    };
-  }
-
-  if (getMeaningfulWordCount(normalized) < FIRST_THOUGHT_MIN_MEANINGFUL_WORDS) {
-    return { kind: "non_expandable", intent: "too_short" };
-  }
-
-  return { kind: "non_expandable", intent: "unknown" };
-}
-
-function getFirstThoughtExpansionPlan(value: string): FirstThoughtExpansionPlan | null {
-  const classification = classifyFirstThoughtIntent(value);
-  if (classification.kind !== "expandable") {
-    // Even non-expandable intents with enough words should get a generic plan
-    const words = getMeaningfulWordCount(value);
-    if (words < 3) return null;
-    // Extract a topic from raw text for generic expansion
-    const fallbackTopic = inferTopic(normalizeFirstThoughtDraft(value)) || "this";
-    const cap = fallbackTopic.charAt(0).toUpperCase() + fallbackTopic.slice(1);
-    return {
-      intent: "goal",
-      suggestions: [
-        { label: `What matters about ${fallbackTopic}`, template: `## Why ${cap} Matters\n- \n- \n` },
-        { label: `Explore ${fallbackTopic} deeper`, template: `## Exploring ${cap}\n- \n- \n` },
-        { label: `What to do with ${fallbackTopic}`, template: `## Next Steps for ${cap}\n- [ ] \n- [ ] \n` },
-      ],
-    };
-  }
-
-  const semantic = classification.semantic;
-  // Extract topic — use inferred topic, or pull it from the raw input
-  const topic = semantic.topic || inferTopic(normalizeFirstThoughtDraft(value)) || "this";
-  const cap = topic.charAt(0).toUpperCase() + topic.slice(1);
-
-  let plan: FirstThoughtExpansionPlan | null = null;
-
-  if (semantic.intentType === "learn") {
-    plan = {
-      intent: "goal",
-      suggestions: [
-        { label: `Map out learning ${topic}`, template: `## Learning ${cap} — Roadmap\n- Start with fundamentals of ${topic}\n- Build a small ${topic} project\n- Review and iterate\n` },
-        { label: `Find ${topic} resources`, template: `## ${cap} Resources\n- [ ] Find a beginner course for ${topic}\n- [ ] Look for ${topic} communities\n- [ ] Set aside weekly time for ${topic}\n` },
-        { label: `Why ${topic} matters to me`, template: `## Why ${cap}?\n- What drew me to ${topic}\n- What I hope to do with ${topic}\n- How I'll know I'm making progress\n` },
-      ],
-    };
-  } else if (semantic.intentType === "build") {
-    plan = {
-      intent: "idea",
-      suggestions: [
-        { label: `Define what ${topic} solves`, template: `## What ${cap} Solves\n- The core problem\n- Who feels this pain\n- Why existing solutions fail\n` },
-        { label: `Sketch ${topic} v1`, template: `## ${cap} — First Version\n- Core feature #1\n- Core feature #2\n- What to skip for now\n` },
-        { label: `Who needs ${topic}`, template: `## ${cap} — Target Users\n- Primary user type\n- Their biggest frustration\n- How they'd find ${topic}\n` },
-      ],
-    };
-  } else if (semantic.intentType === "social") {
-    plan = {
-      intent: "goal",
-      suggestions: [
-        { label: `Plan the first move`, template: `## First Interaction\n- Setting/context for ${topic}\n- What to say or do\n- How to read the response\n` },
-        { label: `Why ${topic} matters`, template: `## Why This Matters\n- What I'm hoping for\n- What I'm afraid of\n- What I'd regret not doing\n` },
-        { label: `Best & worst outcomes`, template: `## Possible Outcomes\n- Best case\n- Realistic case\n- Worst case (and why it's fine)\n` },
-      ],
-    };
-  } else if (semantic.intentType === "problem") {
-    plan = {
-      intent: "problem",
-      suggestions: [
-        { label: `Root cause of ${topic}`, template: `## Why ${cap} Happens\n- When it started\n- What makes it worse\n- What I've tried so far\n` },
-        { label: `One action for ${topic}`, template: `## One Thing I Can Do\n- [ ] Smallest step to address ${topic}\n- When I'll do it\n- How I'll know it worked\n` },
-        { label: `Patterns around ${topic}`, template: `## ${cap} — Patterns\n- Times when ${topic} gets worse\n- Times when it gets better\n- What's different in those moments\n` },
-      ],
-    };
-  } else if (semantic.intentType === "reflect") {
-    plan = {
-      intent: "reflection",
-      suggestions: [
-        { label: `Unpack this feeling`, template: `## What I'm Feeling About ${cap}\n- The core emotion\n- What triggered it\n- What I need right now\n` },
-        { label: `What triggered ${topic}`, template: `## ${cap} — The Trigger\n- What happened recently\n- Why it hit differently this time\n- What I wish had happened\n` },
-        { label: `Moving forward from ${topic}`, template: `## Moving Forward\n- One thing that would help\n- Who I could talk to about ${topic}\n- What "better" looks like this week\n` },
-      ],
-    };
-  } else if (semantic.intentType === "plan") {
-    plan = {
-      intent: "goal",
-      suggestions: [
-        { label: `${cap} milestones`, template: `## ${cap} — Milestones\n- First milestone for ${topic}\n- Mid-point checkpoint\n- End goal\n` },
-        { label: `${cap} priorities`, template: `## ${cap} — What Comes First\n- Most important thing for ${topic}\n- What can wait\n- What to drop entirely\n` },
-        { label: `${cap} constraints`, template: `## ${cap} — Reality Check\n- Time available for ${topic}\n- Skills or resources I need\n- Biggest risk\n` },
-      ],
-    };
-  }
-
-  if (!plan) {
-    // Generic fallback — still topic-aware
-    plan = {
-      intent: "goal",
-      suggestions: [
-        { label: `Explore ${topic} further`, template: `## Exploring ${cap}\n- What I know so far\n- What I want to figure out\n- First thing to try\n` },
-        { label: `Why ${topic} matters`, template: `## Why ${cap} Matters\n- What draws me to ${topic}\n- What changes if I pursue this\n- What I'd regret skipping\n` },
-        { label: `Next step for ${topic}`, template: `## ${cap} — Next Step\n- [ ] The one thing I can do today\n- [ ] Who or what can help\n- [ ] How I'll track progress\n` },
-      ],
-    };
-  }
-
-  return plan;
-}
-
-function expandFirstThoughtDraft(
-  value: string,
-  templateString: string,
-): { value: string; cursor: number } {
-  const trimmed = value.trim();
-  const expandedValue = `${trimmed}\n\n${templateString}`;
-  return {
-    value: expandedValue,
-    cursor: expandedValue.length,
-  };
-}
-
-function extractConceptTokens(value: string, maxTokens = 8): string[] {
-  return value
-    .toLowerCase()
-    .replace(/\[\[([^\]|]+)(?:\|[^\]]+)?\]\]/g, "$1")
-    .replace(/[^a-z0-9\s]/g, " ")
-    .split(/\s+/)
-    .map((token) => token.trim())
-    .filter((token) => token.length > 2 && !TRANSITION_STOP_WORDS.has(token))
-    .slice(0, maxTokens);
-}
-
-function deriveCurrentConcept(content: string): string | null {
-  const lines = content
-    .split("\n")
-    .map((line) => line.trim())
-    .filter(Boolean);
-
-  const recent = lines.slice(-6).reverse();
-  for (const line of recent) {
-    const tokens = extractConceptTokens(line, 1);
-    if (tokens.length > 0) return tokens[0];
-  }
-
-  const fallback = extractConceptTokens(content, 1);
-  return fallback[0] || null;
-}
-
-function getTransitionLikelihood(
-  transitionMap: Record<string, Record<string, number>>,
-  fromConcept: string,
-  candidateTokens: string[],
-): number {
-  const transitions = transitionMap[fromConcept];
-  if (!transitions || candidateTokens.length === 0) return 0;
-
-  const total = Object.values(transitions).reduce((sum, value) => sum + value, 0);
-  if (total <= 0) return 0;
-
-  let best = 0;
-  for (const token of candidateTokens) {
-    const probability = (transitions[token] || 0) / total;
-    if (probability > best) best = probability;
-  }
-  return best;
-}
-
-import { syncEngine } from "./lib/syncEngine";
+import {
+  FIRST_THOUGHT_EXPANSION_IDLE_MS,
+  randomInt,
+  FIRST_THOUGHT_PROMPTS,
+  FIRST_THOUGHT_GHOST_EXAMPLES,
+  type FirstThoughtExpandableIntent,
+  type FirstThoughtNonExpandableIntent,
+  type FirstThoughtIntentClassification,
+  type FirstThoughtIntentType,
+  type FirstThoughtContext,
+  type FirstThoughtSemanticIntent,
+  type FirstThoughtTemplate,
+  type FirstThoughtExpansionPlan,
+  TRANSITION_STOP_WORDS,
+  getMeaningfulWordCount,
+  normalizeFirstThoughtDraft,
+  inferTopic,
+  inferFirstThoughtSemanticIntent,
+  classifyFirstThoughtIntent,
+  getFirstThoughtExpansionPlan,
+  expandFirstThoughtDraft,
+  extractConceptTokens,
+  deriveCurrentConcept,
+  getTransitionLikelihood,
+} from "./utils/firstThought";
+
+import { syncEngine, type SyncStatus } from "./lib/syncEngine";
 import { collaborationEngine, type CollabStatus } from "./lib/collaborationEngine";
 import { localDB, LocalGroup } from "./lib/localdb";
 import { authManager } from "./lib/auth";
@@ -1046,6 +421,7 @@ export default function App() {
   const [previouslyOpenedVaults, setPreviouslyOpenedVaults] = useState<string[]>([]);
   const [showVaultManager, setShowVaultManager] = useState(false);
   const [collabStatus, setCollabStatus] = useState<CollabStatus>({ state: 'idle' });
+  const [syncStatus, setSyncStatus] = useState<SyncStatus | null>(null);
   const [showSidebar, setShowSidebar] = useState(true);
   const [showRightSidebar, setShowRightSidebar] = useState(true);
   const [isNativeFullScreen, setIsNativeFullScreen] = useState(false);
@@ -1067,7 +443,7 @@ export default function App() {
   const [showTags, setShowTags] = useState(false);
   const [showProperties, setShowProperties] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
-  const [settingsSection, setSettingsSection] = useState<string>("general");
+  const [settingsSection, setSettingsSection] = useState<string>("home");
 
   const bookmarks = bookmarkStore.vaultPath === vaultPath ? bookmarkStore.items : [];
   const bookmarkGroups = useMemo(
@@ -1150,7 +526,7 @@ export default function App() {
       if (customEvent.detail?.section) {
         setSettingsSection(customEvent.detail.section);
       } else {
-        setSettingsSection("general");
+        setSettingsSection("home");
       }
       setShowSettings(true);
     };
@@ -1476,7 +852,7 @@ export default function App() {
     };
 
     const onMove = (ev: MouseEvent) => {
-      const ribbonWidth = 48; // Trilium-style launcher width
+      const ribbonWidth = 48; // Onyx-style launcher width
       const curLeftWidth = sidebarWidthRef.current;
       const leftUsed = showSidebarRef.current ? curLeftWidth : 0;
       const minCenterWidth = 40;
@@ -1551,7 +927,7 @@ export default function App() {
   const [fileTree, setFileTree] = useState<FileEntry[]>([]);
   const [tabs, setTabs] = useState<Tab[]>([]);
 
-  const [showInlineInsightByTab, setShowInlineInsightByTab] = useState<Record<string, boolean>>({});
+
   const tabScrollRef = useRef<HTMLDivElement>(null);
   const activeTabScrollFrameRef = useRef<number | null>(null);
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
@@ -1618,17 +994,7 @@ export default function App() {
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState<boolean>(false);
   const [collapsedGroupIds, setCollapsedGroupIds] = useState<Set<string>>(() => new Set<string>());
 
-  const handleToggleGroupCollapse = useCallback((groupId: string) => {
-    setCollapsedGroupIds((prev) => {
-      const next = new Set<string>(prev);
-      if (next.has(groupId)) {
-        next.delete(groupId);
-      } else {
-        next.add(groupId);
-      }
-      return next;
-    });
-  }, []);
+
   const [groupModalData, setGroupModalData] = useState<{
     type: "create" | "rename" | "color";
     groupId?: string;
@@ -2167,12 +1533,21 @@ export default function App() {
     if (theme === "custom") {
       const bg = hexToRgb(settings.customBgPrimary) ?? { r: 21, g: 21, b: 21 };
       const text = hexToRgb(settings.customTextPrimary) ?? { r: 230, g: 230, b: 230 };
-      const accent = hexToRgb(settings.accentColor) ?? text;
-      const tone = (ratio: number) => rgbToHex(mixRgb(bg, text, ratio));
+      const accent = hexToRgb(settings.accentColor) ?? { r: 59, g: 130, b: 246 };
       const baseBg = rgbToHex(bg);
+      const baseText = rgbToHex(text);
 
+      // Accent color variables (solely dependent on settings.accentColor)
       root.style.setProperty("--accent-color", settings.accentColor);
+      root.style.setProperty("--color-accent", settings.accentColor);
+      root.style.setProperty("--color-accent-1", rgbToRgba(accent, 0.85));
+      root.style.setProperty("--color-accent-2", rgbToRgba(accent, 0.7));
+      root.style.setProperty("--accent-primary", settings.accentColor);
+      root.style.setProperty("--accent-secondary", rgbToRgba(accent, 0.8));
+      root.style.setProperty("--text-on-accent", getReadableTextOn(accent));
+      root.style.setProperty("--accent-glow", rgbToRgba(accent, 0.16));
 
+      // Background color variables (solely dependent on customBgPrimary)
       root.style.setProperty("--color-base-00", baseBg);
       root.style.setProperty("--color-base-05", baseBg);
       root.style.setProperty("--color-base-10", baseBg);
@@ -2180,35 +1555,39 @@ export default function App() {
       root.style.setProperty("--color-base-25", baseBg);
       root.style.setProperty("--color-base-30", baseBg);
       root.style.setProperty("--color-base-35", baseBg);
-      root.style.setProperty("--color-base-40", tone(0.16));
-      root.style.setProperty("--color-base-50", tone(0.34));
-      root.style.setProperty("--color-base-60", tone(0.5));
-      root.style.setProperty("--color-base-70", tone(0.68));
-      root.style.setProperty("--color-base-100", tone(1));
 
       root.style.setProperty("--bg-primary", baseBg);
       root.style.setProperty("--bg-secondary", baseBg);
       root.style.setProperty("--bg-tertiary", baseBg);
       root.style.setProperty("--bg-elevated", baseBg);
+      root.style.setProperty("--bg-launcher", baseBg);
+      root.style.setProperty("--bg-tree", baseBg);
+      root.style.setProperty("--bg-toolbar", baseBg);
       root.style.setProperty("--bg-input", baseBg);
-      root.style.setProperty("--bg-hover", rgbToRgba(text, 0.08));
-      root.style.setProperty("--bg-active", rgbToRgba(text, 0.14));
       root.style.setProperty("--bg-glass", rgbToRgba(bg, 0.98));
 
-      root.style.setProperty("--text-primary", tone(1));
-      root.style.setProperty("--text-secondary", tone(0.72));
-      root.style.setProperty("--text-tertiary", tone(0.6));
-      root.style.setProperty("--text-muted", tone(0.48));
-      root.style.setProperty("--text-faint", tone(0.34));
-      root.style.setProperty("--text-link", settings.accentColor);
+      root.style.setProperty("--titlebar-background", baseBg);
+      root.style.setProperty("--titlebar-background-focused", baseBg);
+      root.style.setProperty("--status-bar-background", baseBg);
+      root.style.setProperty("--tab-container-background", baseBg);
+      root.style.setProperty("--tab-background-active", baseBg);
 
-      root.style.setProperty("--color-accent", settings.accentColor);
-      root.style.setProperty("--color-accent-1", rgbToHex(mixRgb(accent, text, 0.22)));
-      root.style.setProperty("--color-accent-2", rgbToHex(mixRgb(accent, text, 0.42)));
-      root.style.setProperty("--accent-primary", settings.accentColor);
-      root.style.setProperty("--accent-secondary", rgbToHex(mixRgb(accent, text, 0.22)));
-      root.style.setProperty("--text-on-accent", getReadableTextOn(accent));
-      root.style.setProperty("--accent-glow", rgbToRgba(accent, 0.16));
+      // Text color variables (solely dependent on customTextPrimary)
+      root.style.setProperty("--color-base-40", rgbToRgba(text, 0.2));
+      root.style.setProperty("--color-base-50", rgbToRgba(text, 0.35));
+      root.style.setProperty("--color-base-60", rgbToRgba(text, 0.5));
+      root.style.setProperty("--color-base-70", rgbToRgba(text, 0.7));
+      root.style.setProperty("--color-base-100", baseText);
+
+      root.style.setProperty("--bg-hover", rgbToRgba(text, 0.08));
+      root.style.setProperty("--bg-active", rgbToRgba(text, 0.14));
+
+      root.style.setProperty("--text-primary", baseText);
+      root.style.setProperty("--text-secondary", rgbToRgba(text, 0.8));
+      root.style.setProperty("--text-tertiary", rgbToRgba(text, 0.65));
+      root.style.setProperty("--text-muted", rgbToRgba(text, 0.5));
+      root.style.setProperty("--text-faint", rgbToRgba(text, 0.35));
+      root.style.setProperty("--text-link", settings.accentColor);
 
       root.style.setProperty("--scrollbar-thumb", rgbToRgba(text, 0.26));
       root.style.setProperty("--scrollbar-thumb-hover", rgbToRgba(text, 0.42));
@@ -2217,43 +1596,38 @@ export default function App() {
       root.style.setProperty("--border-strong", rgbToRgba(text, 0.24));
       root.style.setProperty("--divider-color", rgbToRgba(text, 0.1));
 
-      root.style.setProperty("--titlebar-background", baseBg);
-      root.style.setProperty("--titlebar-background-focused", baseBg);
-      root.style.setProperty("--titlebar-text-color", tone(0.72));
-      root.style.setProperty("--titlebar-text-color-focused", tone(1));
-      root.style.setProperty("--status-bar-background", baseBg);
-      root.style.setProperty("--status-bar-text-color", tone(0.48));
+      root.style.setProperty("--titlebar-text-color", rgbToRgba(text, 0.8));
+      root.style.setProperty("--titlebar-text-color-focused", baseText);
+      root.style.setProperty("--status-bar-text-color", rgbToRgba(text, 0.5));
 
-      root.style.setProperty("--tab-container-background", baseBg);
-      root.style.setProperty("--tab-background-active", baseBg);
-      root.style.setProperty("--tab-text-color", tone(0.48));
-      root.style.setProperty("--tab-text-color-active", tone(0.72));
-      root.style.setProperty("--tab-text-color-focused", tone(0.72));
-      root.style.setProperty("--tab-text-color-focused-active", tone(0.72));
-      root.style.setProperty("--tab-text-color-focused-active-current", tone(1));
+      root.style.setProperty("--tab-text-color", rgbToRgba(text, 0.6));
+      root.style.setProperty("--tab-text-color-active", baseText);
+      root.style.setProperty("--tab-text-color-focused", baseText);
+      root.style.setProperty("--tab-text-color-focused-active", baseText);
+      root.style.setProperty("--tab-text-color-focused-active-current", baseText);
 
-      root.style.setProperty("--nav-item-color", tone(0.72));
-      root.style.setProperty("--nav-item-color-hover", tone(1));
-      root.style.setProperty("--nav-item-color-active", tone(1));
-      root.style.setProperty("--nav-item-color-selected", tone(1));
+      root.style.setProperty("--nav-item-color", rgbToRgba(text, 0.75));
+      root.style.setProperty("--nav-item-color-hover", baseText);
+      root.style.setProperty("--nav-item-color-active", baseText);
+      root.style.setProperty("--nav-item-color-selected", baseText);
       root.style.setProperty("--nav-item-background-hover", rgbToRgba(text, 0.08));
       root.style.setProperty("--nav-item-background-active", rgbToRgba(text, 0.1));
       root.style.setProperty("--nav-item-background-selected", rgbToRgba(text, 0.12));
 
-      root.style.setProperty("--editor-caret", tone(1));
+      root.style.setProperty("--editor-caret", baseText);
       root.style.setProperty("--editor-selection", rgbToRgba(accent, 0.2));
       root.style.setProperty("--editor-selection-focused", rgbToRgba(accent, 0.3));
       root.style.setProperty("--editor-active-line", rgbToRgba(text, 0.04));
       root.style.setProperty("--editor-active-line-border", rgbToRgba(text, 0.1));
-      root.style.setProperty("--editor-heading", tone(1));
-      root.style.setProperty("--editor-heading-marker", tone(0.6));
+      root.style.setProperty("--editor-heading", baseText);
+      root.style.setProperty("--editor-heading-marker", rgbToRgba(text, 0.6));
       root.style.setProperty("--editor-link", settings.accentColor);
-      root.style.setProperty("--editor-link-hover", rgbToHex(mixRgb(accent, text, 0.2)));
+      root.style.setProperty("--editor-link-hover", settings.accentColor);
       root.style.setProperty("--editor-tag", settings.accentColor);
       root.style.setProperty("--editor-tag-bg", rgbToRgba(accent, 0.18));
-      root.style.setProperty("--editor-code", tone(0.66));
-      root.style.setProperty("--editor-muted-token", tone(0.5));
-      root.style.setProperty("--editor-emphasis", tone(1));
+      root.style.setProperty("--editor-code", rgbToRgba(text, 0.85));
+      root.style.setProperty("--editor-muted-token", rgbToRgba(text, 0.5));
+      root.style.setProperty("--editor-emphasis", baseText);
       root.style.setProperty("--editor-search-match", rgbToRgba(accent, 0.24));
       root.style.setProperty("--editor-search-match-border", rgbToRgba(accent, 0.45));
       root.style.setProperty("--editor-search-active", rgbToRgba(accent, 0.34));
@@ -2263,26 +1637,25 @@ export default function App() {
       root.style.setProperty("--graph-node-color", settings.accentColor);
 
       // ── Obsidian-standard CSS variable aliases for plugin compatibility ──
-      // Plugins use Obsidian's own variable names. Map them to our theme.
       root.style.setProperty("--background-primary", baseBg);
-      root.style.setProperty("--background-primary-alt", tone(0.04));
-      root.style.setProperty("--background-secondary", tone(0.04));
-      root.style.setProperty("--background-secondary-alt", tone(0.08));
+      root.style.setProperty("--background-primary-alt", baseBg);
+      root.style.setProperty("--background-secondary", baseBg);
+      root.style.setProperty("--background-secondary-alt", baseBg);
       root.style.setProperty("--background-modifier-border", rgbToRgba(text, 0.16));
-      root.style.setProperty("--background-modifier-form-field", rgbToRgba(text, 0.04));
+      root.style.setProperty("--background-modifier-form-field", rgbToRgba(bg, 0.5));
       root.style.setProperty("--background-modifier-error", "#e05050");
       root.style.setProperty("--background-modifier-success", "#22c55e");
       root.style.setProperty("--background-modifier-box-shadow", rgbToRgba(bg, 0.4));
-      root.style.setProperty("--text-normal", tone(1));
+      root.style.setProperty("--text-normal", baseText);
       root.style.setProperty("--text-accent", settings.accentColor);
-      root.style.setProperty("--text-accent-hover", rgbToHex(mixRgb(accent, text, 0.22)));
-      root.style.setProperty("--interactive-normal", tone(0.04));
-      root.style.setProperty("--interactive-hover", tone(0.08));
+      root.style.setProperty("--text-accent-hover", settings.accentColor);
+      root.style.setProperty("--interactive-normal", rgbToRgba(text, 0.04));
+      root.style.setProperty("--interactive-hover", rgbToRgba(text, 0.08));
       root.style.setProperty("--interactive-accent", settings.accentColor);
-      root.style.setProperty("--interactive-accent-hover", rgbToHex(mixRgb(accent, text, 0.22)));
+      root.style.setProperty("--interactive-accent-hover", settings.accentColor);
       root.style.setProperty("--interactive-accent-hsl", (() => { const r = accent.r / 255, g = accent.g / 255, b = accent.b / 255; const max = Math.max(r, g, b), min = Math.min(r, g, b); let h = 0, s = 0; const l = (max + min) / 2; if (max !== min) { const d = max - min; s = l > 0.5 ? d / (2 - max - min) : d / (max + min); h = max === r ? ((g - b) / d + (g < b ? 6 : 0)) / 6 : max === g ? ((b - r) / d + 2) / 6 : ((r - g) / d + 4) / 6; } return `${Math.round(h * 360)}, ${Math.round(s * 100)}%, ${Math.round(l * 100)}%`; })());
       root.style.setProperty("--link-color", settings.accentColor);
-      root.style.setProperty("--link-color-hover", rgbToHex(mixRgb(accent, text, 0.22)));
+      root.style.setProperty("--link-color-hover", settings.accentColor);
     } else {
       for (const variableName of CUSTOM_THEME_VARIABLES) {
         root.style.removeProperty(variableName);
@@ -2290,6 +1663,7 @@ export default function App() {
     }
 
     (window as any).__oo_sync_theme_variables_to_body?.();
+
     window.dispatchEvent(
       new CustomEvent("oo:theme-settings-changed", {
         detail: { theme },
@@ -3091,123 +2465,6 @@ export default function App() {
     };
   }, [activeTabId, tabs, paneTree, settings.coreCommandPalette, settings.coreQuickSwitcher, settings.coreCanvas]);
 
-  const loadVaultData = async (path: string) => {
-    await api.setVaultPath(path);
-    setVaultPath(path);
-    (window as any).__oo_vault_path = path;
-    setShowSidebar(true);
-    const tree = await api.getFileTree();
-    setFileTree(tree);
-    // Trigger background vault initialization for new vault
-    runVaultInit(tree);
-    
-    try {
-      const workspaceData = await readData<{ paneTree: PaneNode; activeTabId: string | null; focusedLeafId: string }>("workspace.json");
-      if (settings.defaultFileToOpen !== "new-tab" && workspaceData && workspaceData.paneTree) {
-        setPaneTree(workspaceData.paneTree);
-        setTabs(collectAllTabs(workspaceData.paneTree));
-        if (workspaceData.activeTabId) setActiveTabId(workspaceData.activeTabId);
-        if (workspaceData.focusedLeafId) setFocusedLeafId(workspaceData.focusedLeafId);
-      } else {
-        handleOpenNewTab();
-      }
-    } catch (err) {
-      handleOpenNewTab();
-    }
-
-    try {
-      const previous = await api.getPreviouslyOpenedVaults();
-      setPreviouslyOpenedVaults(previous || []);
-    } catch (prevErr) {
-      console.warn("Failed to load previously opened vaults:", prevErr);
-    }
-  };
-
-  const refreshPreviouslyOpenedVaults = async () => {
-    try {
-      const previous = await api.getPreviouslyOpenedVaults();
-      setPreviouslyOpenedVaults(previous || []);
-    } catch (prevErr) {
-      console.warn("Failed to load previously opened vaults:", prevErr);
-    }
-  };
-
-  const handleShowVaultManager = async () => {
-    await refreshPreviouslyOpenedVaults();
-    setShowVaultManager(true);
-  };
-
-  const handleOpenVault = async (): Promise<boolean> => {
-    try {
-      const path = await api.openVaultDialog();
-      if (path) {
-        await loadVaultData(path);
-        return true;
-      }
-      return false;
-    } catch (e) {
-      console.error("Failed to open vault:", e);
-      alert("Failed to open vault. It may be too large or inaccessible.");
-      return false;
-    }
-  };
-
-  const handleCreateVault = async (): Promise<boolean> => {
-    try {
-      let defaultPath: string | undefined;
-      try {
-        const documentsPath = await api.getSystemPath("documents");
-        defaultPath = documentsPath
-          ? `${documentsPath}/Untitled vault`
-          : undefined;
-      } catch {
-        defaultPath = undefined;
-      }
-
-      const result = await api.showSaveDialog({
-        title: "Create new vault",
-        buttonLabel: "Create",
-        defaultPath,
-        properties: ["createDirectory"],
-      } as any);
-
-      if (result.canceled || !result.filePath) {
-        return false;
-      }
-
-      await loadVaultData(result.filePath);
-      return true;
-    } catch (e) {
-      console.error("Failed to create vault:", e);
-      alert("Failed to create vault. Please choose a writable location.");
-      return false;
-    }
-  };
-
-  const handleSwitchVault = async (path: string): Promise<boolean> => {
-    try {
-      await loadVaultData(path);
-      return true;
-    } catch (e) {
-      console.error("Failed to switch vault:", e);
-      alert("Failed to switch vault. It may be too large or inaccessible.");
-      return false;
-    }
-  };
-
-  const handleWelcomeVaultAction = useCallback(
-    async (action: VaultEntryAction) => {
-      if (vaultEntryTransitionPhase !== "idle") return;
-
-      setVaultEntryTransitionPhase("transitioning");
-      const opened =
-        action === "create" ? await handleCreateVault() : await handleOpenVault();
-      if (!opened) {
-        setVaultEntryTransitionPhase("idle");
-      }
-    },
-    [vaultEntryTransitionPhase, handleCreateVault, handleOpenVault],
-  );
 
   const refreshFileTree = useCallback(async () => {
     try {
@@ -3286,6 +2543,40 @@ export default function App() {
     [],
   );
 
+  const {
+    loadVaultData,
+    refreshPreviouslyOpenedVaults,
+    handleShowVaultManager,
+    handleOpenVault,
+    handleCreateVault,
+    handleSwitchVault,
+    handleWelcomeVaultAction,
+    handleCopyVaultId,
+    handleRenameVault,
+    handleMoveVault,
+    handleRemoveVaultFromList,
+  } = useVaultSession({
+    vaultPath,
+    setVaultPath,
+    previouslyOpenedVaults,
+    setPreviouslyOpenedVaults,
+    showVaultManager,
+    setShowVaultManager,
+    vaultEntryTransitionPhase,
+    setVaultEntryTransitionPhase,
+    settings,
+    setShowSidebar,
+    setFileTree,
+    runVaultInit,
+    setPaneTree,
+    setTabs,
+    setActiveTabId,
+    setFocusedLeafId,
+    handleOpenNewTab,
+    showToast,
+    promptForInput,
+  });
+
   const getParentPath = (targetPath: string): string => {
     const normalized = targetPath.replace(/[\\/]+$/, "");
     const index = Math.max(normalized.lastIndexOf("/"), normalized.lastIndexOf("\\"));
@@ -3301,83 +2592,6 @@ export default function App() {
     return `${parentPath.replace(/[\\/]+$/, "")}${separator}${name}`;
   };
 
-  const handleCopyVaultId = useCallback((targetPath: string) => {
-    void api.writeClipboardText(targetPath);
-    showToast("Copied vault ID", "success");
-  }, []);
-
-  const handleRenameVault = useCallback(
-    async (targetPath: string) => {
-      const currentName = getPathLeafName(targetPath);
-      const nextName = await promptForInput(
-        "Rename vault",
-        "Enter a new vault folder name:",
-        currentName,
-      );
-      if (!nextName || nextName === currentName) return;
-      if (/[\\/]/.test(nextName)) {
-        showToast("Vault name cannot contain path separators.", "error");
-        return;
-      }
-
-      const nextPath = joinNativePath(getParentPath(targetPath), nextName);
-      try {
-        await api.renamePath(targetPath, nextPath);
-        if (targetPath === vaultPath) {
-          await loadVaultData(nextPath);
-        } else {
-          await refreshPreviouslyOpenedVaults();
-        }
-        showToast("Vault renamed", "success");
-      } catch (error) {
-        console.error("Failed to rename vault:", error);
-        showToast("Failed to rename vault.", "error");
-      }
-    },
-    [promptForInput, vaultPath],
-  );
-
-  const handleMoveVault = useCallback(
-    async (targetPath: string) => {
-      try {
-        const result = await api.showOpenDialog({
-          title: "Move vault to folder",
-          buttonLabel: "Move here",
-          properties: ["openDirectory", "createDirectory"],
-        });
-        if (result.canceled || !result.filePaths[0]) return;
-
-        const nextPath = joinNativePath(result.filePaths[0], getPathLeafName(targetPath));
-        if (nextPath === targetPath) return;
-
-        await api.renamePath(targetPath, nextPath);
-        if (targetPath === vaultPath) {
-          await loadVaultData(nextPath);
-        } else {
-          await refreshPreviouslyOpenedVaults();
-        }
-        showToast("Vault moved", "success");
-      } catch (error) {
-        console.error("Failed to move vault:", error);
-        showToast("Failed to move vault.", "error");
-      }
-    },
-    [vaultPath],
-  );
-
-  const handleRemoveVaultFromList = useCallback(
-    async (targetPath: string) => {
-      try {
-        const next = await api.removePreviouslyOpenedVault(targetPath);
-        setPreviouslyOpenedVaults(next || []);
-        showToast("Vault removed from list", "success");
-      } catch (error) {
-        console.error("Failed to remove vault from list:", error);
-        showToast("Failed to remove vault from list.", "error");
-      }
-    },
-    [],
-  );
 
   const getUniqueCanvasPath = useCallback(
     async (requestedName: string): Promise<string> => {
@@ -3434,738 +2648,52 @@ export default function App() {
   );
 
   // ── Layout Groups Operations ─────────────────────────
-  const handleOpenCreateGroupModal = () => {
-    setGroupModalData({
-      type: "create",
-      title: "Save Current Layout as Group",
-      initialName: "",
-      initialColor: "#3b82f6",
-    });
-  };
-
-  const handleSaveGroupConfirm = async (
-    name: string,
-    color: string,
-    tabId?: string,
-    filePath?: string,
-  ) => {
-    if (!vaultPath) return;
-
-    const newGroupId = "group-" + generateId();
-    const currentScrolls: Record<string, number> = {};
-    const currentCursors: Record<string, number> = {};
-    const currentViewModes: Record<string, string> = {};
-
-    const allOpenTabs = collectAllTabs(paneTree);
-    for (const tab of allOpenTabs) {
-      const cached = scrollCursorCacheRef.current[tab.path];
-      if (cached) {
-        if (cached.scroll !== undefined) currentScrolls[tab.path] = cached.scroll;
-        if (cached.cursor !== undefined) currentCursors[tab.path] = cached.cursor;
-        if (cached.viewMode !== undefined) currentViewModes[tab.path] = cached.viewMode;
-      }
-    }
-
-    let savedPaneTree = paneTree;
-    let savedActiveTabId = activeTabId;
-    let savedFocusedLeafId = focusedLeafId;
-
-    if (filePath) {
-      savedPaneTree = JSON.parse(JSON.stringify(paneTree)) as PaneNode;
-      const existingTab = collectAllTabs(savedPaneTree).find((tab) => tab.path === filePath);
-      const fileTab = existingTab
-        ? { ...existingTab, groupId: newGroupId }
-        : {
-            id: generateId(),
-            path: filePath,
-            name: getNoteName(filePath),
-            isModified: false,
-            groupId: newGroupId,
-          };
-
-      if (existingTab) {
-        const assignGroup = (node: PaneNode): PaneNode => {
-          if (node.type === "leaf") {
-            return {
-              ...node,
-              tabs: node.tabs.map((tab) => tab.id === existingTab.id ? fileTab : tab),
-            };
-          }
-          return {
-            ...node,
-            children: [assignGroup(node.children[0]), assignGroup(node.children[1])],
-          };
-        };
-        savedPaneTree = assignGroup(savedPaneTree);
-      } else {
-        const targetLeaf = findLeafById(savedPaneTree, focusedLeafId) || findFirstLeaf(savedPaneTree);
-        if (targetLeaf) {
-          savedPaneTree = insertTabIntoLeaf(savedPaneTree, targetLeaf.id, fileTab);
-        }
-      }
-
-      const fileLeaf = findLeafWithTab(savedPaneTree, fileTab.id);
-      if (fileLeaf) {
-        savedPaneTree = setActiveTabInLeaf(savedPaneTree, fileLeaf.id, fileTab.id);
-        savedActiveTabId = fileTab.id;
-        savedFocusedLeafId = fileLeaf.id;
-      }
-    }
-
-    const newGroup: LocalGroup = {
-      id: newGroupId,
-      vault_path: vaultPath,
-      name,
-      color,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-      auto_save_enabled: true,
-      layout_state: {
-        paneTree: savedPaneTree,
-        activeTabId: savedActiveTabId,
-        focusedLeafId: savedFocusedLeafId,
-        scrollPositions: currentScrolls,
-        cursorPositions: currentCursors,
-        viewModes: currentViewModes,
-      },
-    };
-
-    try {
-      await localDB.putGroup(newGroup);
-      setGroups((prev) => [...prev, newGroup]);
-      setActiveGroupId(newGroupId);
-      setHasUnsavedChanges(false);
-      if (tabId) {
-        handleAddTabToGroup(tabId, newGroupId);
-      }
-      showToast(`Created group ${name}`, "success");
-    } catch (err) {
-      console.error("Failed to save layout group:", err);
-    }
-  };
-
-  const handleRestoreGroup = useCallback(async (groupId: string, groupOverride?: LocalGroup, preferredTabId?: string) => {
-    const group = groupOverride || groups.find((g) => g.id === groupId);
-    if (!group) return;
-
-    const { layout_state } = group;
-    if (!layout_state) return;
-
-    const scrolls = layout_state.scrollPositions || {};
-    const cursors = layout_state.cursorPositions || {};
-    const viewModes = layout_state.viewModes || {};
-
-    const allPaths = Object.keys({ ...scrolls, ...cursors, ...viewModes });
-    for (const path of allPaths) {
-      scrollCursorCacheRef.current[path] = {
-        scroll: scrolls[path],
-        cursor: cursors[path],
-        viewMode: viewModes[path] as any,
-      };
-    }
-
-    // Capture any currently open ungrouped tabs in the active workspace before restoring
-    const ungroupedTabsToPreserve = getUngroupedTabsToPreserve(tabs, collectAllTabs(paneTree), groups);
-
-    // Clone restored paneTree
-    let tree = JSON.parse(JSON.stringify(layout_state.paneTree)) as PaneNode;
-
-    // Prune any legacy ungrouped tabs that might have been saved inside this group's splits tree
-    const allTabsInTree = collectAllTabs(tree);
-    for (const t of allTabsInTree) {
-      if (t.groupId !== groupId) {
-        const pruned = removeTabFromTree(tree, t.id);
-        if (pruned) {
-          tree = pruned;
-        }
-      }
-    }
-
-    skipTabSyncRef.current = true;
-    setPaneTree(tree);
-    const allRestoredTabs = collectAllTabs(tree);
-    const restoredIds = new Set(allRestoredTabs.map(t => t.id));
-    const filteredUngroupedTabs = ungroupedTabsToPreserve.filter(t => !restoredIds.has(t.id));
-    setTabs([...allRestoredTabs, ...filteredUngroupedTabs]);
-
-    // Focus on the first tab of the restored group
-    const groupTabs = allRestoredTabs.filter((t) => t.groupId === groupId);
-    const preferredTab = preferredTabId
-      ? groupTabs.find((tab) => tab.id === preferredTabId)
-      : null;
-    const savedActiveTab = layout_state.activeTabId
-      ? groupTabs.find((tab) => tab.id === layout_state.activeTabId)
-      : null;
-    const targetTabId = preferredTab?.id || savedActiveTab?.id || groupTabs[0]?.id || null;
-
-    if (targetTabId) {
-      setActiveTabId(targetTabId);
-      const tabObj = allRestoredTabs.find((t) => t.id === targetTabId);
-      if (tabObj) {
-        if (tabObj.path !== "__new_tab__" && tabObj.path !== GRAPH_TAB_PATH && tabObj.path !== SPACES_TAB_PATH && !tabObj.path.startsWith('__plugin__.')) {
-          if (isCanvasFile(tabObj.path)) {
-            setCanvasFilePath(tabObj.path);
-            setCurrentContent("");
-            setBacklinks([]);
-          } else {
-            setCurrentContent("");
-            setBacklinks([]);
-          }
-        } else {
-          setCurrentContent("");
-          setBacklinks([]);
-        }
-      }
-    }
-
-    // Set the focused leaf containing the active tab if possible
-    if (targetTabId) {
-      const leaf = findLeafWithTab(tree, targetTabId);
-      if (leaf) {
-        setFocusedLeafId(leaf.id);
-      } else if (layout_state.focusedLeafId) {
-        setFocusedLeafId(layout_state.focusedLeafId);
-      }
-    } else if (layout_state.focusedLeafId) {
-      setFocusedLeafId(layout_state.focusedLeafId);
-    }
-
-    // Expand/uncollapse the group automatically on restore
-    setCollapsedGroupIds((prev) => {
-      const next = new Set<string>(prev);
-      next.delete(groupId);
-      return next;
-    });
-
-    setActiveGroupId(groupId);
-    setHasUnsavedChanges(false);
-  }, [groups, tabs, paneTree, showToast, api]);
-
-  const handleCreateGroupFromPaths = useCallback(async (name: string, color: string, paths: string[]) => {
-    if (!vaultPath) return null;
-
-    const newGroupId = "group-" + generateId();
-    
-    // Construct tabs list
-    const groupTabs: Tab[] = paths.map((path) => ({
-      id: "tab-" + generateId(),
-      path,
-      name: getNoteName(path),
-      isModified: false,
-      groupId: newGroupId,
-    }));
-
-    const leafId = "leaf-" + generateId();
-    const groupPaneTree: PaneLeaf = {
-      type: "leaf",
-      id: leafId,
-      tabs: groupTabs,
-      activeTabId: groupTabs[0]?.id || null,
-    };
-
-    const newGroup: LocalGroup = {
-      id: newGroupId,
-      vault_path: vaultPath,
-      name,
-      color,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-      auto_save_enabled: true,
-      layout_state: {
-        paneTree: groupPaneTree,
-        activeTabId: groupTabs[0]?.id || null,
-        focusedLeafId: leafId,
-        scrollPositions: {},
-        cursorPositions: {},
-        viewModes: {},
-      },
-    };
-
-    try {
-      await localDB.putGroup(newGroup);
-      setGroups((prev) => [...prev, newGroup]);
-      showToast(`Created group ${name} from cluster`, "success");
-      return newGroupId;
-    } catch (err) {
-      console.error("Failed to create group from paths:", err);
-      return null;
-    }
-  }, [vaultPath, generateId, showToast]);
-
-  const handleOpenPathsAsGroup = useCallback(async (paths: string[]) => {
-    const name = `Group (${paths.length} notes)`;
-    const color = "#3b82f6";
-    const newGroupId = await handleCreateGroupFromPaths(name, color, paths);
-    if (newGroupId) {
-      await handleRestoreGroup(newGroupId);
-    }
-  }, [handleCreateGroupFromPaths, handleRestoreGroup]);
-
-  const handleCreateGroupFromFolder = useCallback(async (folderName: string, paths: string[]) => {
-    if (paths.length === 0) {
-      showToast(`No notes found in ${folderName}.`, "error");
-      return;
-    }
-
-    const newGroupId = await handleCreateGroupFromPaths(folderName, "#3b82f6", paths);
-    if (newGroupId) {
-      await handleRestoreGroup(newGroupId);
-    }
-  }, [handleCreateGroupFromPaths, handleRestoreGroup, showToast]);
-
-
-  const handleUpdateActiveGroup = async (groupId?: string) => {
-    const targetGroupId = groupId || activeGroupId;
-    if (!targetGroupId) return;
-    const group = groups.find((g) => g.id === targetGroupId);
-    if (!group) return;
-
-    const currentScrolls: Record<string, number> = {};
-    const currentCursors: Record<string, number> = {};
-    const currentViewModes: Record<string, string> = {};
-
-    const allOpenTabs = collectAllTabs(paneTree);
-    for (const tab of allOpenTabs) {
-      const cached = scrollCursorCacheRef.current[tab.path];
-      if (cached) {
-        if (cached.scroll !== undefined) currentScrolls[tab.path] = cached.scroll;
-        if (cached.cursor !== undefined) currentCursors[tab.path] = cached.cursor;
-        if (cached.viewMode !== undefined) currentViewModes[tab.path] = cached.viewMode;
-      }
-    }
-
-    const updatedGroup: LocalGroup = {
-      ...group,
-      updated_at: new Date().toISOString(),
-      layout_state: {
-        paneTree,
-        activeTabId,
-        focusedLeafId,
-        scrollPositions: currentScrolls,
-        cursorPositions: currentCursors,
-        viewModes: currentViewModes,
-      },
-    };
-
-    try {
-      await localDB.putGroup(updatedGroup);
-      setGroups((prev) =>
-        prev.map((g) => (g.id === targetGroupId ? updatedGroup : g))
-      );
-      if (targetGroupId === activeGroupId) {
-        setHasUnsavedChanges(false);
-      }
-      showToast(`Saved layout to ${group.name}`, "success");
-    } catch (err) {
-      console.error("Failed to update active group:", err);
-    }
-  };
-
-  const handleDiscardChanges = () => {
-    if (!activeGroupId) return;
-    handleRestoreGroup(activeGroupId);
-  };
-
-  const handleRenameGroup = (id: string, name: string) => {
-    const group = groups.find((g) => g.id === id);
-    if (!group) return;
-    setGroupModalData({
-      type: "rename",
-      groupId: id,
-      title: "Rename Layout Group",
-      initialName: name,
-      initialColor: group.color,
-    });
-  };
-
-  const handleChangeGroupColor = (id: string, color: string) => {
-    const group = groups.find((g) => g.id === id);
-    if (!group) return;
-    setGroupModalData({
-      type: "color",
-      groupId: id,
-      title: "Change Group Color",
-      initialName: group.name,
-      initialColor: color,
-    });
-  };
-
-  const handleDuplicateGroup = async (id: string) => {
-    const group = groups.find((g) => g.id === id);
-    if (!group) return;
-
-    const dupGroup: LocalGroup = {
-      ...group,
-      id: "group-" + generateId(),
-      name: group.name + " Copy",
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    };
-
-    try {
-      await localDB.putGroup(dupGroup);
-      setGroups((prev) => [...prev, dupGroup]);
-      showToast(`Duplicated group ${group.name}`, "success");
-    } catch (err) {
-      console.error("Failed to duplicate group:", err);
-    }
-  };
-
-  const handleDeleteGroup = async (id: string) => {
-    setModal({
-      type: "confirm",
-      title: "Delete Layout Group",
-      message: "Are you sure you want to delete this group layout snapshot? This will not delete any note files.",
-      onConfirm: async (confirmed) => {
-        if (confirmed) {
-          try {
-            await localDB.deleteGroup(id);
-            setGroups((prev) => prev.filter((g) => g.id !== id));
-            if (activeGroupId === id) {
-              setActiveGroupId(null);
-              setHasUnsavedChanges(false);
-            }
-            showToast("Deleted group", "success");
-          } catch (err) {
-            console.error("Failed to delete group:", err);
-          }
-        }
-      },
-    });
-  };
-
-  const handleToggleGroupAutoSave = async (id: string) => {
-    const group = groups.find((g) => g.id === id);
-    if (!group) return;
-
-    const updatedGroup: LocalGroup = {
-      ...group,
-      auto_save_enabled: !group.auto_save_enabled,
-      updated_at: new Date().toISOString(),
-    };
-
-    try {
-      await localDB.putGroup(updatedGroup);
-      setGroups((prev) =>
-        prev.map((g) => (g.id === id ? updatedGroup : g))
-      );
-      showToast(
-        updatedGroup.auto_save_enabled
-          ? `Enabled auto-save for ${group.name}`
-          : `Disabled auto-save for ${group.name}`,
-        "info"
-      );
-    } catch (err) {
-      console.error("Failed to toggle auto save:", err);
-    }
-  };
-
-  const handleAddTabToGroup = useCallback(async (tabId: string, groupId: string | null) => {
-    if (groupId) {
-      setCollapsedGroupIds((prev) => {
-        if (!prev.has(groupId)) return prev;
-        const next = new Set<string>(prev);
-        next.delete(groupId);
-        return next;
-      });
-    }
-
-    if (!groupId) {
-      const isPartOfLayout = findLeafWithTab(paneTree, tabId);
-      if (isPartOfLayout) {
-        let updatedTree = removeTabFromTree(paneTree, tabId);
-        const hasRemainingTabs = updatedTree && collectAllTabs(updatedTree).length > 0;
-
-        if (!updatedTree) {
-          updatedTree = createLeaf([]);
-        }
-
-        setPaneTree(updatedTree);
-        setTabs(prev => prev.map(t => t.id === tabId ? { ...t, groupId: null } : t));
-
-        if (activeTabId === tabId) {
-          if (hasRemainingTabs) {
-            const remainingGroupTabs = collectAllTabs(updatedTree);
-            const focusedLeaf = findLeafById(updatedTree, focusedLeafId) || findFirstLeaf(updatedTree);
-            const nextActiveTabId = (focusedLeaf && focusedLeaf.tabs.length > 0)
-              ? focusedLeaf.activeTabId || focusedLeaf.tabs[0].id
-              : remainingGroupTabs[0].id;
-
-            setActiveTabId(nextActiveTabId);
-
-            const tabObj = remainingGroupTabs.find((t) => t.id === nextActiveTabId);
-            if (tabObj) {
-              if (tabObj.path !== "__new_tab__" && tabObj.path !== GRAPH_TAB_PATH && tabObj.path !== SPACES_TAB_PATH && !tabObj.path.startsWith('__plugin__.')) {
-                try {
-                  const content = (await api.readFile(tabObj.path)) || "";
-                  setCurrentContent(content);
-                  loadBacklinks(tabObj.path);
-                } catch (err) {
-                  console.error("Failed to load active tab content on ungroup:", err);
-                }
-              } else {
-                setCurrentContent("");
-                setBacklinks([]);
-              }
-            }
-            if (focusedLeaf) {
-              setFocusedLeafId(focusedLeaf.id);
-            }
-          } else {
-            setActiveGroupId(null);
-            const updatedFlatTabs = tabs.map(t => t.id === tabId ? { ...t, groupId: null } : t);
-            const ungroupedTabs = getUngroupedTabsToPreserve(
-              updatedFlatTabs,
-              collectAllTabs(updatedTree),
-              groups,
-            );
-
-            const newTree: PaneLeaf = {
-              type: 'leaf',
-              id: generateId(),
-              tabs: ungroupedTabs,
-              activeTabId: tabId,
-            };
-
-            skipTabSyncRef.current = true;
-            setPaneTree(newTree);
-            setTabs(ungroupedTabs);
-            setActiveTabId(tabId);
-            setFocusedLeafId(newTree.id);
-          }
-        }
-        return;
-      }
-    }
-
-    if (groupId && groupId !== activeGroupId) {
-      // Shifting a tab into an inactive/collapsed group splits tree
-      const group = groups.find((g) => g.id === groupId);
-      const tabObj = tabs.find((t) => t.id === tabId);
-      
-      if (group && tabObj && group.layout_state) {
-        const updatedTab: Tab = { ...tabObj, groupId };
-
-        // Clone the group's saved paneTree
-        let tree = JSON.parse(JSON.stringify(group.layout_state.paneTree)) as PaneNode;
-
-        // Find the leaf pane inside the group splits
-        const restoredFocusedLeafId = group.layout_state.focusedLeafId;
-        let targetLeaf = restoredFocusedLeafId ? findLeafById(tree, restoredFocusedLeafId) : null;
-        if (!targetLeaf) {
-          targetLeaf = findFirstLeaf(tree);
-        }
-
-        if (targetLeaf) {
-          // Insert the tab into the group splits tree
-          tree = insertTabIntoLeaf(tree, targetLeaf.id, updatedTab);
-        }
-
-        // Update the group's layout state in IndexedDB and state
-        const updatedGroup: LocalGroup = {
-          ...group,
-          updated_at: new Date().toISOString(),
-          layout_state: {
-            ...group.layout_state,
-            paneTree: tree,
-            activeTabId: tabId, // Focus on the newly added tab inside the group
-            focusedLeafId: targetLeaf ? targetLeaf.id : group.layout_state.focusedLeafId,
-          },
-        };
-
-        try {
-          await localDB.putGroup(updatedGroup);
-          
-          // Update the groups state
-          setGroups((prev) =>
-            prev.map((g) => (g.id === groupId ? updatedGroup : g))
-          );
-
-          // Auto-save the current ungrouped/other group layout before switching
-          if (activeGroupId) {
-            const activeGroup = groups.find((g) => g.id === activeGroupId);
-            if (activeGroup) {
-              const currentScrolls: Record<string, number> = {};
-              const currentCursors: Record<string, number> = {};
-              const currentViewModes: Record<string, string> = {};
-
-              const allOpenTabs = collectAllTabs(paneTree);
-              for (const t of allOpenTabs) {
-                const cached = scrollCursorCacheRef.current[t.path];
-                if (cached) {
-                  if (cached.scroll !== undefined) currentScrolls[t.path] = cached.scroll;
-                  if (cached.cursor !== undefined) currentCursors[t.path] = cached.cursor;
-                  if (cached.viewMode !== undefined) currentViewModes[t.path] = cached.viewMode;
-                }
-              }
-
-              const updatedActiveGroup: LocalGroup = {
-                ...activeGroup,
-                updated_at: new Date().toISOString(),
-                layout_state: {
-                  paneTree,
-                  activeTabId,
-                  focusedLeafId,
-                  scrollPositions: currentScrolls,
-                  cursorPositions: currentCursors,
-                  viewModes: currentViewModes,
-                },
-              };
-
-              await localDB.putGroup(updatedActiveGroup);
-              setGroups((prev) =>
-                prev.map((g) => (g.id === activeGroupId ? updatedActiveGroup : g))
-              );
-            }
-          }
-
-          // Expand/uncollapse the group automatically
-          setCollapsedGroupIds((prev) => {
-            const next = new Set<string>(prev);
-            next.delete(groupId);
-            return next;
-          });
-
-          // Instantly restore and switch to the target group splits!
-          await handleRestoreGroup(groupId, updatedGroup);
-          return;
-        } catch (err) {
-          console.error("Failed to add tab to group splits:", err);
-        }
-      }
-    }
-
-    // Default inline grouping state update (when group is active, or removing tab from group)
-    setTabs(prev => prev.map(t => t.id === tabId ? { ...t, groupId } : t));
-    setPaneTree(prev => {
-      const updateTabGroup = (node: PaneNode): PaneNode => {
-        if (node.type === 'leaf') {
-          return {
-            ...node,
-            tabs: node.tabs.map(t => t.id === tabId ? { ...t, groupId } : t)
-          };
-        }
-        return {
-          ...node,
-          children: [
-            updateTabGroup(node.children[0]),
-            updateTabGroup(node.children[1])
-          ] as [PaneNode, PaneNode]
-        };
-      };
-      return updateTabGroup(prev);
-    });
-  }, [activeGroupId, groups, tabs, paneTree, activeTabId, focusedLeafId, handleRestoreGroup]);
-
-  const handleAddFileToGroup = useCallback(async (path: string, groupId: string) => {
-    const group = groups.find((candidate) => candidate.id === groupId);
-    if (!group) return;
-
-    const sourceTree = groupId === activeGroupId
-      ? paneTree
-      : group.layout_state?.paneTree as PaneNode | undefined;
-    let tree = sourceTree
-      ? JSON.parse(JSON.stringify(sourceTree)) as PaneNode
-      : createLeaf([]);
-
-    const existingTab = collectAllTabs(tree).find((tab) => tab.path === path);
-    let targetTab = existingTab;
-
-    if (!targetTab) {
-      targetTab = {
-        id: generateId(),
-        path,
-        name: getNoteName(path),
-        isModified: false,
-        groupId,
-      };
-
-      const targetLeaf = group.layout_state?.focusedLeafId
-        ? findLeafById(tree, group.layout_state.focusedLeafId)
-        : null;
-      const leaf = targetLeaf || findFirstLeaf(tree);
-      if (!leaf) return;
-      tree = insertTabIntoLeaf(tree, leaf.id, targetTab);
-    } else {
-      const leaf = findLeafWithTab(tree, targetTab.id);
-      if (leaf) tree = setActiveTabInLeaf(tree, leaf.id, targetTab.id);
-    }
-
-    const targetLeaf = findLeafWithTab(tree, targetTab.id);
-    const updatedGroup: LocalGroup = {
-      ...group,
-      updated_at: new Date().toISOString(),
-      layout_state: {
-        ...group.layout_state,
-        paneTree: tree,
-        activeTabId: targetTab.id,
-        focusedLeafId: targetLeaf?.id || group.layout_state?.focusedLeafId,
-      },
-    };
-
-    try {
-      await localDB.putGroup(updatedGroup);
-      setGroups((previous) =>
-        previous.map((candidate) => candidate.id === groupId ? updatedGroup : candidate),
-      );
-      await handleRestoreGroup(groupId, updatedGroup);
-      showToast(
-        existingTab
-          ? `${getNoteName(path)} is already in ${group.name}`
-          : `Added ${getNoteName(path)} to ${group.name}`,
-        existingTab ? "info" : "success",
-      );
-    } catch (err) {
-      console.error("Failed to add file to group:", err);
-      showToast("Failed to add file to group", "error");
-    }
-  }, [activeGroupId, groups, handleRestoreGroup, paneTree, showToast]);
-
-  const handleCreateGroupFromTab = useCallback((tabId: string) => {
-    setGroupModalData({
-      type: "create",
-      title: "Create Group from Tab",
-      tabId,
-    });
-  }, []);
-
-  const handleCreateGroupFromFile = useCallback((filePath: string) => {
-    setGroupModalData({
-      type: "create",
-      title: "Create Group for File",
-      filePath,
-    });
-  }, []);
-
-  const handleGroupModalClose = (result: { name: string; color: string } | null) => {
-    const data = groupModalData;
-    setGroupModalData(null);
-    if (!result || !data) return;
-
-    if (data.type === "create") {
-      void handleSaveGroupConfirm(result.name, result.color, data.tabId, data.filePath);
-    } else if (data.type === "rename" || data.type === "color") {
-      if (!data.groupId) return;
-      const group = groups.find((g) => g.id === data.groupId);
-      if (!group) return;
-
-      const updatedGroup: LocalGroup = {
-        ...group,
-        name: result.name,
-        color: result.color,
-        updated_at: new Date().toISOString(),
-      };
-
-      localDB.putGroup(updatedGroup)
-        .then(() => {
-          setGroups((prev) =>
-            prev.map((g) => (g.id === data.groupId ? updatedGroup : g))
-          );
-          showToast(`Updated group ${result.name}`, "success");
-        })
-        .catch((err) => console.error("Failed to update group metadata:", err));
-    }
-  };
+  const {
+    handleOpenCreateGroupModal,
+    handleSaveGroupConfirm,
+    handleRestoreGroup,
+    handleOpenPathsAsGroup,
+    handleCreateGroupFromPaths,
+    handleCreateGroupFromFolder,
+    handleCreateGroupFromFile,
+    handleCreateGroupFromTab,
+    handleUpdateActiveGroup,
+    handleRenameGroup,
+    handleChangeGroupColor,
+    handleDeleteGroup,
+    handleDuplicateGroup,
+    handleToggleGroupAutoSave,
+    handleAddFileToGroup,
+    handleToggleGroupCollapse,
+    handleAddTabToGroup,
+    handleGroupModalClose,
+  } = useLayoutGroups({
+    vaultPath,
+    groups,
+    setGroups,
+    activeGroupId,
+    setActiveGroupId,
+    paneTree,
+    setPaneTree,
+    activeTabId,
+    setActiveTabId,
+    focusedLeafId,
+    setFocusedLeafId,
+    tabs,
+    setTabs,
+    collapsedGroupIds,
+    setCollapsedGroupIds,
+    hasUnsavedChanges,
+    setHasUnsavedChanges,
+    setCanvasFilePath,
+    setCurrentContent,
+    setBacklinks,
+    setGroupModalData,
+    groupModalData,
+    showToast,
+    scrollCursorCacheRef,
+    skipTabSyncRef,
+  });
 
   // ── Backlinks ───────────────────────────────────────
   const loadBacklinks = useCallback(async (filePath: string) => {
@@ -4176,6 +2704,53 @@ export default function App() {
       setBacklinks([]);
     }
   }, [api]);
+
+  // Load content and backlinks when activeTabId changes
+  useEffect(() => {
+    if (!activeTabId) {
+      setCurrentContent("");
+      setBacklinks([]);
+      return;
+    }
+    const tab = tabs.find((t) => t.id === activeTabId);
+    if (!tab) return;
+    
+    // Ignore special tabs
+    if (
+      tab.path === "__new_tab__" ||
+      tab.path === GRAPH_TAB_PATH ||
+      tab.path === SPACES_TAB_PATH ||
+      tab.path.startsWith("__plugin__.")
+    ) {
+      setCurrentContent("");
+      setBacklinks([]);
+      return;
+    }
+    if (isCanvasFile(tab.path)) {
+      setCurrentContent("");
+      setBacklinks([]);
+      return;
+    }
+    
+    let active = true;
+    const loadContent = async () => {
+      try {
+        const content = (await api.readFile(tab.path)) || "";
+        if (active) {
+          setCurrentContent(content);
+          currentContentRef.current = content;
+          currentContentPathRef.current = tab.path;
+          loadBacklinks(tab.path);
+        }
+      } catch (err) {
+        console.error("Error loading active tab content:", err);
+      }
+    };
+    void loadContent();
+    return () => {
+      active = false;
+    };
+  }, [activeTabId, tabs, loadBacklinks]);
 
   const rememberRenameRedirect = useCallback((oldPath: string, newPath: string) => {
     const redirects = renameRedirectsRef.current;
@@ -4305,6 +2880,10 @@ export default function App() {
       const noteTitle = getNoteName(path);
       const fallback = `# ${noteTitle}\n\n`;
       await api.createFile(path, fallback);
+      if (collaborationEngine.activeSpaceId) {
+        await collaborationEngine.persistNoteEdit(path, fallback);
+        syncEngine.triggerPush();
+      }
       await refreshFileTree();
       return fallback;
     };
@@ -4596,6 +3175,10 @@ export default function App() {
 
     const content = `# ${heading}\n\n${thought}\n`;
     await api.createFile(candidatePath, content);
+    if (collaborationEngine.activeSpaceId) {
+      await collaborationEngine.persistNoteEdit(candidatePath, content);
+      syncEngine.triggerPush();
+    }
     await refreshFileTree();
     await openFile(candidatePath, "editor");
     setFirstThoughtDraft("");
@@ -4706,7 +3289,7 @@ export default function App() {
     openFile,
   ]);
 
-  const handleNewNote = async () => {
+  const handleNewNote = async (parentPath?: string) => {
     if (!vaultPath) return;
 
     setModal({
@@ -4720,19 +3303,29 @@ export default function App() {
         const fileName = /\.(md|canvas)$/i.test(trimmed)
           ? trimmed
           : `${trimmed}.md`;
-        const activeFolder =
-          settings.defaultNoteLocation === "same-folder" &&
-          activeTab?.path &&
-          !activeTab.path.startsWith("__") &&
-          activeTab.path.includes("/")
-            ? activeTab.path.slice(0, activeTab.path.lastIndexOf("/") + 1)
-            : "";
+        
+        let activeFolder = "";
+        if (parentPath) {
+          activeFolder = parentPath.endsWith("/") ? parentPath : `${parentPath}/`;
+        } else {
+          activeFolder =
+            settings.defaultNoteLocation === "same-folder" &&
+            activeTab?.path &&
+            !activeTab.path.startsWith("__") &&
+            activeTab.path.includes("/")
+              ? activeTab.path.slice(0, activeTab.path.lastIndexOf("/") + 1)
+              : "";
+        }
         const targetPath = fileName.includes("/") ? fileName : `${activeFolder}${fileName}`;
         const content = isCanvasFile(fileName)
           ? JSON.stringify({ nodes: [], edges: [] }, null, 2)
           : `# ${trimmed.replace(".md", "")}\n\n`;
 
         await api.createFile(targetPath, content);
+        if (collaborationEngine.activeSpaceId && !isCanvasFile(fileName)) {
+          await collaborationEngine.persistNoteEdit(targetPath, content);
+          syncEngine.triggerPush();
+        }
         await refreshFileTree();
         await openFile(targetPath);
       },
@@ -4757,6 +3350,10 @@ export default function App() {
         : `# ${trimmed.replace(/\.md$/i, "")}` + "\n\n";
 
       await api.createFile(fileName, content);
+      if (collaborationEngine.activeSpaceId && !isCanvasFile(fileName)) {
+        await collaborationEngine.persistNoteEdit(fileName, content);
+        syncEngine.triggerPush();
+      }
       await refreshFileTree();
       await openFile(fileName);
     },
@@ -4764,367 +3361,36 @@ export default function App() {
   );
 
   // ── Inline suggestions (appear inside editor) ──────────────────────────
-  const [inlineSuggestions, setInlineSuggestions] = useState<EnrichedSuggestion[]>([]);
-  const [nextStepSuggestions, setNextStepSuggestions] = useState<EnrichedSuggestion[]>([]);
-  const [inlineSuggestionsByPath, setInlineSuggestionsByPath] = useState<Record<string, EnrichedSuggestion[]>>({});
-  const [nextStepSuggestionsByPath, setNextStepSuggestionsByPath] = useState<Record<string, EnrichedSuggestion[]>>({});
-  const [inlineAnnotationByPath, setInlineAnnotationByPath] = useState<Record<string, string | null>>({});
-  const [generatingInsightPaths, setGeneratingInsightPaths] = useState<Set<string>>(new Set());
-  const refreshInlineSuggestions = useCallback(async (notePath: string) => {
-    try {
-      const store = loadStore();
-      if (store.entries.size === 0) {
-        setInlineSuggestions([]);
-        setNextStepSuggestions([]);
-        return;
-      }
-      // Generation stage: filter out low-similarity candidates
-      const raw = findSimilar(store, notePath, 0.35, 30);
-      const weighted = applyHistoryWeighting(notePath, raw);
-      const basic = weighted.map((s) => ({
-        ...s,
-        title: s.path.split("/").pop()?.replace(/\.md$/, "") || s.path,
-      }));
-
-      // Load target note contents for enrichment
-      let sourceContent = "";
-      try { sourceContent = await api.readFile(notePath); } catch { /* empty */ }
-
-      const noteContents = new Map<string, string>();
-      for (const s of basic) {
-        try {
-          const content = await api.readFile(s.path);
-          noteContents.set(s.path, content);
-        } catch { /* skip */ }
-      }
-
-      const history = loadSuggestionHistory();
-      const accepted = history
-        .filter(
-          (record) =>
-            record.sourcePath === notePath &&
-            record.action === "accepted",
-        )
-        .sort((a, b) => b.timestamp - a.timestamp)
-        .slice(0, 16);
-
-      const acceptedConceptWeights = new Map<string, number>();
-      if (accepted.length > 0) {
-        const now = Date.now();
-        for (const record of accepted) {
-          const ageDays = Math.max(0, (now - record.timestamp) / (24 * 60 * 60 * 1000));
-          const recencyWeight = Math.max(0.35, 1 - ageDays / 21);
-          const targetName = record.targetPath
-            .split("/")
-            .pop()
-            ?.replace(/\.md$/, "")
-            .toLowerCase() || "";
-          const tokens = targetName
-            .replace(/[^a-z0-9\s]/g, " ")
-            .split(/\s+/)
-            .filter((token) => token.length > 2);
-          for (const token of tokens) {
-            acceptedConceptWeights.set(
-              token,
-              (acceptedConceptWeights.get(token) || 0) + recencyWeight,
-            );
-          }
-        }
-      }
-
-      const sourceConcept = deriveCurrentConcept(sourceContent);
-      const transitionMap = loadTransitionMap();
-
-      // Candidate generation with strict quality filter.
-      const enriched = enrichSuggestions(sourceContent, basic, noteContents)
-        .map((suggestion) => {
-          const candidateTokens = `${suggestion.title} ${suggestion.sharedConcepts.join(" ")}`
-            .toLowerCase()
-            .replace(/[^a-z0-9\s]/g, " ")
-            .split(/\s+/)
-            .filter((token) => token.length > 2);
-
-          let trajectoryBoost = 0;
-          if (acceptedConceptWeights.size > 0) {
-            const tokenSet = new Set(candidateTokens);
-            let overlapScore = 0;
-            tokenSet.forEach((token) => {
-              overlapScore += acceptedConceptWeights.get(token) || 0;
-            });
-            trajectoryBoost = Math.min(0.12, overlapScore * 0.028);
-          }
-
-          const transitionBoost = sourceConcept
-            ? getTransitionBoost(sourceConcept, candidateTokens)
-            : 0;
-          const totalBoost = trajectoryBoost + transitionBoost;
-          if (totalBoost <= 0) return suggestion;
-
-          return {
-            ...suggestion,
-            similarity: Math.max(0, Math.min(1, suggestion.similarity + totalBoost)),
-          };
-        })
-        .filter((suggestion) => suggestion.similarity >= 0.38 && (suggestion.sharedConcepts.length > 0 || suggestion.similarity >= 0.5))
-        .sort((a, b) => b.similarity - a.similarity)
-        .slice(0, 24);
-
-      const sessionIntentTokens = [...acceptedConceptWeights.entries()]
-        .sort((a, b) => b[1] - a[1])
-        .slice(0, 8)
-        .map(([token]) => token);
-
-      const clusterContextTokens = new Set<string>();
-      enriched
-        .filter((item) => item.group === "strong")
-        .slice(0, 6)
-        .forEach((item) => {
-          item.sharedConcepts.forEach((concept) => {
-            extractConceptTokens(concept, 4).forEach((token) => {
-              clusterContextTokens.add(token);
-            });
-          });
-        });
-
-      const nextSteps = enriched
-        .map((suggestion) => {
-          // Strict relevance check: candidate MUST be genuinely connected to the current note
-          const isRelevantToCurrentNote =
-            suggestion.sharedConcepts.length > 0 || suggestion.similarity >= 0.42;
-          if (!isRelevantToCurrentNote) return null;
-
-          const candidateTokens = extractConceptTokens(
-            `${suggestion.title} ${suggestion.sharedConcepts.join(" ")}`,
-            10,
-          );
-          if (candidateTokens.length === 0) return null;
-
-          const intentOverlap = candidateTokens.reduce(
-            (sum, token) => sum + (acceptedConceptWeights.get(token) || 0),
-            0,
-          );
-
-          const transitionLikelihood = sourceConcept
-            ? getTransitionLikelihood(transitionMap, sourceConcept, candidateTokens)
-            : 0;
-
-          const clusterOverlap =
-            candidateTokens.filter((token) => clusterContextTokens.has(token)).length /
-            Math.max(1, candidateTokens.length);
-
-          const sessionIntentOverlap =
-            sessionIntentTokens.length > 0
-              ? candidateTokens.filter((token) => sessionIntentTokens.includes(token)).length /
-                sessionIntentTokens.length
-              : 0;
-
-          const guidanceScore =
-            suggestion.similarity * 0.34 +
-            Math.min(0.28, intentOverlap * 0.06) +
-            Math.min(0.24, transitionLikelihood * 0.8) +
-            clusterOverlap * 0.12 +
-            sessionIntentOverlap * 0.1;
-
-          const primaryHint = suggestion.sharedConcepts[0] || suggestion.title;
-          const guidanceReason =
-            transitionLikelihood > 0.02
-              ? `Likely next direction based on recent flow toward ${primaryHint}`
-              : `Builds your current trajectory around ${primaryHint}`;
-
-          return {
-            ...suggestion,
-            similarity: Math.min(1, Math.max(suggestion.similarity, guidanceScore)),
-            reason: guidanceReason,
-          };
-        })
-        .filter((item): item is EnrichedSuggestion => Boolean(item))
-        .sort((a, b) => b.similarity - a.similarity)
-        .filter(
-          (candidate, index, list) =>
-            list.findIndex(
-              (item) =>
-                item.path === candidate.path ||
-                item.title.toLowerCase().trim() === candidate.title.toLowerCase().trim(),
-            ) === index,
-        )
-        .slice(0, 4);
-
-      setInlineSuggestions(enriched);
-      setNextStepSuggestions(nextSteps);
-      setInlineSuggestionsByPath((prev) => ({ ...prev, [notePath]: enriched }));
-      setNextStepSuggestionsByPath((prev) => ({ ...prev, [notePath]: nextSteps }));
-    } catch { /* silent */ }
-  }, []);
-
-  const refreshInlineAnnotation = useCallback((notePath: string) => {
-    const cached = getCachedAnnotation(notePath);
-    setInlineAnnotationByPath(prev => ({ ...prev, [notePath]: cached }));
-  }, []);
-
-  // Track previous note for decay recording
-  const prevActiveTabRef = React.useRef<string | null>(null);
-
-  // Refresh suggestions when active tab changes
-  useEffect(() => {
-    const tab = tabs.find((t) => t.id === activeTabId);
-    const currentPath = tab?.path.endsWith(".md") ? tab.path : null;
-
-    // Record ignored suggestions for the note we're leaving
-    if (prevActiveTabRef.current && prevActiveTabRef.current !== currentPath) {
-      const prevPath = prevActiveTabRef.current;
-      if (inlineSuggestions.length > 0) {
-        recordIgnoredSuggestions(prevPath, inlineSuggestions.map((s) => s.path));
-      }
-    }
-    prevActiveTabRef.current = currentPath;
-
-    if (currentPath) {
-      refreshInlineSuggestions(currentPath);
-      refreshInlineAnnotation(currentPath);
-    } else {
-      setInlineSuggestions([]);
-      setNextStepSuggestions([]);
-    }
-  }, [activeTabId, tabs, refreshInlineSuggestions, refreshInlineAnnotation]);
-
-  // Pre-load suggestions for all active tabs in all split panes
-  useEffect(() => {
-    const activePaths = collectAllActiveTabPaths(paneTree);
-    for (const path of activePaths) {
-      if (path && !inlineSuggestionsByPath[path]) {
-        refreshInlineSuggestions(path);
-      }
-    }
-  }, [paneTree, tabs, refreshInlineSuggestions, inlineSuggestionsByPath]);
-
-  useEffect(() => {
-    const onEmbeddingUpdated = (event: Event) => {
-      const updatedPath = (event as CustomEvent<{ path?: string }>).detail?.path;
-      const pathsToRefresh = new Set(
-        collectAllActiveTabPaths(paneTree).filter((path) =>
-          isHostEditableMarkdownPath(path),
-        ),
-      );
-
-      const activePath = tabs.find((tab) => tab.id === activeTabId)?.path;
-      if (activePath && isHostEditableMarkdownPath(activePath)) {
-        pathsToRefresh.add(activePath);
-      }
-      if (updatedPath && isHostEditableMarkdownPath(updatedPath)) {
-        pathsToRefresh.add(updatedPath);
-      }
-
-      pathsToRefresh.forEach((path) => {
-        void refreshInlineSuggestions(path);
-      });
-    };
-
-    window.addEventListener("openonyx:embedding-updated", onEmbeddingUpdated as EventListener);
-    return () => {
-      window.removeEventListener("openonyx:embedding-updated", onEmbeddingUpdated as EventListener);
-    };
-  }, [activeTabId, paneTree, refreshInlineSuggestions, tabs]);
-
-  const handleInlineAccept = useCallback(
-    async (targetPath: string, linkType: LinkType) => {
-      const tab = tabs.find((t) => t.id === activeTabId);
-      if (!tab) return;
-      try {
-        const content = (await api.readFile(tab.path)) || "";
-        const targetName = targetPath.split("/").pop()?.replace(/\.md$/, "") || targetPath;
-        const sourceConcept = deriveCurrentConcept(content);
-        const acceptedSuggestion = inlineSuggestions.find((item) => item.path === targetPath);
-        const targetConcept =
-          extractConceptTokens(
-            acceptedSuggestion
-              ? `${acceptedSuggestion.title} ${acceptedSuggestion.sharedConcepts.join(" ")}`
-              : targetName,
-            1,
-          )[0] || null;
-
-        if (sourceConcept && targetConcept) {
-          recordTransition(sourceConcept, targetConcept);
-        }
-
-        const linkText =
-          linkType === "related"
-            ? `[[${targetName}]]`
-            : `[[${targetName}]] %%${linkType}%%`;
-        const separator = content.endsWith("\n") ? "\n" : "\n\n";
-        await api.writeFile(tab.path, content + separator + linkText + "\n");
-        recordSuggestion({
-          sourcePath: tab.path,
-          targetPath,
-          action: "accepted",
-          timestamp: Date.now(),
-        });
-
-        setInlineSuggestions((prev) => prev.filter((s) => s.path !== targetPath));
-        // Reload editor content
-        const updated = (await api.readFile(tab.path)) || "";
-        setCurrentContent(updated);
-      } catch (err) {
-        console.error("Failed to create link:", err);
-      }
-    },
-    [activeTabId, inlineSuggestions, tabs],
-  );
-
-  const handleInlineReject = useCallback(
-    (targetPath: string) => {
-      const tab = tabs.find((t) => t.id === activeTabId);
-      if (!tab) return;
-      recordSuggestion({
-        sourcePath: tab.path,
-        targetPath,
-        action: "rejected",
-        timestamp: Date.now(),
-      });
-
-      setInlineSuggestions((prev) => prev.filter((s) => s.path !== targetPath));
-    },
-    [activeTabId, tabs],
-  );
-
-  // Auto-embed a note after save (background, non-blocking)
-  const autoEmbedNote = useCallback(async (path: string, content: string) => {
-    await indexMarkdownFileNow(path, content);
-  }, [indexMarkdownFileNow]);
-
-  const handleGenerateInsight = useCallback(async (path: string, tabId: string) => {
-    if (!path || isCanvasFile(path)) return;
-
-    setGeneratingInsightPaths((prev) => {
-      const next = new Set(prev);
-      next.add(path);
-      return next;
-    });
-
-    try {
-      let content = "";
-      if (activeTabId === tabId) {
-        content = currentContentRef.current;
-      } else {
-        content = await api.readFile(path);
-      }
-
-      const ann = await getAnnotation(path, content);
-      if (ann) {
-        setInlineAnnotationByPath((prev) => ({
-          ...prev,
-          [path]: ann,
-        }));
-      }
-    } catch (err) {
-      console.warn("[Insight] Generation failed:", err);
-    } finally {
-      setGeneratingInsightPaths((prev) => {
-        const next = new Set(prev);
-        next.delete(path);
-        return next;
-      });
-    }
-  }, [activeTabId]);
+  const {
+    inlineSuggestions,
+    setInlineSuggestions,
+    nextStepSuggestions,
+    setNextStepSuggestions,
+    inlineSuggestionsByPath,
+    setInlineSuggestionsByPath,
+    nextStepSuggestionsByPath,
+    setNextStepSuggestionsByPath,
+    inlineAnnotationByPath,
+    setInlineAnnotationByPath,
+    generatingInsightPaths,
+    setGeneratingInsightPaths,
+    showInlineInsightByTab,
+    setShowInlineInsightByTab,
+    refreshInlineSuggestions,
+    refreshInlineAnnotation,
+    handleInlineAccept,
+    handleInlineReject,
+    handleGenerateInsight,
+  } = useInlineSuggestions({
+    vaultPath,
+    tabs,
+    activeTabId,
+    paneTree,
+    setCurrentContent,
+    loadBacklinks,
+    currentContentRef,
+    collectAllActiveTabPaths,
+  });
 
   const handleSave = async () => {
     if (!activeTabId) return;
@@ -5148,7 +3414,7 @@ export default function App() {
       }),
     );
     // Auto-embed in background
-    autoEmbedNote(tab.path, saveContent);
+    void indexMarkdownFileNow(tab.path, saveContent);
 
     setTabs((prev) =>
       prev.map((t) => (t.id === activeTabId ? { ...t, isModified: false } : t)),
@@ -5202,7 +3468,7 @@ export default function App() {
       clearAutoSaveTimer();
       autoSaveTimer.current = setTimeout(() => {
         autoSaveTimer.current = null;
-        autoEmbedNote(path, content);
+        void indexMarkdownFileNow(path, content);
       }, 2000);
     },
     [activeTabId, tabs, flushContentUpdate, loadBacklinks],
@@ -5249,7 +3515,7 @@ export default function App() {
             }),
           );
           // Auto-embed on auto-save (background)
-          autoEmbedNote(tab.path, content);
+          void indexMarkdownFileNow(tab.path, content);
 
           setTabs((prev) =>
             prev.map((t) =>
@@ -5622,6 +3888,36 @@ export default function App() {
       void refreshFileTree();
     };
 
+    const onFileDeleted = (event: Event) => {
+      const customEvent = event as CustomEvent<{ path: string; isDirectory?: boolean }>;
+      const { path, isDirectory } = customEvent.detail || {};
+      if (!path) return;
+
+      // Close tabs
+      tabs.forEach((tab) => {
+        if (
+          isDirectory
+            ? (tab.path === path || tab.path.startsWith(path + "/"))
+            : tab.path === path
+        ) {
+          void closeTab(tab.id);
+        }
+      });
+
+      // Remove embeddings
+      const store = loadStore();
+      if (isDirectory) {
+        removeEmbeddingsByPrefix(store, path);
+      } else if (path.toLowerCase().endsWith(".md")) {
+        removeEmbedding(store, path);
+      }
+
+      // Remove bookmarks
+      removeBookmarksForPath(path, Boolean(isDirectory));
+
+      void refreshFileTree();
+    };
+
     window.addEventListener("oo:save", onSave as EventListener);
     window.addEventListener("oo:close-tab", onCloseTab as EventListener);
     window.addEventListener("oo:new-note", onNewNote as EventListener);
@@ -5639,6 +3935,7 @@ export default function App() {
     window.addEventListener("oo:prev-tab", onPrevTab as EventListener);
     window.addEventListener("openonyx:note-saved", onNoteSaved as EventListener);
     window.addEventListener("openonyx:file-renamed", onFileRenamed as EventListener);
+    window.addEventListener("openonyx:file-deleted", onFileDeleted as EventListener);
 
     return () => {
       window.removeEventListener("oo:save", onSave as EventListener);
@@ -5658,6 +3955,7 @@ export default function App() {
       window.removeEventListener("oo:prev-tab", onPrevTab as EventListener);
       window.removeEventListener("openonyx:note-saved", onNoteSaved as EventListener);
       window.removeEventListener("openonyx:file-renamed", onFileRenamed as EventListener);
+      window.removeEventListener("openonyx:file-deleted", onFileDeleted as EventListener);
     };
   }, [
     activeTabId,
@@ -5669,6 +3967,7 @@ export default function App() {
     refreshFileTree,
     updateEmbeddingsAfterRename,
     updateOpenPathsAfterRename,
+    tabs,
     settings.coreBacklinks,
     settings.coreCommandPalette,
     settings.coreDailyNotes,
@@ -5756,556 +4055,17 @@ export default function App() {
         : (activeDir ? `${activeDir}/${newPath}` : newPath);
       const content = `# ${rawLink.split("/").pop()?.replace(/\.(md|canvas)$/i, "") || rawLink}\n\n`;
       await api.createFile(targetPath, content);
+      // Sync newly auto-created note to cloud
+      if (collaborationEngine.activeSpaceId) {
+        await collaborationEngine.persistNoteEdit(targetPath, content);
+        syncEngine.triggerPush();
+      }
       await refreshFileTree();
       await openFile(targetPath, "preview");
     }
   };
 
   // ── File Management ─────────────────────────────────
-  const handleDeleteFile = async (filePath: string, isDir: boolean = false) => {
-    const performDelete = async () => {
-      try {
-        clearAutoSaveTimer();
-
-        // Propagate delete to collaboration database & sync queue
-        const spaceId = collaborationEngine.activeSpaceId;
-        if (spaceId) {
-          if (isDir) {
-            const notes = await localDB.getNotes(spaceId);
-            const dirPrefix = filePath.endsWith('/') ? filePath : `${filePath}/`;
-            for (const note of notes) {
-              if (note.path === filePath || note.path.startsWith(dirPrefix)) {
-                await localDB.deleteNote(note.id, true);
-              }
-            }
-          } else {
-            const note = await localDB.getNoteByPath(spaceId, filePath);
-            if (note) {
-              await localDB.deleteNote(note.id, true);
-            }
-          }
-          syncEngine.triggerPush();
-        }
-
-        if (settings.deletedFilesMode === "system-trash" && (api as any).trashFile) {
-          await (api as any).trashFile(filePath);
-          if (isDir) {
-            const store = loadStore();
-            removeEmbeddingsByPrefix(store, filePath);
-          } else if (filePath.toLowerCase().endsWith(".md")) {
-            const store = loadStore();
-            removeEmbedding(store, filePath);
-          }
-        } else if (!isDir && settings.deletedFilesMode === "app-trash") {
-          const trashPath = `.trash/${filePath}`;
-          const content = await api.readFile(filePath);
-          await api.createFile(trashPath, content);
-          await api.deleteFile(filePath);
-          if (filePath.toLowerCase().endsWith(".md")) {
-            const store = loadStore();
-            removeEmbedding(store, filePath);
-          }
-        } else {
-          if (isDir) {
-            await api.deleteDirectory(filePath);
-            const store = loadStore();
-            removeEmbeddingsByPrefix(store, filePath);
-          } else {
-            await api.deleteFile(filePath);
-            if (filePath.toLowerCase().endsWith(".md")) {
-              const store = loadStore();
-              removeEmbedding(store, filePath);
-            }
-          }
-        }
-        removeBookmarksForPath(filePath, isDir);
-
-        // Close tab if open (for files) or close all tabs within the folder
-        if (isDir) {
-          // Close all tabs that are within this directory
-          tabs.forEach((tab) => {
-            if (
-              tab.path.startsWith(filePath + "/") ||
-              tab.path === filePath
-            ) {
-              closeTab(tab.id);
-            }
-          });
-        } else {
-          const tab = tabs.find((t) => t.path === filePath);
-          if (tab) closeTab(tab.id);
-        }
-
-        await refreshFileTree();
-      } catch (error) {
-        console.error("Failed to delete:", error);
-      }
-    };
-
-    if (settings.confirmBeforeDelete === false) {
-      await performDelete();
-      return;
-    }
-
-    setModal({
-      type: "confirm",
-      title: isDir ? "Delete Folder" : "Delete File",
-      message: `Delete "${getNoteName(filePath)}"${isDir ? " and all its contents" : ""}?`,
-      onConfirm: async (confirmed) => {
-        if (!confirmed) return;
-        await performDelete();
-      },
-    });
-  };
-
-  const handleRenameFile = async (oldPath: string, newName: string) => {
-    clearAutoSaveTimer();
-
-    const findEntryByPath = (entries: FileEntry[], targetPath: string): FileEntry | null => {
-      for (const entry of entries) {
-        if (entry.path === targetPath) return entry;
-        if (entry.isDirectory && entry.children) {
-          const found = findEntryByPath(entry.children, targetPath);
-          if (found) return found;
-        }
-      }
-      return null;
-    };
-
-    const existingEntry = findEntryByPath(fileTree, oldPath);
-    const isDirectory = existingEntry?.isDirectory === true;
-
-    const dir = oldPath.includes("/")
-      ? oldPath.substring(0, oldPath.lastIndexOf("/") + 1)
-      : "";
-    const raw = newName.trim();
-    const hasExt = /\.[a-z0-9]+$/i.test(raw);
-    const inferredExt = isCanvasFile(oldPath) ? ".canvas" : ".md";
-    const normalized = isDirectory
-      ? raw
-      : hasExt
-        ? raw
-        : `${raw}${inferredExt}`;
-    const newPath = dir + normalized;
-    if (!raw || oldPath === newPath) return;
-
-    // Propagate rename to collaboration database & sync queue
-    const spaceId = collaborationEngine.activeSpaceId;
-    if (spaceId) {
-      if (isDirectory) {
-        const notes = await localDB.getNotes(spaceId);
-        const oldPrefix = oldPath.endsWith('/') ? oldPath : `${oldPath}/`;
-        const newPrefix = newPath.endsWith('/') ? newPath : `${newPath}/`;
-        for (const note of notes) {
-          if (note.path === oldPath) {
-            note.path = newPath;
-            note.title = newPath.split('/').pop()?.replace(/\.(md|canvas)$/, '') || newPath;
-            note.updated_at = new Date().toISOString();
-            await localDB.putNote(note, true);
-          } else if (note.path.startsWith(oldPrefix)) {
-            const nextPath = `${newPrefix}${note.path.slice(oldPrefix.length)}`;
-            note.path = nextPath;
-            note.title = nextPath.split('/').pop()?.replace(/\.(md|canvas)$/, '') || nextPath;
-            note.updated_at = new Date().toISOString();
-            await localDB.putNote(note, true);
-          }
-        }
-      } else {
-        const note = await localDB.getNoteByPath(spaceId, oldPath);
-        if (note) {
-          note.path = newPath;
-          note.title = newPath.split('/').pop()?.replace(/\.(md|canvas)$/, '') || newPath;
-          note.updated_at = new Date().toISOString();
-          await localDB.putNote(note, true);
-        }
-      }
-      syncEngine.triggerPush();
-    }
-
-    const app = ooAppRef.current;
-    const vaultEntry = app?.vault.getAbstractFileByPath(oldPath);
-    if (vaultEntry && app) {
-      await app.vault.rename(vaultEntry, newPath);
-    } else {
-      await api.renameFile(oldPath, newPath);
-      await app?.vault.refreshFiles?.();
-    }
-
-    updateEmbeddingsAfterRename(oldPath, newPath, isDirectory);
-    updateOpenPathsAfterRename(oldPath, newPath, isDirectory);
-    remapBookmarkPaths(oldPath, newPath, isDirectory);
-
-    if (
-      settings.autoUpdateInternalLinks &&
-      !isDirectory &&
-      oldPath.toLowerCase().endsWith(".md") &&
-      newPath.toLowerCase().endsWith(".md")
-    ) {
-      const oldName = getNoteName(oldPath);
-      const newName = getNoteName(newPath);
-      const escapedOldName = oldName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-      const wikiLinkPattern = new RegExp(`\\[\\[${escapedOldName}([|#\\]])`, "g");
-      for (const note of allNoteNames) {
-        if (!note.path.toLowerCase().endsWith(".md")) continue;
-        try {
-          const text = await api.readFile(note.path);
-          const updated = text.replace(wikiLinkPattern, `[[${newName}$1`);
-          if (updated !== text) {
-            await api.writeFile(note.path, updated);
-          }
-        } catch {
-          // Keep rename successful even if one link update fails.
-        }
-      }
-    }
-
-    await refreshFileTree();
-  };
-
-  const handleMoveFile = useCallback(async (oldPath: string, newPath: string) => {
-    if (oldPath === newPath) return;
-
-    clearAutoSaveTimer();
-
-    try {
-      // Propagate move/rename to collaboration database & sync queue
-      const spaceId = collaborationEngine.activeSpaceId;
-      if (spaceId) {
-        const isFile = oldPath.toLowerCase().endsWith(".md") || oldPath.toLowerCase().endsWith(".canvas");
-        if (isFile) {
-          const note = await localDB.getNoteByPath(spaceId, oldPath);
-          if (note) {
-            note.path = newPath;
-            note.title = newPath.split('/').pop()?.replace(/\.(md|canvas)$/, '') || newPath;
-            note.updated_at = new Date().toISOString();
-            await localDB.putNote(note, true);
-          }
-        } else {
-          // Folder move
-          const notes = await localDB.getNotes(spaceId);
-          const oldPrefix = oldPath.endsWith('/') ? oldPath : `${oldPath}/`;
-          const newPrefix = newPath.endsWith('/') ? newPath : `${newPath}/`;
-          for (const note of notes) {
-            if (note.path === oldPath) {
-              note.path = newPath;
-              note.title = newPath.split('/').pop()?.replace(/\.(md|canvas)$/, '') || newPath;
-              note.updated_at = new Date().toISOString();
-              await localDB.putNote(note, true);
-            } else if (note.path.startsWith(oldPrefix)) {
-              const nextPath = `${newPrefix}${note.path.slice(oldPrefix.length)}`;
-              note.path = nextPath;
-              note.title = nextPath.split('/').pop()?.replace(/\.(md|canvas)$/, '') || nextPath;
-              note.updated_at = new Date().toISOString();
-              await localDB.putNote(note, true);
-            }
-          }
-        }
-        syncEngine.triggerPush();
-      }
-
-      const app = ooAppRef.current;
-      const vaultEntry = app?.vault.getAbstractFileByPath(oldPath);
-      const isDirectory = Boolean(vaultEntry && !(vaultEntry instanceof TFile))
-        || !(oldPath.toLowerCase().endsWith(".md") || oldPath.toLowerCase().endsWith(".canvas"));
-      if (vaultEntry && app) {
-        await app.vault.rename(vaultEntry, newPath);
-      } else {
-        await api.renameFile(oldPath, newPath);
-        await app?.vault.refreshFiles?.();
-      }
-
-      updateEmbeddingsAfterRename(oldPath, newPath, isDirectory);
-      updateOpenPathsAfterRename(oldPath, newPath, isDirectory);
-      remapBookmarkPaths(oldPath, newPath, isDirectory);
-
-      await refreshFileTree();
-    } catch (err) {
-      console.error("Move failed:", err);
-      setModal({
-        type: "confirm",
-        title: "Move Failed",
-        message: `Could not move ${oldPath} to ${newPath}.`,
-      });
-    }
-  }, [refreshFileTree, clearAutoSaveTimer, updateEmbeddingsAfterRename, updateOpenPathsAfterRename, remapBookmarkPaths]);
-
-  const getAbsoluteVaultPath = useCallback(
-    (relativePath: string): string | null => {
-      if (!vaultPath) return null;
-      const separator = vaultPath.includes("\\") ? "\\" : "/";
-      const normalizedVault = vaultPath.replace(/[\\/]+$/, "");
-      const normalizedRelative = relativePath.replace(/^[/\\]+/, "").replace(/[\\/]+/g, separator);
-      return `${normalizedVault}${separator}${normalizedRelative}`;
-    },
-    [vaultPath],
-  );
-
-  const handleNoteMenuToggleBacklinks = useCallback(() => {
-    setRightSidebarTab("backlinks");
-    setShowRightSidebar(true);
-  }, []);
-
-  const handleSplitNotePane = useCallback(
-    (leafId: string, tab: Tab, zone: "right" | "bottom") => {
-      if (!tab.path || tab.path === "__new_tab__") return;
-      const splitTab: Tab = {
-        ...tab,
-        id: generateId(),
-        isModified: false,
-      };
-      const nextTree = splitLeaf(paneTree, leafId, splitTab, zone);
-      const nextTabs = collectAllTabs(nextTree);
-      if (!nextTabs.some((candidate) => candidate.id === splitTab.id)) return;
-      const splitLeafTarget = findLeafWithTab(nextTree, splitTab.id);
-
-      skipTabSyncRef.current = true;
-      setPaneTree(nextTree);
-      setTabs((previousTabs) =>
-        activeGroupId
-          ? mergePaneTabsWithPreservedUngrouped(nextTabs, previousTabs, groups)
-          : nextTabs,
-      );
-      setActiveTabId(splitTab.id);
-      if (splitLeafTarget) setFocusedLeafId(splitLeafTarget.id);
-    },
-    [activeGroupId, groups, paneTree],
-  );
-
-  const handleNoteMenuRename = useCallback(
-    async (path: string) => {
-      const currentName = path.split("/").pop() || getNoteName(path);
-      const nextName = await promptForInput("Rename file", "Enter a new file name:", currentName);
-      if (!nextName) return;
-      if (/[\\/]/.test(nextName)) {
-        showToast("File name cannot contain path separators.", "error");
-        return;
-      }
-      await handleRenameFile(path, nextName);
-    },
-    [handleRenameFile, promptForInput, showToast],
-  );
-
-  const handleNoteMenuMove = useCallback(
-    async (path: string) => {
-      const nextPathInput = await promptForInput("Move file to", "Enter a vault-relative destination path:", path);
-      if (!nextPathInput) return;
-
-      const trimmed = nextPathInput.replace(/^[/\\]+/, "").trim();
-      if (!trimmed || trimmed === path) return;
-
-      const oldExt = path.match(/\.[a-z0-9]+$/i)?.[0] || "";
-      const nextPath = /\.[a-z0-9]+$/i.test(trimmed) || !oldExt ? trimmed : `${trimmed}${oldExt}`;
-      await handleMoveFile(path, nextPath);
-    },
-    [handleMoveFile, promptForInput],
-  );
-
-  const handleCopyNoteRelativePath = useCallback(
-    (path: string) => {
-      void api.writeClipboardText(path);
-      showToast("Copied relative path", "success");
-    },
-    [showToast],
-  );
-
-  const handleCopyNoteAbsolutePath = useCallback(
-    (path: string) => {
-      const absolutePath = getAbsoluteVaultPath(path);
-      if (!absolutePath) {
-        showToast("No vault path is available.", "error");
-        return;
-      }
-      void api.writeClipboardText(absolutePath);
-      showToast("Copied absolute path", "success");
-    },
-    [getAbsoluteVaultPath, showToast],
-  );
-
-  const handleOpenNoteInDefaultApp = useCallback(
-    async (path: string) => {
-      const absolutePath = getAbsoluteVaultPath(path);
-      if (!absolutePath) {
-        showToast("No vault path is available.", "error");
-        return;
-      }
-      const error = await api.openPath(absolutePath);
-      if (error) showToast("Could not open file in default app.", "error");
-    },
-    [getAbsoluteVaultPath, showToast],
-  );
-
-  const handleShowNoteInSystemExplorer = useCallback(
-    (path: string) => {
-      const absolutePath = getAbsoluteVaultPath(path);
-      if (!absolutePath) {
-        showToast("No vault path is available.", "error");
-        return;
-      }
-      void api.showItemInFolder(absolutePath);
-    },
-    [getAbsoluteVaultPath, showToast],
-  );
-
-  const handleRevealNoteInNavigation = useCallback((path: string) => {
-    setShowSidebar(true);
-    setShowSearch(false);
-    setShowBookmarks(false);
-    void openFile(path);
-  }, []);
-
-  const handleCreateFolder = async (parentPath: string) => {
-    setModal({
-      type: "prompt",
-      title: "New Folder",
-      message: "Enter folder name:",
-      onConfirm: async (name) => {
-        if (typeof name !== "string" || !name.trim()) return;
-
-        const folderPath = parentPath ? `${parentPath}/${name}` : name;
-        await api.createDirectory(folderPath);
-        await refreshFileTree();
-      },
-    });
-  };
-
-  const formatDailyNoteDate = (format: string) => {
-    const date = new Date();
-    const yyyy = String(date.getFullYear());
-    const mm = String(date.getMonth() + 1).padStart(2, "0");
-    const dd = String(date.getDate()).padStart(2, "0");
-    return (format || "YYYY-MM-DD")
-      .replace(/YYYY/g, yyyy)
-      .replace(/MM/g, mm)
-      .replace(/DD/g, dd);
-  };
-
-  const handleCreateDailyNote = async () => {
-    if (settings.coreDailyNotes === false) {
-      showToast("Daily notes plugin is disabled.", "info");
-      return;
-    }
-
-    const baseName = formatDailyNoteDate(settings.dailyNoteDateFormat);
-    const folder = settings.dailyNoteLocation.trim().replace(/^\/+|\/+$/g, "");
-    const filePath = `${folder ? `${folder}/` : ""}${baseName.endsWith(".md") ? baseName : `${baseName}.md`}`;
-
-    let content = `# ${baseName}\n\n`;
-    const templatePath = settings.dailyNoteTemplate.trim();
-    if (templatePath) {
-      try {
-        content = (await api.readFile(templatePath.endsWith(".md") ? templatePath : `${templatePath}.md`)) || content;
-      } catch {
-        showToast("Daily note template was not found. Created a blank daily note.", "info");
-      }
-    }
-
-    if (!(await api.fileExists(filePath))) {
-      await api.createFile(filePath, content);
-      await refreshFileTree();
-    }
-    await openFile(filePath);
-  };
-
-  // Handle template insertion
-  const handleTemplateInsert = (templateContent: string) => {
-    if (activeTabId) {
-      // Insert at cursor or append
-      const newContent = currentContent + "\n" + templateContent;
-      setCurrentContent(newContent);
-      // Mark as modified
-      setTabs((prev) =>
-        prev.map((t) =>
-          t.id === activeTabId ? { ...t, isModified: true } : t,
-        ),
-      );
-    }
-  };
-
-  // Handle image paste/drop - embed compressed inline data URL (no attachments folder write)
-  const handleImagePaste = async (file: File): Promise<string | null> => {
-    const readFileAsDataUrl = (blob: Blob) =>
-      new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => {
-          const result = reader.result;
-          if (typeof result === "string" && result.startsWith("data:image/")) {
-            resolve(result);
-            return;
-          }
-          reject(new Error("Unsupported image data"));
-        };
-        reader.onerror = () => reject(new Error("Failed to read image"));
-        reader.readAsDataURL(blob);
-      });
-
-    const loadImage = (imageFile: File) =>
-      new Promise<HTMLImageElement>((resolve, reject) => {
-        const blobUrl = URL.createObjectURL(imageFile);
-        const image = new Image();
-        image.onload = () => {
-          URL.revokeObjectURL(blobUrl);
-          resolve(image);
-        };
-        image.onerror = () => {
-          URL.revokeObjectURL(blobUrl);
-          reject(new Error("Failed to decode image"));
-        };
-        image.src = blobUrl;
-      });
-
-    const compressImageData = async (imageFile: File): Promise<string> => {
-      const original = await readFileAsDataUrl(imageFile);
-      const image = await loadImage(imageFile);
-      const naturalWidth = image.naturalWidth || image.width || 1;
-      const naturalHeight = image.naturalHeight || image.height || 1;
-      const longestEdge = Math.max(naturalWidth, naturalHeight);
-      const baseMaxEdge = Math.min(1600, longestEdge);
-      const targetLength = 90000;
-      const scaleSteps = [1, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4];
-      const qualitySteps = [0.84, 0.76, 0.68, 0.6, 0.52, 0.45];
-
-      let best = original;
-
-      for (const scale of scaleSteps) {
-        const maxEdge = Math.max(320, Math.round(baseMaxEdge * scale));
-        const ratio = Math.min(1, maxEdge / longestEdge);
-        const width = Math.max(1, Math.round(naturalWidth * ratio));
-        const height = Math.max(1, Math.round(naturalHeight * ratio));
-
-        const canvas = document.createElement("canvas");
-        canvas.width = width;
-        canvas.height = height;
-        const context = canvas.getContext("2d");
-        if (!context) break;
-        context.drawImage(image, 0, 0, width, height);
-
-        for (const quality of qualitySteps) {
-          const webpData = canvas.toDataURL("image/webp", quality);
-          const candidate = webpData.startsWith("data:image/webp")
-            ? webpData
-            : canvas.toDataURL("image/jpeg", quality);
-
-          if (candidate.length < best.length) {
-            best = candidate;
-          }
-
-          if (best.length <= targetLength) {
-            return best;
-          }
-        }
-      }
-
-      return best;
-    };
-
-    try {
-      return await compressImageData(file);
-    } catch (err) {
-      console.error("Failed to embed image:", err);
-      return null;
-    }
-  };
-
   // Get list of all note names for autocomplete
   const allNoteNames = useMemo(() => {
     const getNotes = (
@@ -6328,237 +4088,99 @@ export default function App() {
     return getNotes(fileTree);
   }, [fileTree]);
 
-  useEffect(() => {
-    const nextCount = allNoteNames.length;
-    setFtuxState((prev: FTUXState) =>
-      prev.notesCount === nextCount ? prev : { ...prev, notesCount: nextCount },
-    );
-  }, [allNoteNames.length]);
+  const { handleRenameFile, handleMoveFile } = useRenameNote({
+    fileTree,
+    settings,
+    allNoteNames,
+    ooAppRef,
+    clearAutoSaveTimer,
+    updateEmbeddingsAfterRename,
+    updateOpenPathsAfterRename,
+    remapBookmarkPaths,
+    refreshFileTree,
+    setModal,
+  });
 
-  useEffect(() => {
-    const isZeroStage = vaultPath !== null && ftuxState.notesCount === 0;
-    if (!isZeroStage) return;
-
-    setShowGraph(false);
-    setShowCanvas(false);
-    setShowThoughtModel(false);
-    setShowSidebar(false);
-  }, [ftuxState.notesCount, vaultPath]);
-
-  // Get note content for embeds - uses cache or fetches
-  const getNoteContent = useCallback(
-    (noteName: string): string | null => {
-      // Check cache first
-      const cached = noteContentCache.get(noteName);
-      if (cached !== undefined) return cached;
-
-      // Find the note path
-      const note = allNoteNames.find(
-        (n) => n.name.toLowerCase() === noteName.toLowerCase(),
-      );
-
-      if (!note) return null;
-
-      // Async fetch and update cache (won't be immediate but will work on re-render)
-      api.readFile(note.path).then((content) => {
-        setNoteContentCache((prev) => new Map(prev).set(noteName, content));
-      });
-
-      return null;
-    },
-    [noteContentCache, allNoteNames],
-  );
+  const {
+    handleDeleteFile,
+    getAbsoluteVaultPath,
+    handleNoteMenuToggleBacklinks,
+    handleSplitNotePane,
+    handleNoteMenuRename,
+    handleNoteMenuMove,
+    handleCopyNoteRelativePath,
+    handleCopyNoteAbsolutePath,
+    handleOpenNoteInDefaultApp,
+    handleShowNoteInSystemExplorer,
+    handleRevealNoteInNavigation,
+    handleCreateFolder,
+    handleCreateDailyNote,
+    handleTemplateInsert,
+    handleImagePaste,
+    getNoteContent,
+  } = useFileOperations({
+    vaultPath,
+    settings,
+    tabs,
+    setTabs,
+    activeTabId,
+    setActiveTabId,
+    paneTree,
+    setPaneTree,
+    focusedLeafId,
+    setFocusedLeafId,
+    activeGroupId,
+    groups,
+    currentContent,
+    setCurrentContent,
+    closeTab,
+    refreshFileTree,
+    setModal,
+    showToast,
+    promptForInput,
+    clearAutoSaveTimer,
+    updateEmbeddingsAfterRename,
+    updateOpenPathsAfterRename,
+    remapBookmarkPaths,
+    removeBookmarksForPath,
+    openFile,
+    skipTabSyncRef,
+    handleRenameFile,
+    handleMoveFile,
+    allNoteNames,
+    noteContentCache,
+    setNoteContentCache,
+  });
 
   // ── Commands (for Command Palette) ──────────────────
-  const commands: Command[] = [
-    {
-      id: "new-note",
-      label: "New Note",
-      shortcut: "Ctrl+N",
-      action: handleNewNote,
-      category: "File",
-    },
-    {
-      id: "open-vault",
-      label: "Open Vault",
-      shortcut: "Ctrl+O",
-      action: handleOpenVault,
-      category: "File",
-    },
-    {
-      id: "save",
-      label: "Save Current Note",
-      shortcut: "Ctrl+S",
-      action: handleSave,
-      category: "File",
-    },
-    {
-      id: "search-file",
-      label: "Find/Replace in Note",
-      shortcut: "Ctrl+F",
-      action: () =>
-        document.dispatchEvent(new CustomEvent("editor:open-search")),
-      category: "Search",
-    },
-    {
-      id: "search-vault",
-      label: "Search Entire Vault",
-      shortcut: "Ctrl+Shift+F",
-      action: () => {
-        setShowSidebar(true);
-        setSearchInitialMode("search");
-        setShowSearch(true);
-      },
-      category: "Search",
-    },
-    {
-      id: "graph",
-      label: "Open Graph Tab",
-      shortcut: "Ctrl+G",
-      action: () => openGraphAsTab(),
-      category: "View",
-    },
-    {
-      id: "graph-ai",
-      label: "Open AI Graph Tab",
-      action: () => {
-        openGraphAsTab("ai");
-      },
-      category: "View",
-    },
-    {
-      id: "sidebar",
-      label: "Toggle Sidebar",
-      shortcut: "Ctrl+B",
-      action: () => setShowSidebar((s) => !s),
-      category: "View",
-    },
-    {
-      id: "backlinks",
-      label: "Toggle Backlinks Panel",
-      action: () => {
-        if (settings.coreBacklinks !== false) handleToggleBacklinks();
-      },
-      category: "View",
-    },
-    {
-      id: "outline",
-      label: "Toggle Outline",
-      action: handleToggleOutline,
-      category: "View",
-    },
-    {
-      id: "tags",
-      label: "Toggle Tag Pane",
-      action: () => setShowTags((t) => !t),
-      category: "View",
-    },
-    {
-      id: "outgoing-links",
-      label: "Toggle Outgoing Links",
-      action: handleToggleOutgoingLinks,
-      category: "View",
-    },
-    {
-      id: "properties",
-      label: "Toggle Properties Panel",
-      action: () => setShowProperties((p) => !p),
-      category: "View",
-    },
-    {
-      id: "daily-note",
-      label: "Create Daily Note",
-      action: handleCreateDailyNote,
-      category: "Notes",
-    },
-    {
-      id: "insert-template",
-      label: "Insert Template",
-      action: () => {
-        if (settings.coreTemplates !== false) setShowTemplateModal(true);
-      },
-      category: "Notes",
-    },
-    {
-      id: "thought-model",
-      label: "Open AI Assistant",
-      action: () => setShowThoughtModel(true),
-      category: "AI",
-    },
-    {
-      id: "theme",
-      label: "Toggle Theme",
-      action: () =>
-        setSettings((s) => ({
-          ...s,
-          theme: s.theme === "dark" ? "light" : "dark",
-        })),
-      category: "Settings",
-    },
-    {
-      id: "settings",
-      label: "Open Settings",
-      action: () => setShowSettings(true),
-      category: "Settings",
-    },
-    {
-      id: "editor-mode",
-      label: "Live Preview",
-      action: () => setViewMode("editor"),
-      category: "View",
-    },
-    {
-      id: "preview-mode",
-      label: "Preview View",
-      action: () => setViewMode("preview"),
-      category: "View",
-    },
-    {
-      id: "split-mode",
-      label: "Split View",
-      action: () => setViewMode("split"),
-      category: "View",
-    },
-    {
-      id: "canvas",
-      label: "New Canvas",
-      shortcut: "Ctrl+Shift+C",
-      action: () => {
-        if (settings.coreCanvas !== false) void handleToggleCanvas();
-      },
-      category: "Canvas",
-    },
-    {
-      id: "canvas-duplicate",
-      label: "Duplicate Active Canvas",
-      action: () => {
-        void handleDuplicateCanvas();
-      },
-      category: "Canvas",
-    },
-    {
-      id: "canvas-save-as",
-      label: "Save Canvas As",
-      action: () => {
-        void handleSaveCanvasAs();
-      },
-      category: "Canvas",
-    },
-    ...recentCanvasFiles.slice(0, 8).map((path, index) => ({
-      id: `canvas-recent-${index}`,
-      label: `Open Recent Canvas: ${getNoteName(path)}`,
-      action: () => {
-        void openFile(path, "preview");
-      },
-      category: "Canvas",
-    })),
-    {
-      id: "unlinked-mentions",
-      label: "Toggle Unlinked Mentions",
-      action: () => setShowUnlinkedMentions((u) => !u),
-      category: "View",
-    },
-  ];
+  const commands = useAppCommands({
+    handleNewNote,
+    handleOpenVault,
+    handleSave,
+    openGraphAsTab,
+    setShowSidebar,
+    setSearchInitialMode,
+    setShowSearch,
+    settings,
+    handleToggleBacklinks,
+    handleToggleOutline,
+    setShowTags,
+    handleToggleOutgoingLinks,
+    setShowProperties,
+    handleCreateDailyNote,
+    setShowTemplateModal,
+    setShowThoughtModel,
+    setSettings,
+    setSettingsSection,
+    setShowSettings,
+    setViewMode,
+    handleToggleCanvas,
+    handleDuplicateCanvas,
+    handleSaveCanvasAs,
+    recentCanvasFiles,
+    openFile,
+    setShowUnlinkedMentions,
+  });
 
   // Get active tab info
   const activeTab = tabs.find((t) => t.id === activeTabId);
@@ -6708,6 +4330,29 @@ export default function App() {
     });
     return unsub;
   }, [vaultPath]);
+
+  // Listen to sync engine status for the status bar indicator
+  useEffect(() => {
+    const unsub = syncEngine.onStatusChange((status) => {
+      setSyncStatus(status);
+      if (status.state === 'idle' && (status.pulled ?? 0) > 0) {
+        void refreshFileTree();
+      }
+      // Auto-clear the "N synced" idle indicator after 5 seconds
+      if (status.state === 'idle' && (status.pushed || status.pulled)) {
+        const timer = setTimeout(() => {
+          setSyncStatus((prev) => {
+            if (prev && prev.state === 'idle') {
+              return { state: 'idle', lastSync: prev.lastSync };
+            }
+            return prev;
+          });
+        }, 5000);
+        return () => clearTimeout(timer);
+      }
+    });
+    return unsub;
+  }, [refreshFileTree]);
 
   // Update presence when active note changes
   useEffect(() => {
@@ -7011,6 +4656,7 @@ export default function App() {
           vaultPath={vaultPath!}
           fileTree={fileTree}
           canvasFilePath={leafActiveTab.path}
+          spaceId={collaborationEngine.activeSpaceId || undefined}
           onOpenFile={(path) => openFile(path)}
           onNewCanvas={() => { void handleToggleCanvas(); }}
           onDuplicateCanvas={() => { void handleDuplicateCanvas(); }}
@@ -7088,6 +4734,7 @@ export default function App() {
         inlineAnnotation={inlineAnnotationByPath[leafActiveTab.path] || getCachedAnnotation(leafActiveTab.path)}
         showInlineInsight={!!showInlineInsightByTab[leafActiveTab.id]}
         isFocused={isThisFocused}
+        onFocusLeaf={handleFocusLeaf}
         onTabSelect={(leafId, tabId) => handlePaneTabSelect(leafId, tabId)}
         onTabClose={closeTab}
         onLinkClick={handleLinkClick}
@@ -7291,13 +4938,44 @@ export default function App() {
   return (
     <DragCtx.Provider value={{ dragCtx, setDragCtx }}>
       <div 
-        className="app"
+        className={`app${settings.backgroundImage ? " has-wallpaper" : ""}`}
         style={{
           "--sidebar-width": `${sidebarWidth}px`,
-          "--right-sidebar-width": `${rightSidebarWidth}px`
+          "--right-sidebar-width": `${rightSidebarWidth}px`,
+          ...(settings.backgroundImage ? {
+            "--inner-panel-bg": "transparent",
+            "--bg-primary": "rgba(0, 0, 0, 0.40)",
+            "--bg-secondary": "rgba(0, 0, 0, 0.40)",
+            "--bg-tertiary": "rgba(0, 0, 0, 0.40)",
+            "--bg-elevated": "rgba(0, 0, 0, 0.55)",
+            "--bg-tree": "rgba(0, 0, 0, 0.40)",
+            "--bg-launcher": "rgba(0, 0, 0, 0.40)",
+            "--bg-toolbar": "rgba(0, 0, 0, 0.40)",
+            "--bg-input": "rgba(0, 0, 0, 0.40)",
+            "--bg-glass": "rgba(0, 0, 0, 0.55)",
+            "--titlebar-background": "rgba(0, 0, 0, 0.40)",
+            "--titlebar-background-focused": "rgba(0, 0, 0, 0.40)",
+            "--status-bar-background": "rgba(0, 0, 0, 0.40)",
+            "--tab-container-background": "rgba(0, 0, 0, 0.40)",
+            "--tab-background-active": "rgba(0, 0, 0, 0.55)",
+            "--background-primary": "rgba(0, 0, 0, 0.40)",
+            "--background-primary-alt": "rgba(0, 0, 0, 0.40)",
+            "--background-secondary": "rgba(0, 0, 0, 0.40)",
+            "--background-secondary-alt": "rgba(0, 0, 0, 0.40)",
+          } : {})
         } as any}
       >
-        <div className="flex flex-row flex-1 min-h-0 overflow-hidden">
+        {settings.backgroundImage && (
+          <div
+            className="app-wallpaper-layer"
+            style={{
+              backgroundImage: `url(${settings.backgroundImage})`,
+              filter: settings.backgroundBlur ? `blur(${settings.backgroundBlur}px)` : undefined,
+              opacity: (settings.backgroundOpacity ?? 40) / 100,
+            }}
+          />
+        )}
+        <div className="relative z-[1] flex flex-row flex-1 min-h-0 overflow-hidden">
         {vaultPath && !isFTUXZeroState && settings.showRibbon !== false && (
           <Ribbon
             onToggleExplorer={() => {
@@ -7309,6 +4987,12 @@ export default function App() {
                 }
                 return next;
               });
+            }}
+            onHome={() => {
+              setShowSearch(false);
+              setShowBookmarks(false);
+              setShowSidebar(true);
+              ooAppRef.current?.workspace?.revealDefaultView?.('left');
             }}
             onSearch={() => {
               setShowSidebar(true);
@@ -7324,7 +5008,10 @@ export default function App() {
             onGraph={() => {
               openGraphAsTab();
             }}
-            onSettings={() => setShowSettings(true)}
+            onSettings={() => {
+              setSettingsSection("home");
+              setShowSettings(true);
+            }}
             onDailyNote={() => {
               if (settings.coreDailyNotes !== false) void handleCreateDailyNote();
             }}
@@ -7344,6 +5031,8 @@ export default function App() {
             }}
             pluginRibbonActions={pluginRibbonActions}
             showSettingsButton
+            hasWallpaper={Boolean(settings.backgroundImage)}
+            activeLeftPluginView={activeLeftPluginView}
           />
         )}
         {vaultPath && !isFTUXZeroState && (
@@ -7406,7 +5095,10 @@ export default function App() {
                   }}
                   previouslyOpenedVaults={previouslyOpenedVaults}
                   onSwitchVault={handleSwitchVault}
-                  onSettings={() => setShowSettings(true)}
+                  onSettings={() => {
+                    setSettingsSection("home");
+                    setShowSettings(true);
+                  }}
                   pluginViews={activeLeftPluginViews}
                   onClosePluginView={(viewType) => {
                     const app = ooAppRef.current;
@@ -7425,6 +5117,7 @@ export default function App() {
                   onDuplicateGroup={handleDuplicateGroup}
                   onToggleGroupAutoSave={handleToggleGroupAutoSave}
                   onAddFileToGroup={handleAddFileToGroup}
+                  hasWallpaper={Boolean(settings.backgroundImage)}
                 />
               )}
             </div>
@@ -7516,12 +5209,12 @@ export default function App() {
               isFullScreen={isNativeFullScreen}
             />
             <div className="flex flex-row flex-1 min-h-0 overflow-hidden">
-              <div className="flex flex-col flex-1 min-w-0 overflow-hidden bg-[var(--bg-primary)]">
+              <div className={`editor-column flex flex-col flex-1 min-w-0 overflow-hidden ${settings.backgroundImage ? '' : 'bg-[var(--bg-primary)]'}`}>
                 {vaultPath && !isFTUXZeroState && activeTab?.path && activeTab.path !== "__new_tab__" && !activeTab.path.startsWith("__") && viewMode !== "preview" && (
                   <FormattingToolbar />
                 )}
                 <div
-                  className="main-content flex min-w-0 flex-1 overflow-hidden bg-[var(--bg-primary)]"
+                  className={`main-content flex min-w-0 flex-1 overflow-hidden ${settings.backgroundImage ? '' : 'bg-[var(--bg-primary)]'}`}
                   ref={mainContentRef}
           style={{
             display: "flex",
@@ -7651,6 +5344,7 @@ export default function App() {
                     vaultPath={vaultPath}
                     fileTree={fileTree}
                     canvasFilePath={canvasFilePath}
+                    spaceId={collaborationEngine.activeSpaceId || undefined}
                     onOpenFile={(path) => openFile(path)}
                     onNewCanvas={() => {
                       void handleToggleCanvas();
@@ -7735,8 +5429,10 @@ export default function App() {
           vimEnabled={settings.vimMode}
           showEditingMode={settings.showEditingModeStatusBar !== false}
           backlinkCount={backlinks.length}
+          syncStatus={syncStatus}
         />
       )}
+    </div>
 
       {showCommandPalette && (
         <CommandPalette
@@ -7768,7 +5464,10 @@ export default function App() {
         <SettingsPage
           settings={settings}
           onSettingsChange={setSettings}
-          onClose={() => setShowSettings(false)}
+          onClose={() => {
+            setShowSettings(false);
+            setSettingsSection("home");
+          }}
           initialSection={settingsSection as any}
           commands={[
             ...commands,
@@ -7816,28 +5515,7 @@ export default function App() {
           currentUserEmail={authManager.getUser()?.email}
           vaultPath={vaultPath || undefined}
           onVaultReconstructed={async (newPath) => {
-            await api.setVaultPath(newPath);
-            setVaultPath(newPath);
-            (window as any).__oo_vault_path = newPath;
-            setShowSidebar(true);
-            const tree = await api.getFileTree();
-            setFileTree(tree);
-            runVaultInit(tree);
-
-            try {
-              const workspaceData = await readData<{ paneTree: PaneNode; activeTabId: string | null; focusedLeafId: string }>("workspace.json");
-              if (workspaceData && workspaceData.paneTree) {
-                setPaneTree(workspaceData.paneTree);
-                setTabs(collectAllTabs(workspaceData.paneTree));
-                if (workspaceData.activeTabId) setActiveTabId(workspaceData.activeTabId);
-                if (workspaceData.focusedLeafId) setFocusedLeafId(workspaceData.focusedLeafId);
-              } else {
-                handleOpenNewTab();
-              }
-            } catch (err) {
-              handleOpenNewTab();
-            }
-
+            await loadVaultData(newPath);
             setShowSettings(false); // Close settings
           }}
 
@@ -8014,7 +5692,6 @@ export default function App() {
           </div>
         </div>
       )}
-    </div>
     </DragCtx.Provider>
   );
 }

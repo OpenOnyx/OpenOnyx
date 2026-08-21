@@ -40,7 +40,7 @@ function dispatchOOEvent(name: string): void {
   window.dispatchEvent(new CustomEvent(name));
 }
 
-function shouldHandleEvent(event: KeyboardEvent): boolean {
+export function shouldHandleEvent(event: KeyboardEvent): boolean {
   const target = event.target as Element | null;
   if (!target) return false;
 

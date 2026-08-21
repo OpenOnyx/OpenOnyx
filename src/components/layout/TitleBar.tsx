@@ -7,8 +7,9 @@
  *   Right: window controls (minimize, maximize, close)
  */
 
-import React, { useRef, useEffect } from "react";
+import React, { useRef, useEffect, useState, useCallback } from "react";
 import { Tab, Theme } from "../../types";
+import { TabPreviewCard } from "./TabPreviewCard";
 import { getAPI } from "../../utils/api";
 import { DragCtx } from "../../context/DragContext";
 import { LocalGroup } from "../../lib/localdb";
@@ -138,7 +139,7 @@ function cx(...classes: Array<string | false | null | undefined>) {
 }
 
 const titlebarClass =
-  "titlebar trilium-titlebar relative z-[3200] flex h-[var(--titlebar-height)] min-h-[var(--titlebar-height)] w-full shrink-0 select-none items-center bg-[var(--titlebar-background,var(--bg-secondary))] text-[length:var(--font-ui-small)] border-b border-[var(--divider-color)] [-webkit-app-region:drag]";
+  "titlebar onyx-titlebar relative z-[3200] flex h-[var(--titlebar-height)] min-h-[var(--titlebar-height)] w-full shrink-0 select-none items-center bg-[var(--titlebar-background,var(--bg-secondary))] text-[length:var(--font-ui-small)] border-b border-[var(--divider-color)] [-webkit-app-region:drag]";
 const titlebarDragHandleClass =
   "absolute inset-0 z-[1] pointer-events-auto [-webkit-app-region:drag]";
 const titlebarLeftClass =
@@ -151,9 +152,9 @@ const titlebarVaultActionsClass = "flex items-center gap-0.5 px-2";
 const titlebarTabsClass =
   "relative z-[2] flex h-full min-w-0 flex-1 items-center overflow-hidden pl-1 pr-3 pointer-events-auto [-webkit-app-region:drag]";
 const titlebarTabScrollClass =
-  "relative z-[1] flex h-full min-w-0 flex-1 items-center gap-1 overflow-x-auto overflow-y-hidden px-1 pointer-events-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden [-webkit-app-region:drag]";
+  "relative z-[1] flex h-full min-w-0 flex-1 items-center gap-0.5 overflow-x-auto overflow-y-hidden px-1 pointer-events-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden [-webkit-app-region:drag]";
 const titlebarTabSlotClass =
-  "flex h-full min-w-[110px] max-w-[220px] shrink items-center";
+  "flex h-full min-w-[80px] max-w-[180px] shrink items-center";
 const titlebarInactiveTabSlotClass = "";
 const titlebarActiveTabSlotClass = "";
 const titlebarGroupSlotClass =
@@ -169,11 +170,11 @@ const titlebarTabDropLeftClass =
 const titlebarTabDropRightClass =
   "drop-target-right !shadow-[inset_-2px_0_0_var(--accent-color,#2563eb)]";
 const titlebarGroupedTabClass =
-  "grouped-tab !rounded-[8px] !border-t-2 border-solid opacity-75 transition-[background-color,border-top-color,opacity] duration-75 hover:opacity-95 before:!hidden after:!hidden";
+  "grouped-tab !rounded-[8px] opacity-75 transition-[background-color,opacity] duration-75 hover:opacity-95 before:!hidden after:!hidden";
 const titlebarGroupedActiveTabClass =
-  "!border-t-2 !border-t-[var(--tab-group-color)] !bg-[var(--tab-background-active)] !shadow-[0_1px_3px_rgba(15,23,42,0.08)] opacity-100";
+  "!bg-[var(--tab-background-active)] !shadow-[0_1px_3px_rgba(15,23,42,0.08)] opacity-100";
 const titlebarTabInnerClass =
-  "tab-inner flex h-full w-full items-center gap-1.5 overflow-hidden rounded-[8px] px-2.5";
+  "tab-inner flex h-full w-full items-center gap-1.5 overflow-hidden rounded-[8px] px-2";
 const titlebarTabDotClass = "shrink-0 text-[8px] text-[var(--text-muted)]";
 const titlebarTabTitleClass =
   "flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-left leading-none";
@@ -221,6 +222,32 @@ const TitlebarTabItem = React.memo(function TitlebarTabItem({
   onDrop,
   onContextMenu,
 }: TitlebarTabItemProps) {
+  const tabRef = useRef<HTMLDivElement>(null);
+  const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [showPreview, setShowPreview] = useState(false);
+  const [previewRect, setPreviewRect] = useState<DOMRect | null>(null);
+
+  const handleMouseEnter = useCallback(() => {
+    hoverTimer.current = setTimeout(() => {
+      if (tabRef.current) {
+        setPreviewRect(tabRef.current.getBoundingClientRect());
+        setShowPreview(true);
+      }
+    }, 180);
+  }, []);
+
+  const handleMouseLeave = useCallback(() => {
+    if (hoverTimer.current) clearTimeout(hoverTimer.current);
+    hoverTimer.current = null;
+    setShowPreview(false);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (hoverTimer.current) clearTimeout(hoverTimer.current);
+    };
+  }, []);
+
   return (
     <div
       className={cx(
@@ -231,6 +258,7 @@ const TitlebarTabItem = React.memo(function TitlebarTabItem({
       )}
     >
       <div
+        ref={tabRef}
         data-tab-id={tab.id}
         data-tooltip={tab.name}
         className={cx(
@@ -242,7 +270,6 @@ const TitlebarTabItem = React.memo(function TitlebarTabItem({
           tabGroup && isActive && titlebarGroupedActiveTabClass,
         )}
         style={{
-          borderTop: tabGroup ? `2px solid ${tabGroup.color}` : undefined,
           "--tab-group-color": tabGroup?.color,
         } as React.CSSProperties}
         onClick={() => onClick(tab.id)}
@@ -253,7 +280,15 @@ const TitlebarTabItem = React.memo(function TitlebarTabItem({
         onDragEnd={onDragEnd}
         onDrop={(event) => onDrop(event, tab.id)}
         onContextMenu={(event) => onContextMenu(event, tab)}
+        onMouseEnter={handleMouseEnter}
+        onMouseLeave={handleMouseLeave}
       >
+        {tabGroup && (
+          <div
+            className="absolute top-0 left-0 right-0 h-[2px] pointer-events-none z-[5]"
+            style={{ backgroundColor: tabGroup.color }}
+          />
+        )}
         <div className={titlebarTabInnerClass}>
           {tab.isModified && (
             <span className={titlebarTabDotClass}>{"\u25CF"}</span>
@@ -270,6 +305,12 @@ const TitlebarTabItem = React.memo(function TitlebarTabItem({
           </button>
         </div>
       </div>
+      <TabPreviewCard
+        tabName={tab.name}
+        tabPath={tab.path}
+        targetRect={previewRect}
+        visible={showPreview}
+      />
     </div>
   );
 });
@@ -623,6 +664,9 @@ export function TitleBar({
     <div
       className={titlebarClass}
       ref={titlebarRef}
+      style={{
+        backgroundColor: "var(--titlebar-background, var(--bg-secondary))"
+      }}
       onDoubleClick={(e) => {
         if (
           e.target === e.currentTarget ||

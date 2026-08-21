@@ -558,8 +558,13 @@ export class GraphRenderer {
 
     // Clear and fill background
     ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.fillStyle = hexToColor(this.backgroundColor);
-    ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+    const hasWallpaper = typeof document !== "undefined" && document.querySelector(".app.has-wallpaper") !== null;
+    if (hasWallpaper) {
+      ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+    } else {
+      ctx.fillStyle = hexToColor(this.backgroundColor);
+      ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+    }
 
     // Cache node radii for this frame (used by edges, nodes, and labels)
     this.updateNodeRadiiCache();

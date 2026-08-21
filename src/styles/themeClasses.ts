@@ -1,5 +1,5 @@
 /** Tailwind arbitrary properties for the built-in application themes. */
-/* Trilium-inspired light theme (default) */
+/* Onyx-inspired light theme (default) */
 const calmWhiteThemeClasses = [
   "[&[data-theme=light][data-theme=light]]:[color-scheme:light]",
   "[&[data-theme=light][data-theme=light]]:[--color-base-00:#ffffff]",
@@ -123,6 +123,11 @@ const darkPlusThemeClasses = [
   "[&[data-theme=dark-plus][data-theme=dark-plus]]:[--border-subtle:rgba(255,_255,_255,_0.06)]",
   "[&[data-theme=dark-plus][data-theme=dark-plus]]:[--border-medium:rgba(255,_255,_255,_0.1)]",
   "[&[data-theme=dark-plus][data-theme=dark-plus]]:[--divider-color:rgba(255,_255,_255,_0.07)]",
+  "[&[data-theme=dark-plus][data-theme=dark-plus]]:[--bg-tree:var(--bg-secondary)]",
+  "[&[data-theme=dark-plus][data-theme=dark-plus]]:[--bg-launcher:var(--bg-secondary)]",
+  "[&[data-theme=dark-plus][data-theme=dark-plus]]:[--bg-toolbar:var(--bg-secondary)]",
+  "[&[data-theme=dark-plus][data-theme=dark-plus]]:[--titlebar-background:var(--bg-secondary)]",
+  "[&[data-theme=dark-plus][data-theme=dark-plus]]:[--status-bar-background:var(--bg-secondary)]",
 ].join(" ");
 
 const blueNightThemeClasses = [
@@ -149,6 +154,11 @@ const blueNightThemeClasses = [
   "[&[data-theme=blue-night][data-theme=blue-night]]:[--editor-link:#7dd3fc]",
   "[&[data-theme=blue-night][data-theme=blue-night]]:[--editor-tag:#67e8f9]",
   "[&[data-theme=blue-night][data-theme=blue-night]]:[--graph-node-color:#7dd3fc]",
+  "[&[data-theme=blue-night][data-theme=blue-night]]:[--bg-tree:var(--bg-secondary)]",
+  "[&[data-theme=blue-night][data-theme=blue-night]]:[--bg-launcher:var(--bg-secondary)]",
+  "[&[data-theme=blue-night][data-theme=blue-night]]:[--bg-toolbar:var(--bg-secondary)]",
+  "[&[data-theme=blue-night][data-theme=blue-night]]:[--titlebar-background:var(--bg-secondary)]",
+  "[&[data-theme=blue-night][data-theme=blue-night]]:[--status-bar-background:var(--bg-secondary)]",
 ].join(" ");
 
 const oceanicThemeClasses = [
@@ -175,6 +185,11 @@ const oceanicThemeClasses = [
   "[&[data-theme=oceanic][data-theme=oceanic]]:[--editor-link:#5eead4]",
   "[&[data-theme=oceanic][data-theme=oceanic]]:[--editor-tag:#99f6e4]",
   "[&[data-theme=oceanic][data-theme=oceanic]]:[--graph-node-color:#5eead4]",
+  "[&[data-theme=oceanic][data-theme=oceanic]]:[--bg-tree:var(--bg-secondary)]",
+  "[&[data-theme=oceanic][data-theme=oceanic]]:[--bg-launcher:var(--bg-secondary)]",
+  "[&[data-theme=oceanic][data-theme=oceanic]]:[--bg-toolbar:var(--bg-secondary)]",
+  "[&[data-theme=oceanic][data-theme=oceanic]]:[--titlebar-background:var(--bg-secondary)]",
+  "[&[data-theme=oceanic][data-theme=oceanic]]:[--status-bar-background:var(--bg-secondary)]",
 ].join(" ");
 
 const emberNightThemeClasses = [
@@ -239,6 +254,9 @@ const emberNightThemeClasses = [
   "[&[data-theme=ember-night][data-theme=ember-night]]:[--editor-emphasis:#fff7e8]",
   "[&[data-theme=ember-night][data-theme=ember-night]]:[--graph-edge-color:rgba(244,_183,_93,_0.35)]",
   "[&[data-theme=ember-night][data-theme=ember-night]]:[--graph-node-color:#f59e0b]",
+  "[&[data-theme=ember-night][data-theme=ember-night]]:[--bg-tree:var(--bg-secondary)]",
+  "[&[data-theme=ember-night][data-theme=ember-night]]:[--bg-launcher:var(--bg-secondary)]",
+  "[&[data-theme=ember-night][data-theme=ember-night]]:[--bg-toolbar:var(--bg-secondary)]",
 ].join(" ");
 
 const auroraGroveThemeClasses = [
@@ -303,6 +321,9 @@ const auroraGroveThemeClasses = [
   "[&[data-theme=aurora-grove][data-theme=aurora-grove]]:[--editor-emphasis:#f2fff6]",
   "[&[data-theme=aurora-grove][data-theme=aurora-grove]]:[--graph-edge-color:rgba(52,_211,_153,_0.35)]",
   "[&[data-theme=aurora-grove][data-theme=aurora-grove]]:[--graph-node-color:#34d399]",
+  "[&[data-theme=aurora-grove][data-theme=aurora-grove]]:[--bg-tree:var(--bg-secondary)]",
+  "[&[data-theme=aurora-grove][data-theme=aurora-grove]]:[--bg-launcher:var(--bg-secondary)]",
+  "[&[data-theme=aurora-grove][data-theme=aurora-grove]]:[--bg-toolbar:var(--bg-secondary)]",
 ].join(" ");
 
 const paperSageThemeClasses = [
@@ -367,6 +388,9 @@ const paperSageThemeClasses = [
   "[&[data-theme=paper-sage][data-theme=paper-sage]]:[--editor-emphasis:#1f2a23]",
   "[&[data-theme=paper-sage][data-theme=paper-sage]]:[--graph-edge-color:rgba(52,_66,_56,_0.34)]",
   "[&[data-theme=paper-sage][data-theme=paper-sage]]:[--graph-node-color:#4d7c5b]",
+  "[&[data-theme=paper-sage][data-theme=paper-sage]]:[--bg-tree:var(--bg-secondary)]",
+  "[&[data-theme=paper-sage][data-theme=paper-sage]]:[--bg-launcher:var(--bg-secondary)]",
+  "[&[data-theme=paper-sage][data-theme=paper-sage]]:[--bg-toolbar:var(--bg-secondary)]",
 ].join(" ");
 
 const roseQuartzThemeClasses = [
@@ -431,10 +455,22 @@ const roseQuartzThemeClasses = [
   "[&[data-theme=rose-quartz][data-theme=rose-quartz]]:[--editor-emphasis:#2f2428]",
   "[&[data-theme=rose-quartz][data-theme=rose-quartz]]:[--graph-edge-color:rgba(73,_52,_59,_0.32)]",
   "[&[data-theme=rose-quartz][data-theme=rose-quartz]]:[--graph-node-color:#be3455]",
+  "[&[data-theme=rose-quartz][data-theme=rose-quartz]]:[--bg-tree:var(--bg-secondary)]",
+  "[&[data-theme=rose-quartz][data-theme=rose-quartz]]:[--bg-launcher:var(--bg-secondary)]",
+  "[&[data-theme=rose-quartz][data-theme=rose-quartz]]:[--bg-toolbar:var(--bg-secondary)]",
+].join(" ");
+
+const darkThemeClasses = [
+  "[&[data-theme=dark][data-theme=dark]]:[--bg-tree:var(--bg-secondary)]",
+  "[&[data-theme=dark][data-theme=dark]]:[--bg-launcher:var(--bg-secondary)]",
+  "[&[data-theme=dark][data-theme=dark]]:[--bg-toolbar:var(--bg-secondary)]",
+  "[&[data-theme=dark][data-theme=dark]]:[--titlebar-background:var(--bg-secondary)]",
+  "[&[data-theme=dark][data-theme=dark]]:[--status-bar-background:var(--bg-secondary)]",
 ].join(" ");
 
 export const themeClasses = [
   calmWhiteThemeClasses,
+  darkThemeClasses,
   darkPlusThemeClasses,
   blueNightThemeClasses,
   oceanicThemeClasses,

@@ -56,6 +56,23 @@ export function normalizeSyncPath(filePath: string): string {
 }
 
 /**
+ * Check if a Yjs snapshot exists in IndexedDB for the given space and note path.
+ */
+export async function hasYjsSnapshot(spaceId: string | null, cleanPath: string): Promise<boolean> {
+  if (!spaceId) return false;
+  if (typeof window === 'undefined' || !window.indexedDB || !window.indexedDB.databases) {
+    return false;
+  }
+  const dbName = `yjs-${spaceId}-${cleanPath.replace(/[/\\:]/g, '_')}`;
+  try {
+    const dbs = await window.indexedDB.databases();
+    return dbs.some(db => db.name === dbName);
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Get the active Supabase client -- either the user's own instance
  * or the default OpenOnyx instance.
  */
@@ -108,7 +125,16 @@ export class SyncEngine {
   private listeners: Set<(status: SyncStatus) => void> = new Set();
   private authUnsubscribe: (() => void) | null = null;
 
-  private activeSpaceId: string | null = null;
+  private _activeSpaceId: string | null = null;
+
+  public get activeSpaceId(): string | null {
+    return collaborationEngine.activeSpaceId || this._activeSpaceId;
+  }
+
+  public set activeSpaceId(id: string | null) {
+    this._activeSpaceId = id;
+  }
+
   private activeVaultPath: string | null = null;
   private clientId: string = '';
   private lastLocalScanTime = 0;
@@ -136,12 +162,12 @@ export class SyncEngine {
     if (vaultPath) {
       try {
         const space = await collaborationEngine.getSpaceForVault(vaultPath);
-        this.activeSpaceId = space?.id || null;
+        this._activeSpaceId = space?.id || null;
       } catch {
-        this.activeSpaceId = null;
+        this._activeSpaceId = null;
       }
     } else {
-      this.activeSpaceId = null;
+      this._activeSpaceId = null;
     }
 
     // If there's an active space, do an initial sync (push + pull)
@@ -286,6 +312,11 @@ export class SyncEngine {
       await this.syncLocalFilesystemToDB();
       pushed = await this.pushChanges();
       pulled = await this.pullChanges();
+      
+      // Broadcast a sync notification so peers pull creations/deletions immediately
+      if (pushed > 0) {
+        collaborationEngine.broadcastSpaceSync();
+      }
       this.notifyStatus({
         state: 'idle',
         lastSync: new Date().toISOString(),
@@ -302,6 +333,56 @@ export class SyncEngine {
     return { pushed, pulled };
   }
 
+  private async saveConflictCopy(payload: any) {
+    try {
+      if (!payload.path || !payload.content) return;
+      const ext = payload.path.endsWith('.canvas') ? '.canvas' : '.md';
+      const basePath = payload.path.slice(0, -ext.length);
+      const conflictPath = `${basePath} (conflict)${ext}`;
+
+      const api = getAPI();
+      if (conflictPath.includes('/')) {
+        const parentDir = conflictPath.split('/').slice(0, -1).join('/');
+        try { await api.createDirectory(parentDir); } catch { /* exists */ }
+      }
+
+      await api.writeFile(conflictPath, payload.content);
+
+      const conflictId = uuidv4();
+      const conflictTitle = conflictPath.split('/').pop()?.replace(/\.(md|canvas)$/, '') || conflictPath;
+      const now = new Date().toISOString();
+
+      const conflictNote = {
+        id: conflictId,
+        space_id: payload.space_id,
+        vault_id: null,
+        last_client_id: this.clientId,
+        version: 1,
+        last_modified: now,
+        client_id: this.clientId,
+        content_hash: await sha256Hex(payload.content),
+        title: conflictTitle,
+        path: conflictPath,
+        content: payload.content,
+        pinned: false,
+        created_at: now,
+        updated_at: now,
+        deleted: false,
+        is_canvas: payload.is_canvas,
+      };
+
+      await localDB.putNote(conflictNote, true);
+
+      window.dispatchEvent(new CustomEvent('openonyx:file-written', {
+        detail: { path: conflictPath, content: payload.content }
+      }));
+
+      console.info(`[SyncEngine] Preserved rejected edit as conflict copy: ${conflictPath}`);
+    } catch (err) {
+      console.error('[SyncEngine] Failed to save conflict copy:', err);
+    }
+  }
+
   // ── Push (Local -> Cloud) ──────────────────────────────────────────────────
 
   public async pushChanges(): Promise<number> {
@@ -310,14 +391,22 @@ export class SyncEngine {
 
     const client = getActiveClient();
     const queue = await localDB.getSyncQueue();
-    if (queue.length === 0) return 0;
+    // Filter queue to only include items for the active space to prevent RLS violations
+    // from offline edits/changes made in other spaces from blocking sync.
+    const activeQueue = queue.filter(item => {
+      const payload = item.payload;
+      if (!payload) return false;
+      const itemSpaceId = payload.space_id;
+      return !itemSpaceId || itemSpaceId === this.activeSpaceId;
+    });
+    if (activeQueue.length === 0) return 0;
     const isPrivateSpace = await this.isPrivateActiveSpace();
 
     let count = 0;
 
     // Group by table:operation for batching
     const batches: Record<string, SyncQueueItem[]> = {};
-    for (const item of queue) {
+    for (const item of activeQueue) {
       const key = `${item.table}:${item.operation}`;
       if (!batches[key]) batches[key] = [];
       batches[key].push(item);
@@ -334,7 +423,7 @@ export class SyncEngine {
         }
         continue;
       }
-      if (isPrivateSpace && !privateCrypto.isUnlocked(this.activeSpaceId)) {
+      if (isPrivateSpace && !(await privateCrypto.ensureSpaceUnlocked(this.activeSpaceId))) {
         this.notifyStatus({ state: 'error', error: 'Unlock this private space before syncing encrypted content.' });
         continue;
       }
@@ -349,35 +438,53 @@ export class SyncEngine {
         if (payload.path) {
           payload.path = normalizeSyncPath(payload.path);
         }
+        if (payload.is_canvas && payload.content) {
+          try {
+            const parsed = JSON.parse(payload.content);
+            delete parsed.openonyxCanvasViewportV1;
+            payload.content = JSON.stringify(parsed);
+          } catch {}
+        }
         return payload;
       });
 
+      let finalPayloads: any[] = [];
       try {
         const pushedItemIds = new Set<string>();
 
         if (op === 'insert' || op === 'update' || op === 'delete') {
-          const finalPayloads = [];
+          let remoteNotesMap: Map<string, any> | null = null;
           for (let i = 0; i < payloads.length; i++) {
             const payload = payloads[i];
             const originalItem = items[i];
 
             if (table === 'notes') {
+              // Batch-fetch remote notes once (moved outside loop on first iteration)
+              if (!remoteNotesMap) {
+                try {
+                  const noteIds = payloads.map(p => p.id).filter(Boolean);
+                  const { data: remotes } = await client
+                    .from('notes')
+                    .select('id, updated_at, version, content_hash, client_id')
+                    .in('id', noteIds);
+                  remoteNotesMap = new Map((remotes || []).map((r: any) => [r.id, r]));
+                } catch (e) {
+                  console.warn('[SyncEngine] Batch remote note fetch failed:', e);
+                  remoteNotesMap = new Map();
+                }
+              }
+
               try {
-                const { data: remote } = await client
-                  .from('notes')
-                  .select('updated_at, version, content_hash, client_id')
-                  .eq('id', payload.id)
-                  .maybeSingle();
+                const remote = remoteNotesMap.get(payload.id) || null;
 
                 if (remote) {
                   const remoteVersion = normalizeVersion((remote as any).version);
                   const localVersion = normalizeVersion(payload.version);
                   if (remoteVersion > localVersion) {
-                    console.warn('[SyncEngine][push_rejected_version]', {
-                      noteId: payload.id,
-                      remoteVersion,
-                      localVersion,
-                    });
+                    console.warn(`[SyncEngine][push_rejected_version] Note ID: ${payload.id} | Remote: v${remoteVersion} | Local: v${localVersion}`);
+                    if (remote.content_hash !== payload.content_hash) {
+                      await this.saveConflictCopy(payload);
+                    }
                     await localDB.removeSyncItem(originalItem.id);
                     count++;
                     continue;
@@ -390,10 +497,8 @@ export class SyncEngine {
                     (remote as any).content_hash !== payload.content_hash &&
                     (remote as any).client_id !== payload.client_id
                   ) {
-                    console.warn('[SyncEngine][push_rejected_equal_version_hash_conflict]', {
-                      noteId: payload.id,
-                      version: localVersion,
-                    });
+                    console.warn(`[SyncEngine][push_rejected_equal_version_hash_conflict] Note ID: ${payload.id} | Version: ${localVersion}`);
+                    await this.saveConflictCopy(payload);
                     await localDB.removeSyncItem(originalItem.id);
                     count++;
                     continue;
@@ -402,6 +507,9 @@ export class SyncEngine {
                   const localTime = new Date(payload.updated_at).getTime();
                   if (remoteVersion === 0 && remoteTime > localTime) {
                     console.warn(`[SyncEngine] Conflict detected for note ${payload.id}: remote is newer (${remote.updated_at} > ${payload.updated_at}). Skipping push to let pull take precedence.`);
+                    if (remote.content_hash !== payload.content_hash) {
+                      await this.saveConflictCopy(payload);
+                    }
                     // Remove from sync queue so we can pull the newer version
                     await localDB.removeSyncItem(originalItem.id);
                     count++;
@@ -436,12 +544,15 @@ export class SyncEngine {
           await localDB.removeSyncItem(itemId);
         }
       } catch (err: any) {
-        console.error(`[SyncEngine] Push failed for ${table}:`, err?.message || err, {
+        console.error(`[SyncEngine] Push failed for ${table}: ${err?.message || err} | Details: ${JSON.stringify({
           code: err?.code,
           details: err?.details,
           hint: err?.hint,
-          message: err?.message
-        });
+          message: err?.message,
+          payloads: finalPayloads,
+          userId: authManager.getUserId(),
+          userEmail: authManager.getUser()?.email
+        })}`);
         // Increment retry count but NEVER drop items. Offline edits must
         // survive indefinitely until connectivity is restored. The retry
         // count is used for exponential backoff, not as a hard limit.
@@ -493,6 +604,15 @@ export class SyncEngine {
     if (notes) {
       for (const remote of notes) {
         const cleanPath = normalizeSyncPath(remote.path);
+
+        const { yDocManager } = await import('./yDocManager');
+        const hasActiveYjs = yDocManager.hasDoc(cleanPath, this.activeSpaceId) ||
+          await hasYjsSnapshot(this.activeSpaceId, cleanPath);
+        if (hasActiveYjs) {
+          console.info(`[SyncEngine] Skipping LWW overwrite for Yjs-managed note: ${cleanPath}`);
+          continue;
+        }
+
         let remoteNote: LocalNote;
         try {
           remoteNote = await toLocalNote(remote, isPrivateSpace ? this.activeSpaceId : undefined);
@@ -503,18 +623,20 @@ export class SyncEngine {
         }
         remoteNote.path = cleanPath;
         const local = await localDB.getNote(remote.id);
+        let isRename = false;
+        let oldPath = "";
 
         // LWW: only apply if remote is newer
         if (local) {
+          if (local.path !== remoteNote.path) {
+            isRename = true;
+            oldPath = local.path;
+          }
           const remoteVersion = normalizeVersion((remote as any).version);
           const localVersion = normalizeVersion(local.version);
           if (remoteVersion > 0 || localVersion > 0) {
             if (remoteVersion <= localVersion) {
-              console.info('[SyncEngine][pull_overwrite_prevented]', {
-                path: cleanPath,
-                remoteVersion,
-                localVersion,
-              });
+              console.info(`[SyncEngine][pull_overwrite_prevented] Path: ${cleanPath} | Remote: v${remoteVersion} | Local: v${localVersion}`);
               continue;
             }
           } else {
@@ -533,12 +655,44 @@ export class SyncEngine {
             const api = getAPI();
             if (remote.deleted) {
               await api.deleteFile(cleanPath);
+              window.dispatchEvent(new CustomEvent('openonyx:file-deleted', {
+                detail: { path: cleanPath }
+              }));
             } else {
+              if (isRename && oldPath) {
+                try {
+                  await api.deleteFile(oldPath);
+                } catch (e) {
+                  console.warn('[SyncEngine] Failed to delete old path during remote rename:', e);
+                }
+              }
               if (cleanPath.includes('/')) {
                 const parentDir = cleanPath.split('/').slice(0, -1).join('/');
                 try { await api.createDirectory(parentDir); } catch { /* exists */ }
               }
-              await api.writeFile(cleanPath, remoteNote.content || '');
+              let finalContent = remoteNote.content || '';
+              if (cleanPath.toLowerCase().endsWith('.canvas') && finalContent) {
+                try {
+                  const existingRaw = await api.readFile(cleanPath);
+                  if (existingRaw) {
+                    const existingParsed = JSON.parse(existingRaw);
+                    if (existingParsed.openonyxCanvasViewportV1) {
+                      const remoteParsed = JSON.parse(finalContent);
+                      remoteParsed.openonyxCanvasViewportV1 = existingParsed.openonyxCanvasViewportV1;
+                      finalContent = JSON.stringify(remoteParsed, null, 2);
+                    }
+                  }
+                } catch {}
+              }
+              await api.writeFile(cleanPath, finalContent);
+              window.dispatchEvent(new CustomEvent('openonyx:file-written', {
+                detail: { path: cleanPath, content: finalContent }
+              }));
+              if (isRename && oldPath) {
+                window.dispatchEvent(new CustomEvent('openonyx:file-renamed', {
+                  detail: { oldPath, newPath: cleanPath }
+                }));
+              }
             }
           } catch (err) {
             if (!remote.deleted) {
@@ -598,6 +752,7 @@ export class SyncEngine {
         const localNote = await localDB.getNoteByPath(this.activeSpaceId, relativePath);
 
         let needsSync = false;
+        let fileContent = "";
         if (!localNote) {
           // New file created offline / when collab was off!
           needsSync = true;
@@ -608,13 +763,21 @@ export class SyncEngine {
 
           // Sync if filesystem file is newer by more than 2 seconds (buffer clock skew)
           if (fileTime - noteTime > 2000) {
-            needsSync = true;
+            try {
+              fileContent = await api.readFile(file.path);
+              const hash = await sha256Hex(fileContent);
+              if (hash !== localNote.content_hash) {
+                needsSync = true;
+              }
+            } catch (err) {
+              console.warn('[SyncEngine] Failed to read file for hash check:', err);
+            }
           }
         }
 
         if (needsSync) {
           try {
-            const content = await api.readFile(file.path);
+            const content = fileContent || (await api.readFile(file.path));
             const title = relativePath.split('/').pop()?.replace(/\.(md|canvas)$/, '') || relativePath;
             const isCanvas = relativePath.endsWith('.canvas');
             const nowIso = new Date(file.modifiedAt || Date.now()).toISOString();

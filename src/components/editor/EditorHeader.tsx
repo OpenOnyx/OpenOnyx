@@ -65,7 +65,7 @@ interface EditorHeaderProps {
 }
 
 const editorChromeClass =
-  "trilium-note-chrome flex shrink-0 flex-col border-b border-[var(--divider-color)] bg-[var(--bg-primary)]";
+  "onyx-note-chrome flex shrink-0 flex-col border-b border-[var(--divider-color)] bg-[var(--bg-primary)]";
 const editorHeaderClass =
   "flex h-10 min-h-10 select-none items-center justify-between bg-[var(--bg-primary)] px-4";
 const editorHeaderSideClass = "flex flex-[0_0_auto] items-center gap-1.5";
@@ -183,7 +183,7 @@ export function EditorHeader({
     const handleFormat = (e: Event) => {
       const customEvent = e as CustomEvent;
       if (isFocused && customEvent.detail?.command === "more") {
-        const toolbarMoreBtn = document.querySelector('.trilium-toolbar [title="More"]');
+        const toolbarMoreBtn = document.querySelector('.onyx-toolbar [title="More"]');
         if (toolbarMoreBtn) {
           const rect = toolbarMoreBtn.getBoundingClientRect();
           setMenuPosition(clampMenuPosition(rect.right - 205, rect.bottom + 4));

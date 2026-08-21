@@ -9,6 +9,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
+import { resolveInsideRoot } from './pathSafety.js';
 
 export interface FileEntry {
   name: string;
@@ -31,6 +32,10 @@ export class FileSystemManager {
 
   /** Set the active vault directory */
   setVaultPath(vaultPath: string): boolean {
+    if (!vaultPath) {
+      this.vaultPath = null;
+      return true;
+    }
     if (!fs.existsSync(vaultPath)) {
       try {
         fs.mkdirSync(vaultPath, { recursive: true });
@@ -66,12 +71,7 @@ export class FileSystemManager {
   /** Resolve a relative path to an absolute path within the vault */
   private resolvePath(relativePath: string): string {
     if (!this.vaultPath) throw new Error('No vault path set');
-    const resolved = path.resolve(this.vaultPath, relativePath);
-    // Security: ensure resolved path is within vault
-    if (resolved !== this.vaultPath && !resolved.startsWith(this.vaultPath + path.sep)) {
-      throw new Error('Path traversal detected');
-    }
-    return resolved;
+    return resolveInsideRoot(this.vaultPath, relativePath);
   }
 
   /** List files in a directory (relative path) */
@@ -85,7 +85,7 @@ export class FileSystemManager {
     for (const entry of entries) {
       if (entry.name.startsWith('.') || entry.name === 'node_modules') continue;
 
-      const relativePath = path.join(dirPath, entry.name);
+      const relativePath = path.join(dirPath, entry.name).replace(/\\/g, '/');
       const absolutePath = path.join(absoluteDir, entry.name);
       
       try {
@@ -136,7 +136,7 @@ export class FileSystemManager {
   }
 
   async readBinary(filePath: string): Promise<Uint8Array> {
-    const absolutePath = this.resolvePath(filePath);
+    const absolutePath = path.isAbsolute(filePath) ? filePath : this.resolvePath(filePath);
     return new Uint8Array(await fs.promises.readFile(absolutePath));
   }
 
@@ -384,7 +384,7 @@ export class FileSystemManager {
     for (const entry of entries) {
       if (entry.name.startsWith('.') || entry.name === 'node_modules') continue;
       
-      const relativePath = dirPath ? path.join(dirPath, entry.name) : entry.name;
+      const relativePath = (dirPath ? path.join(dirPath, entry.name) : entry.name).replace(/\\/g, '/');
       
       if (entry.isDirectory()) {
         const subFiles = await this.getAllMarkdownFiles(relativePath);

@@ -113,6 +113,13 @@ class AuthManager {
 
   private updateState(newState: AuthState) {
     this.state = newState;
+    if (newState.session?.access_token && isSupabaseConfigured) {
+      try {
+        supabase.realtime.setAuth(newState.session.access_token);
+      } catch (err) {
+        console.warn('[Auth] Failed to set realtime auth token:', err);
+      }
+    }
     void syncUserDatabaseSession(newState.session);
     this.listeners.forEach(fn => fn(this.state));
   }

@@ -84,6 +84,246 @@ body {
   display: none !important;
 }
 
+@keyframes tabPreviewFadeIn {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* ── Tab Preview Card System (Theme-Adaptive) ───────────────────────── */
+
+.tab-preview-portal {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.tab-preview-title-badge {
+  background: var(--bg-elevated, var(--bg-secondary, rgba(18, 20, 24, 0.96)));
+  color: var(--text-primary, #d8d8e4);
+  font-size: 11px;
+  font-weight: 600;
+  font-family: var(--font-sans, Inter, system-ui, sans-serif);
+  padding: 3px 12px;
+  border-radius: 6px;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: center;
+  border: 1px solid var(--border-medium, rgba(255, 255, 255, 0.1));
+  margin-bottom: 4px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.tab-preview-card {
+  background: var(--bg-elevated, var(--bg-secondary, rgba(20, 22, 26, 0.96)));
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid var(--border-medium, rgba(255, 255, 255, 0.08));
+  border-radius: 10px;
+  width: 100%;
+  max-height: 260px;
+  overflow: hidden;
+  box-shadow:
+    0 12px 36px rgba(0, 0, 0, 0.25),
+    0 0 0 1px var(--border-subtle, rgba(0, 0, 0, 0.05)),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.tab-preview-content-scaler {
+  width: 100%;
+  height: 260px;
+  overflow: hidden;
+  position: relative;
+}
+
+.tab-preview-content-inner {
+  transform: scale(0.55);
+  transform-origin: top left;
+  width: 436px; /* CARD_WIDTH / SCALE_FACTOR */
+  padding: 16px 18px;
+  font-family: var(--font-sans, Inter, system-ui, sans-serif);
+  color: var(--text-primary, #d2d2e1);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+/* ── Headings ── */
+.tp-h1 { font-size: 22px; font-weight: 700; color: var(--text-primary, #eaeaf2); margin: 0 0 8px; line-height: 1.25; }
+.tp-h2 { font-size: 18px; font-weight: 650; color: var(--text-primary, #dddde8); margin: 8px 0 6px; line-height: 1.3; border-bottom: 1px solid var(--border-subtle, rgba(255,255,255,0.06)); padding-bottom: 4px; }
+.tp-h3 { font-size: 15px; font-weight: 600; color: var(--text-primary, #d0d0dc); margin: 6px 0 4px; line-height: 1.35; }
+.tp-h4 { font-size: 14px; font-weight: 600; color: var(--text-secondary, #c0c0cc); margin: 5px 0 3px; }
+.tp-h5 { font-size: 13px; font-weight: 600; color: var(--text-secondary, #b0b0bc); margin: 4px 0 2px; }
+.tp-h6 { font-size: 12px; font-weight: 600; color: var(--text-muted, #a0a0ac); margin: 4px 0 2px; text-transform: uppercase; letter-spacing: 0.5px; }
+
+/* ── Paragraph ── */
+.tp-p { margin: 3px 0; color: var(--text-primary, inherit); }
+
+/* ── Blockquote ── */
+.tp-blockquote {
+  border-left: 3px solid var(--color-accent, rgba(130, 140, 220, 0.45));
+  padding: 2px 0 2px 10px;
+  margin: 4px 0;
+  color: var(--text-muted, rgba(190, 190, 210, 0.75));
+  font-style: italic;
+}
+
+/* ── Code ── */
+.tp-code {
+  background: var(--bg-secondary, rgba(0, 0, 0, 0.15));
+  border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.05));
+  border-radius: 5px;
+  padding: 6px 10px;
+  margin: 5px 0;
+  font-family: "JetBrains Mono", "Fira Code", monospace;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--text-primary, rgba(180, 200, 220, 0.8));
+  overflow: hidden;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.tp-code code { font-family: inherit; }
+
+.tp-inline-code {
+  background: var(--bg-secondary, rgba(0, 0, 0, 0.15));
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-family: "JetBrains Mono", "Fira Code", monospace;
+  font-size: 0.9em;
+  color: var(--color-accent, rgba(180, 200, 230, 0.85));
+}
+
+/* ── Lists ── */
+.tp-ul {
+  margin: 3px 0;
+  padding-left: 18px;
+  list-style: disc;
+  color: var(--text-primary, inherit);
+}
+.tp-ul li {
+  margin: 1px 0;
+  line-height: 1.45;
+}
+
+/* ── Checkbox ── */
+.tp-cb {
+  font-size: 12px;
+  margin-right: 3px;
+  color: var(--color-accent, inherit);
+}
+
+/* ── Links & Wikilinks ── */
+.tp-wikilink {
+  color: var(--color-accent, rgba(120, 160, 255, 0.8));
+  text-decoration: none;
+}
+.tp-link {
+  color: var(--color-accent, rgba(100, 180, 255, 0.7));
+  text-decoration: underline;
+  text-decoration-color: var(--color-accent, rgba(100, 180, 255, 0.3));
+}
+
+/* ── Highlight ── */
+.tp-highlight {
+  background: rgba(255, 230, 50, 0.22);
+  padding: 0 2px;
+  border-radius: 2px;
+  color: var(--text-primary, inherit);
+}
+
+/* ── Horizontal rule ── */
+.tp-hr {
+  height: 1px;
+  background: var(--border-subtle, rgba(255, 255, 255, 0.06));
+  margin: 8px 0;
+}
+
+/* ── Images ── */
+.tp-img-wrap {
+  margin: 6px 0;
+  border-radius: 6px;
+  overflow: hidden;
+  border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.05));
+  background: var(--bg-secondary, rgba(0, 0, 0, 0.1));
+}
+.tp-img {
+  display: block;
+  width: 100%;
+  max-height: 140px;
+  object-fit: cover;
+  border-radius: 5px;
+}
+
+/* ── YouTube thumbnail ── */
+.tp-yt-thumb {
+  position: relative;
+  margin: 6px 0;
+  border-radius: 6px;
+  overflow: hidden;
+  border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.05));
+}
+.tp-yt-thumb .tp-img {
+  max-height: 120px;
+}
+.tp-yt-play {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 36px;
+  height: 26px;
+  background: rgba(255, 0, 0, 0.85);
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-size: 14px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+}
+
+/* ── Embed placeholder ── */
+.tp-embed-placeholder {
+  background: var(--bg-secondary, rgba(0, 0, 0, 0.1));
+  border: 1px dashed var(--border-medium, rgba(255, 255, 255, 0.08));
+  border-radius: 5px;
+  padding: 6px 10px;
+  margin: 4px 0;
+  font-size: 11px;
+  color: var(--text-muted, rgba(180, 180, 200, 0.5));
+}
+
+/* ── Loading skeleton ── */
+.tab-preview-loading {
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.tab-preview-skeleton {
+  height: 10px;
+  width: 100%;
+  background: linear-gradient(90deg, var(--bg-hover, rgba(255,255,255,0.04)) 25%, var(--border-subtle, rgba(255,255,255,0.08)) 50%, var(--bg-hover, rgba(255,255,255,0.04)) 75%);
+  background-size: 200% 100%;
+  animation: tabPreviewShimmer 1.2s ease-in-out infinite;
+  border-radius: 4px;
+}
+@keyframes tabPreviewShimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* ── Empty state ── */
+.tab-preview-empty {
+  padding: 20px;
+  text-align: center;
+  color: var(--text-muted, rgba(180, 180, 200, 0.4));
+  font-size: 12px;
+  font-style: italic;
+  font-family: var(--font-sans, Inter, system-ui, sans-serif);
+}
+
 button:focus,
 button:focus-visible,
 [role="button"]:focus,
@@ -102,7 +342,168 @@ button:focus-visible,
   min-height: 0;
   overflow: hidden;
   flex-direction: column;
+  position: relative;
 }
+
+/* ── Background Wallpaper Layer ──────────────────────── */
+.app-wallpaper-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  pointer-events: none;
+  will-change: filter;
+  transition: opacity 0.3s ease, filter 0.3s ease;
+}
+
+body:has(.has-wallpaper) {
+  background: #09090b !important;
+}
+
+/* ── Wallpaper translucency: CSS variable overrides ──────────────────────
+   Override key background variables with semi-transparent rgba values
+   so panels using bg-[var(--bg-tree,...)] etc. become translucent. */
+.app.has-wallpaper {
+  --bg-primary: rgba(15, 15, 18, 0.50) !important;
+  --bg-secondary: rgba(15, 15, 18, 0.50) !important;
+  --bg-tertiary: rgba(15, 15, 18, 0.50) !important;
+  --bg-elevated: rgba(20, 20, 24, 0.70) !important;
+  --bg-tree: rgba(15, 15, 18, 0.50) !important;
+  --bg-launcher: rgba(15, 15, 18, 0.50) !important;
+  --bg-toolbar: rgba(15, 15, 18, 0.50) !important;
+  --bg-input: rgba(0, 0, 0, 0.40) !important;
+  --bg-glass: rgba(15, 15, 18, 0.70) !important;
+  --titlebar-background: rgba(15, 15, 18, 0.50) !important;
+  --titlebar-background-focused: rgba(15, 15, 18, 0.50) !important;
+  --status-bar-background: rgba(15, 15, 18, 0.50) !important;
+  --tab-container-background: rgba(15, 15, 18, 0.50) !important;
+  --tab-background-active: rgba(22, 22, 26, 0.70) !important;
+  --background-primary: rgba(15, 15, 18, 0.50) !important;
+  --background-primary-alt: rgba(15, 15, 18, 0.50) !important;
+  --background-secondary: rgba(15, 15, 18, 0.50) !important;
+  --background-secondary-alt: rgba(15, 15, 18, 0.50) !important;
+}
+
+/* Light theme translucency overrides */
+html[data-theme="light"] .app.has-wallpaper,
+html[data-theme-mode="light"] .app.has-wallpaper {
+  --bg-primary: rgba(255, 255, 255, 0.76) !important;
+  --bg-secondary: rgba(255, 255, 255, 0.76) !important;
+  --bg-tertiary: rgba(255, 255, 255, 0.76) !important;
+  --bg-elevated: rgba(255, 255, 255, 0.88) !important;
+  --bg-tree: rgba(255, 255, 255, 0.76) !important;
+  --bg-launcher: rgba(255, 255, 255, 0.76) !important;
+  --bg-toolbar: rgba(255, 255, 255, 0.76) !important;
+  --bg-input: rgba(255, 255, 255, 0.60) !important;
+  --bg-glass: rgba(255, 255, 255, 0.88) !important;
+  --titlebar-background: rgba(255, 255, 255, 0.76) !important;
+  --status-bar-background: rgba(255, 255, 255, 0.76) !important;
+  --tab-container-background: rgba(255, 255, 255, 0.76) !important;
+  --tab-background-active: rgba(255, 255, 255, 0.85) !important;
+  --background-primary: rgba(255, 255, 255, 0.76) !important;
+  --background-secondary: rgba(255, 255, 255, 0.76) !important;
+}
+
+/* ── Direct element overrides for panels with React inline styles ────────
+   CSS !important overrides inline style={{ backgroundColor: "..." }}.
+   Uses `background` shorthand (not `background-color`) to fully override
+   any `background: var(...)` shorthand rules elsewhere in the stylesheet.
+   All use the same rgba value for uniform appearance across the app. */
+
+.app.has-wallpaper .ribbon,
+.app.has-wallpaper .sidebar,
+.app.has-wallpaper .titlebar,
+.app.has-wallpaper .onyx-toolbar,
+.app.has-wallpaper .editor-container > div,
+.app.has-wallpaper .cv,
+.app.has-wallpaper .graph-view-container,
+.app.has-wallpaper .onyx-statusbar,
+.app.has-wallpaper .right-sidebar-panel,
+.app.has-wallpaper .onyx-new-tab-view,
+.app.has-wallpaper .onyx-note-chrome {
+  background: rgba(15, 15, 18, 0.70) !important;
+}
+
+.app.has-wallpaper .right-sidebar-panel .bg-\(--bg-secondary\),
+.app.has-wallpaper .right-sidebar-panel .bg-\(--bg-primary\),
+.app.has-wallpaper .right-sidebar-panel .bg-\[var\(--bg-secondary\)\],
+.app.has-wallpaper .right-sidebar-panel .bg-\[var\(--bg-primary\)\] {
+  background: transparent !important;
+}
+
+/* Inner structural wrappers — transparent so only the main panel background
+   layer is rendered. Uses `background` shorthand to fully override rules like
+   `.app { background: var(--bg-secondary); }` and
+   `.main-content { background: var(--bg-primary); }`. */
+.app.has-wallpaper,
+.app.has-wallpaper .app-body,
+.app.has-wallpaper .nn-explorer-container,
+.app.has-wallpaper .nn-folders-pane,
+.app.has-wallpaper .nn-notes-pane,
+.app.has-wallpaper .nn-compact-header,
+.app.has-wallpaper .file-explorer,
+.app.has-wallpaper .sidebar-section,
+.app.has-wallpaper .main-content,
+.app.has-wallpaper .editor-column,
+.app.has-wallpaper .cm-editor,
+.app.has-wallpaper .onyx-note-chrome > div {
+  background: transparent !important;
+}
+
+html[data-theme="light"] .app.has-wallpaper .ribbon,
+html[data-theme="light"] .app.has-wallpaper .sidebar,
+html[data-theme="light"] .app.has-wallpaper .titlebar,
+html[data-theme="light"] .app.has-wallpaper .onyx-toolbar,
+html[data-theme="light"] .app.has-wallpaper .editor-container > div,
+html[data-theme="light"] .app.has-wallpaper .cv,
+html[data-theme="light"] .app.has-wallpaper .graph-view-container,
+html[data-theme="light"] .app.has-wallpaper .onyx-statusbar,
+html[data-theme="light"] .app.has-wallpaper .right-sidebar-panel,
+html[data-theme="light"] .app.has-wallpaper .onyx-new-tab-view,
+html[data-theme="light"] .app.has-wallpaper .onyx-note-chrome {
+  background: rgba(255, 255, 255, 0.76) !important;
+}
+
+html[data-theme="light"] .app.has-wallpaper .right-sidebar-panel .bg-\(--bg-secondary\),
+html[data-theme="light"] .app.has-wallpaper .right-sidebar-panel .bg-\(--bg-primary\),
+html[data-theme="light"] .app.has-wallpaper .right-sidebar-panel .bg-\[var\(--bg-secondary\)\],
+html[data-theme="light"] .app.has-wallpaper .right-sidebar-panel .bg-\[var\(--bg-primary\)\] {
+  background: transparent !important;
+}
+html[data-theme="light"] .app.has-wallpaper,
+html[data-theme="light"] .app.has-wallpaper .app-body,
+html[data-theme="light"] .app.has-wallpaper .nn-explorer-container,
+html[data-theme="light"] .app.has-wallpaper .nn-folders-pane,
+html[data-theme="light"] .app.has-wallpaper .nn-notes-pane,
+html[data-theme="light"] .app.has-wallpaper .nn-compact-header,
+html[data-theme="light"] .app.has-wallpaper .file-explorer,
+html[data-theme="light"] .app.has-wallpaper .sidebar-section,
+html[data-theme="light"] .app.has-wallpaper .main-content,
+html[data-theme="light"] .app.has-wallpaper .editor-column,
+html[data-theme="light"] .app.has-wallpaper .cm-editor,
+html[data-theme="light"] .app.has-wallpaper .onyx-note-chrome > div {
+  background: transparent !important;
+}
+
+/* Ensure full-screen graphs have a calm translucent background overlay in wallpaper mode */
+.app.has-wallpaper .graph-view-container.fullscreen {
+  background: rgba(15, 15, 18, 0.70) !important;
+  backdrop-filter: blur(16px) !important;
+}
+html[data-theme="light"] .app.has-wallpaper .graph-view-container.fullscreen {
+  background: rgba(255, 255, 255, 0.76) !important;
+  backdrop-filter: blur(16px) !important;
+}
+html[data-theme="light"] body:has(.has-wallpaper) {
+  background: #e8e8ec !important;
+}
+
+
+
+
+
 
 .app-body {
   display: flex;
@@ -306,6 +707,42 @@ body.is-dragging svg {
   border-radius: 0 !important;
 }
 
+/* Ensure long links, URLs, inline code snippets, and CodeMirror editor lines wrap to the next line */
+.cm-content,
+.cm-line,
+.cm-scroller,
+.markdown-preview,
+.markdown-rendered,
+.markdown-preview-view,
+.readme-content {
+  overflow-wrap: anywhere !important;
+  word-break: break-word !important;
+}
+
+.cm-content a,
+.cm-line a,
+.markdown-preview a,
+.markdown-rendered a,
+.markdown-preview-view a,
+.readme-content a,
+span.cm-url,
+span.cm-link,
+.cm-link {
+  overflow-wrap: anywhere !important;
+  word-break: break-all !important;
+}
+
+.markdown-preview code,
+.markdown-rendered code,
+.markdown-preview-view code,
+.readme-content code,
+.cm-inline-code,
+span.cm-inline-code {
+  overflow-wrap: anywhere !important;
+  word-break: break-word !important;
+  white-space: pre-wrap !important;
+}
+
 /* Ensure twemoji inline emojis render at text scale and inline flow */
 img.emoji {
   height: 1em !important;
@@ -364,6 +801,49 @@ img.emoji {
   transform: translate(-50%, -50%) rotate(45deg) scale(0) !important;
   transform-origin: center !important;
   transition: transform 120ms ease-out !important;
+}
+
+/* ── Remote Collaborator Cursors ────────────────────────────── */
+.cm-collab-cursor-wrapper {
+  position: relative !important;
+  display: inline-block !important;
+  width: 0 !important;
+  height: 0 !important;
+  vertical-align: text-top !important;
+  pointer-events: none !important;
+  user-select: none !important;
+}
+
+.cm-collab-cursor {
+  position: absolute !important;
+  top: 0 !important;
+  left: -1px !important;
+  width: 0 !important;
+  height: 1.2em !important;
+  border-left: 2px solid var(--color-accent) !important;
+  pointer-events: none !important;
+  z-index: 10 !important;
+}
+
+.cm-collab-cursor-label {
+  position: absolute !important;
+  bottom: 100% !important;
+  left: -1px !important;
+  transform: translateY(-2px) !important;
+  white-space: nowrap !important;
+  font-size: 10px !important;
+  font-weight: 600 !important;
+  line-height: 1 !important;
+  color: #ffffff !important;
+  padding: 2px 6px !important;
+  border-radius: 4px 4px 4px 0 !important;
+  pointer-events: none !important;
+  z-index: 11 !important;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3) !important;
+}
+
+.cm-collab-selection {
+  border-radius: 2px !important;
 }
 
 .markdown-preview input[type="checkbox"]:checked::after,
@@ -825,7 +1305,7 @@ img.emoji {
   color: var(--accent-primary) !important;
 }
 
-/* ── Trilium-inspired shell refinements ── */
+/* ── Onyx-inspired shell refinements ── */
 .app {
   background: var(--bg-secondary);
 }
@@ -836,45 +1316,42 @@ img.emoji {
 
 .main-content {
   background: var(--bg-primary);
-  border-left: 1px solid var(--divider-color);
 }
 
-.trilium-launcher {
+.onyx-launcher {
   z-index: 5;
 }
 
-.trilium-tree {
-  border-right: 1px solid var(--divider-color);
+.onyx-tree {
 }
 
-.trilium-tree .file-tree-item.active {
+.onyx-tree .file-tree-item.active {
   box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
 }
 
-.trilium-titlebar {
+.onyx-titlebar {
   background: var(--titlebar-background, var(--bg-secondary));
 }
 
-.trilium-toolbar {
+.onyx-toolbar {
   background: var(--bg-toolbar, var(--bg-secondary));
 }
 
-.trilium-note-chrome {
+.onyx-note-chrome {
   background: var(--bg-primary);
 }
 
-.trilium-statusbar {
+.onyx-statusbar {
   background: var(--status-bar-background);
 }
 
 /* Soften left shell so launcher + tree read as one panel */
-[data-theme="light"] .ribbon.trilium-launcher,
-[data-theme="light"] .sidebar.trilium-tree {
+[data-theme="light"] .ribbon.onyx-launcher,
+[data-theme="light"] .sidebar.onyx-tree {
   background: var(--bg-tree, #eef0f3);
 }
 
 [data-theme="light"] .main-content {
-  box-shadow: -1px 0 0 var(--divider-color);
 }
 
 /* ── Smooth Scrolling & Performance Optimizations ── */
@@ -928,59 +1405,32 @@ img.emoji {
   height: 100%;
   width: 100%;
   overflow: hidden;
-  background-color: var(--bg-primary, #1e1e1e);
+  background-color: var(--inner-panel-bg, var(--bg-primary, #1e1e1e));
 }
 
 /* Folders Pane (Left column) */
 .nn-folders-pane {
-  width: 140px;
-  flex: 0 0 auto;
+  width: 100%;
+  flex: 1 1 auto;
   display: flex;
   flex-direction: column;
   height: 100%;
   overflow-y: auto;
   overflow-x: hidden;
-  background-color: var(--bg-secondary, #161617);
+  background-color: var(--inner-panel-bg, var(--bg-secondary, #161617));
   padding: 8px 4px;
-}
-
-/* Resizable Divider between Left/Right panes */
-.nn-pane-divider {
-  width: 4px;
-  cursor: col-resize;
-  flex-shrink: 0;
-  background-color: transparent;
-  transition: background-color 0.2s ease;
-  position: relative;
-  z-index: 10;
-}
-
-.nn-pane-divider::after {
-  content: '';
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 1px;
-  width: 1px;
-  background-color: var(--border-subtle, #2a2a2b);
-}
-
-.nn-pane-divider:hover::after,
-.nn-pane-divider:active::after {
-  background-color: var(--accent-primary);
-  width: 2px;
-  left: 1px;
 }
 
 /* Notes Pane (Right column) */
 .nn-notes-pane {
-  flex: 1;
+  width: 100%;
+  flex: 1 1 auto;
   min-width: 0;
   display: flex;
   flex-direction: column;
   height: 100%;
   overflow-y: auto;
-  background-color: var(--bg-primary, #1e1e1e);
+  background-color: var(--inner-panel-bg, var(--bg-primary, #1e1e1e));
   padding: 8px;
 }
 
@@ -1026,15 +1476,17 @@ img.emoji {
   text-align: left;
   transition: background-color 0.15s ease, border-color 0.15s ease;
   position: relative;
+  border-radius: 6px;
 }
 
 .nn-note-card:hover {
   background-color: var(--bg-hover);
+  border-bottom-color: transparent;
 }
 
 /* Active State matches Apple Notes premium accent exactly */
 .nn-note-card.active {
-  background-color: #2c2c2e !important;
+  background-color: var(--nav-item-background-selected, var(--bg-hover)) !important;
   border-radius: 6px;
   border-bottom-color: transparent;
 }
@@ -1088,10 +1540,6 @@ img.emoji {
   text-transform: uppercase;
 }
 
-.nn-note-card.active .nn-badge {
-  background-color: rgba(255, 255, 255, 0.2);
-  color: white;
-}
 
 /* Collapsible Date Section Headers */
 .nn-section-header {
@@ -1134,9 +1582,12 @@ img.emoji {
 .nn-compact-header {
   display: flex;
   align-items: center;
-  width: 100%;
-  padding: 8px 10px;
-  background-color: var(--bg-secondary, #161617);
+  margin-top: -2px;
+  margin-left: -6px;
+  margin-right: -6px;
+  margin-bottom: 8px;
+  padding: 8px 8px 8px 10px;
+  background-color: var(--inner-panel-bg, var(--bg-secondary, #161617));
   border-bottom: 1px solid var(--border-subtle, #2a2a2b);
   gap: 8px;
   flex-shrink: 0;
@@ -1146,21 +1597,40 @@ img.emoji {
 .nn-back-btn {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 2px;
   font-size: 13px;
   font-weight: 500;
-  color: var(--accent-primary, #e58e26);
+  color: var(--text-secondary, #8a8a8f);
   background: transparent;
   border: none;
   cursor: pointer;
-  padding: 4px 6px;
+  padding: 4px 6px 4px 0px;
   border-radius: 4px;
-  transition: background-color 0.15s ease;
+  transition: background-color 0.15s ease, color 0.15s ease;
 }
 
 .nn-back-btn:hover {
-  background-color: var(--bg-hover, #2c2c2e);
+  background-color: transparent;
+  color: var(--text-primary);
 }
+
+/* Ensure dropdowns and context menus have solid backgrounds in wallpaper mode */
+.app.has-wallpaper .context-menu,
+.app.has-wallpaper .context-submenu,
+.app.has-wallpaper .vault-menu,
+.app.has-wallpaper .sort-menu {
+  background: #18181c !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+}
+
+html[data-theme="light"] .app.has-wallpaper .context-menu,
+html[data-theme="light"] .app.has-wallpaper .context-submenu,
+html[data-theme="light"] .app.has-wallpaper .vault-menu,
+html[data-theme="light"] .app.has-wallpaper .sort-menu {
+  background: #ffffff !important;
+  border: 1px solid rgba(0, 0, 0, 0.08) !important;
+}
+
 
 
 

@@ -584,6 +584,8 @@ $$;
 REVOKE EXECUTE ON FUNCTION public.vote_on_space(uuid, smallint) FROM anon;
 
 -- Vector search: match note chunks by embedding similarity
+-- SECURITY DEFINER: requires auth.uid(), rejects unscoped queries, verifies
+-- the caller has access to the requested space.  See issue #62.
 CREATE OR REPLACE FUNCTION public.match_note_chunks(
   query_embedding vector(384),
   match_threshold float,
@@ -593,6 +595,18 @@ CREATE OR REPLACE FUNCTION public.match_note_chunks(
 RETURNS TABLE (id uuid, note_id uuid, note_title text, content text, similarity float)
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
 BEGIN
+  IF auth.uid() IS NULL THEN
+    RAISE EXCEPTION 'Authentication required';
+  END IF;
+
+  IF filter_space_id IS NULL THEN
+    RAISE EXCEPTION 'filter_space_id is required';
+  END IF;
+
+  IF NOT public.is_space_member(filter_space_id) THEN
+    RAISE EXCEPTION 'Access denied to space %', filter_space_id;
+  END IF;
+
   RETURN QUERY
   SELECT nc.id, nc.note_id, n.title, nc.content,
     1 - (nc.embedding <=> query_embedding) AS similarity
@@ -600,7 +614,7 @@ BEGIN
   JOIN public.notes n ON n.id = nc.note_id
   WHERE nc.embedding IS NOT NULL
     AND n.deleted = false
-    AND (filter_space_id IS NULL OR n.space_id = filter_space_id)
+    AND n.space_id = filter_space_id
     AND 1 - (nc.embedding <=> query_embedding) > match_threshold
   ORDER BY nc.embedding <=> query_embedding
   LIMIT match_count;
@@ -608,6 +622,7 @@ END;
 $$;
 
 -- Vector search: match spaces by embedding similarity
+-- SECURITY DEFINER: requires auth.uid() to prevent unauthenticated abuse.
 CREATE OR REPLACE FUNCTION public.match_spaces(
   query_embedding vector(384),
   match_threshold float,
@@ -616,6 +631,10 @@ CREATE OR REPLACE FUNCTION public.match_spaces(
 RETURNS TABLE (space_id uuid, title text, description text, similarity float)
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
 BEGIN
+  IF auth.uid() IS NULL THEN
+    RAISE EXCEPTION 'Authentication required';
+  END IF;
+
   RETURN QUERY
   SELECT se.space_id, s.title, s.description,
     1 - (se.embedding <=> query_embedding) AS similarity
