@@ -13,6 +13,7 @@ import { fileURLToPath, pathToFileURL } from 'url';
 import { FileSystemManager } from './fileSystem.js';
 import { SearchEngine } from './search.js';
 import { registerIpcHandlers } from './ipc.js';
+import { isInsideRoot } from './pathSafety.js';
 
 // Register vault:// protocol as privileged before app is ready
 protocol.registerSchemesAsPrivileged([
@@ -460,6 +461,9 @@ app.whenReady().then(() => {
       }
 
       let targetPath = path.resolve(vaultPath, relativePath);
+      if (!isInsideRoot(vaultPath, targetPath)) {
+        return new Response('Path traversal detected', { status: 403 });
+      }
       if (!fs.existsSync(targetPath)) {
         // Fallback: search for file by basename in vault
         const fileName = path.basename(relativePath);

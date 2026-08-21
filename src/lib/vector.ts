@@ -156,7 +156,7 @@ export async function indexNote(noteId: string, content: string) {
 /**
  * Vector search query for notes (cosine similarity via DB function)
  */
-export async function searchNotes(query: string, spaceId?: string, topK = 5) {
+export async function searchNotes(query: string, spaceId: string, topK = 5) {
   const queryEmbedding = await generateEmbedding(query);
 
   const { data, error } = await supabase.rpc('match_note_chunks', {
@@ -177,7 +177,7 @@ export async function searchNotes(query: string, spaceId?: string, topK = 5) {
  */
 export async function askQuestionAboutNotes(
   query: string,
-  spaceId?: string,
+  spaceId: string,
   topK = 5
 ): Promise<{ answer: string; sources: any[]; chunkCount: number }> {
   // 1. Retrieve relevant chunks

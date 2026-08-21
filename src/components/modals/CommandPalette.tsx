@@ -7,6 +7,7 @@
 
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import { Command } from "../../types";
+import { filterCommands } from "../../utils/commandFilter";
 
 interface CommandPaletteProps {
   commands: Command[];
@@ -22,15 +23,10 @@ export function CommandPalette({ commands, onClose }: CommandPaletteProps) {
     inputRef.current?.focus();
   }, []);
 
-  const filteredCommands = useMemo(() => {
-    if (!query.trim()) return commands;
-    const q = query.toLowerCase();
-    return commands.filter(
-      (cmd) =>
-        cmd.label.toLowerCase().includes(q) ||
-        (cmd.category && cmd.category.toLowerCase().includes(q)),
-    );
-  }, [query, commands]);
+  const filteredCommands = useMemo(
+    () => filterCommands(commands, query),
+    [query, commands],
+  );
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "ArrowDown") {

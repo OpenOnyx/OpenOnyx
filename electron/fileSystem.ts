@@ -9,6 +9,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
+import { resolveInsideRoot } from './pathSafety.js';
 
 export interface FileEntry {
   name: string;
@@ -70,12 +71,7 @@ export class FileSystemManager {
   /** Resolve a relative path to an absolute path within the vault */
   private resolvePath(relativePath: string): string {
     if (!this.vaultPath) throw new Error('No vault path set');
-    const resolved = path.resolve(this.vaultPath, relativePath);
-    // Security: ensure resolved path is within vault
-    if (resolved !== this.vaultPath && !resolved.startsWith(this.vaultPath + path.sep)) {
-      throw new Error('Path traversal detected');
-    }
-    return resolved;
+    return resolveInsideRoot(this.vaultPath, relativePath);
   }
 
   /** List files in a directory (relative path) */
