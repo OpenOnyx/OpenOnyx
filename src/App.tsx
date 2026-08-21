@@ -4163,6 +4163,9 @@ export default function App() {
       nonce: (previous?.nonce ?? 0) + 1,
     }));
   }, []);
+  const handleRevealFolderHandled = useCallback(() => {
+    setFolderRevealRequest(null);
+  }, []);
 
   // ── Commands (for Command Palette) ──────────────────
   const commands = useAppCommands({
@@ -5131,6 +5134,7 @@ export default function App() {
                   onAddFileToGroup={handleAddFileToGroup}
                   hasWallpaper={Boolean(settings.backgroundImage)}
                   revealFolderRequest={folderRevealRequest}
+                  onRevealFolderHandled={handleRevealFolderHandled}
                 />
               )}
             </div>

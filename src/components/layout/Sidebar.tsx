@@ -77,6 +77,7 @@ interface SidebarProps {
   onToggleGroupAutoSave?: (id: string) => void;
   hasWallpaper?: boolean;
   revealFolderRequest?: { path: string; nonce: number } | null;
+  onRevealFolderHandled?: () => void;
 }
 
 type SortMode =
@@ -401,6 +402,7 @@ export function Sidebar({
   onAddFileToGroup = () => {},
   hasWallpaper = false,
   revealFolderRequest = null,
+  onRevealFolderHandled,
 }: SidebarProps) {
   const [expandedDirs, setExpandedDirs] = useState<Set<string>>(new Set());
   const [selectedFolder, setSelectedFolder] = useState<string | null>("");
@@ -599,10 +601,11 @@ export function Sidebar({
         (element) => element.dataset.sidebarFolderPath === targetPath,
       );
       target?.scrollIntoView({ block: "nearest" });
+      onRevealFolderHandled?.();
     });
 
     return () => window.cancelAnimationFrame(frame);
-  }, [revealFolderRequest]);
+  }, [onRevealFolderHandled, revealFolderRequest]);
 
   const toggleDir = (path: string) => {
     setExpandedDirs((prev) => {

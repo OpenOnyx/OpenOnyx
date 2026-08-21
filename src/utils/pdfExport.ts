@@ -59,14 +59,14 @@ function flattenVaultFiles(files: VaultFileLike[] | undefined): VaultFileLike[] 
 function vaultImageExists(src: string, vaultFiles: VaultFileLike[] | undefined): boolean {
   if (!vaultFiles) return true;
 
-  const normalizedSrc = normalizeVaultPath(src);
+  const normalizedSrc = normalizeVaultPath(src).toLowerCase();
   const srcBasename = normalizedSrc.split("/").pop();
 
   return vaultFiles.some((file) => {
     if (file.isDirectory) return false;
 
-    const filePath = file.path ? normalizeVaultPath(file.path) : "";
-    const fileName = file.name || filePath.split("/").pop();
+    const filePath = file.path ? normalizeVaultPath(file.path).toLowerCase() : "";
+    const fileName = (file.name || filePath.split("/").pop() || "").toLowerCase();
 
     return filePath === normalizedSrc || (!!srcBasename && fileName === srcBasename);
   });

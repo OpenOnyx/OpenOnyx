@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { Tab, Theme, ViewMode, FileEntry } from "../../types";
 import { countWords, countCharacters } from "../../utils/helpers";
+import { getAPI } from "../../utils/api";
 import type { PluginStatusBarItem } from '../../types/plugin';
 import { VimModeIndicator } from "./VimModeIndicator";
 
@@ -60,19 +61,21 @@ export function StatusBar({
 }: StatusBarProps) {
   const wordCount = content ? countWords(content) : 0;
   const charCount = content ? countCharacters(content) : 0;
+  const isRealFileTab = Boolean(activeTab && !activeTab.path.startsWith("__"));
 
   const pathParts =
-    activeTab && !activeTab.path.startsWith("__")
+    activeTab && isRealFileTab
       ? activeTab.path.split("/").filter(Boolean)
       : [];
   const noteName =
     pathParts.length > 0
       ? pathParts[pathParts.length - 1].replace(/\.md$/, "").replace(/\.canvas$/, "")
       : activeTab?.name || "";
-  const canNavigateBreadcrumbs = Boolean(onRevealFolder && activeTab && pathParts.length > 0);
+  const canNavigateBreadcrumbs = Boolean(onRevealFolder && isRealFileTab && pathParts.length > 0);
+  const canCopyActivePath = Boolean(activeTab?.path && isRealFileTab);
   const copyActivePath = () => {
-    if (!activeTab?.path || activeTab.path.startsWith("__")) return;
-    void navigator.clipboard?.writeText(activeTab.path);
+    if (!canCopyActivePath || !activeTab?.path) return;
+    void getAPI().writeClipboardText(activeTab.path);
   };
 
   return (
@@ -105,7 +108,7 @@ export function StatusBar({
             </React.Fragment>
           );
         })}
-        {noteName && (
+        {noteName && canCopyActivePath && (
           <>
             <span className={crumbSepClass}>›</span>
             <button
@@ -117,6 +120,14 @@ export function StatusBar({
             >
               {noteName}
             </button>
+          </>
+        )}
+        {noteName && !canCopyActivePath && (
+          <>
+            <span className={crumbSepClass}>›</span>
+            <span className={`${crumbClass} font-medium text-[var(--text-primary)]`}>
+              {noteName}
+            </span>
           </>
         )}
       </div>

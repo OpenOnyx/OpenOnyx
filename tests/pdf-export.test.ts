@@ -64,6 +64,21 @@ describe("pdf export", () => {
     expect(html).toContain('<div class="embed-missing">Missing Note</div>');
   });
 
+  it("matches wiki image embeds case-insensitively against vault files", () => {
+    const html = buildMarkdownPdfHtml({
+      markdown: "![[attachments/image.png]]",
+      title: "Image Export",
+      notePath: "Image Export.md",
+      vaultPath: "/Users/example/My Vault",
+      vaultFiles: [
+        { path: "Attachments/Image.PNG", name: "Image.PNG", isDirectory: false },
+      ],
+    });
+
+    expect(html).toContain('src="vault://local/attachments/image.png"');
+    expect(html).not.toContain('<div class="embed-missing">attachments/image.png</div>');
+  });
+
   it("escapes the document title", () => {
     const html = buildMarkdownPdfHtml({
       markdown: "hi",
