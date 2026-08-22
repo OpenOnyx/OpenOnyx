@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { filterCommands, filterCommandsByWords } from "../src/utils/commandFilter";
+import {
+  filterCommands,
+  filterCommandsByWords,
+  getPrimaryModifierLabel,
+} from "../src/utils/commandFilter";
 
 const commands = [
   { id: "new", label: "Create note", category: "File" },
@@ -17,11 +21,23 @@ describe("command filter", () => {
     expect(filterCommands(commands, "view").map((c) => c.id)).toEqual(["sidebar", "graph"]);
   });
 
-  it("current substring filter misses word-reordered queries", () => {
-    expect(filterCommands(commands, "new note")).toEqual([]);
+  it("matches all query words across command metadata", () => {
+    expect(filterCommands(commands, "new note").map((c) => c.id)).toEqual(["new"]);
+    expect(filterCommands(commands, "view graph").map((c) => c.id)).toEqual(["graph"]);
   });
 
   it("word filter finds Create note when every word appears", () => {
     expect(filterCommandsByWords(commands, "create note").map((c) => c.id)).toEqual(["new"]);
+  });
+});
+
+describe("primary modifier label", () => {
+  it("uses the Command symbol on macOS", () => {
+    expect(getPrimaryModifierLabel("MacIntel")).toBe("⌘");
+  });
+
+  it("uses Ctrl on Windows and Linux", () => {
+    expect(getPrimaryModifierLabel("Win32")).toBe("Ctrl");
+    expect(getPrimaryModifierLabel("Linux x86_64")).toBe("Ctrl");
   });
 });

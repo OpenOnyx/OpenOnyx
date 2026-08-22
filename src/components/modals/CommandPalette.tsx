@@ -7,7 +7,7 @@
 
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import { Command } from "../../types";
-import { filterCommands } from "../../utils/commandFilter";
+import { filterCommands, getPrimaryModifierLabel } from "../../utils/commandFilter";
 
 interface CommandPaletteProps {
   commands: Command[];
@@ -26,6 +26,9 @@ export function CommandPalette({ commands, onClose }: CommandPaletteProps) {
   const filteredCommands = useMemo(
     () => filterCommands(commands, query),
     [query, commands],
+  );
+  const modifierLabel = getPrimaryModifierLabel(
+    typeof navigator === "undefined" ? "" : navigator.platform,
   );
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -48,9 +51,14 @@ export function CommandPalette({ commands, onClose }: CommandPaletteProps) {
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-start justify-center pt-[15vh] z-[9999]" onClick={onClose}>
-      <div className="w-full max-w-[520px] bg-(--bg-primary) border border-(--border-medium) rounded-xl shadow-none overflow-hidden" onClick={(e) => e.stopPropagation()}>
+      <div
+        role="dialog"
+        aria-label="Command palette"
+        className="w-full max-w-[520px] bg-(--bg-primary) border border-(--border-medium) rounded-xl shadow-none overflow-hidden"
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="flex items-center gap-3 px-4 py-3 border-b border-(--border-subtle)">
-          <span className="text-(--text-muted) text-lg shrink-0">{'\u2318'}</span>
+          <span className="text-(--text-muted) text-lg shrink-0">{modifierLabel}</span>
           <input
             ref={inputRef}
             className="flex-1 bg-transparent border-none outline-none text-(--text-primary) text-base placeholder:text-(--text-muted)"
