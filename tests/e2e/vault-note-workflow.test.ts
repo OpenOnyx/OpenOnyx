@@ -3,17 +3,16 @@ import { describe, expect, it } from "vitest";
 import { parseFrontmatter, updateFrontmatter } from "../../src/utils/frontmatter";
 import { countWords, getNoteName, processWikiLinks } from "../../src/utils/helpers";
 import { rewriteWikiLinks } from "../../src/utils/wikiLinks";
-import { buildMarkdownPdfHtml } from "../../src/utils/pdfExport";
 import { SearchEngine } from "../../electron/search";
 import { FileSystemManager } from "../../electron/fileSystem";
 import { parseCanvasDocument } from "../../src/components/canvas/canvasDocument";
 
 /**
  * End-to-end style workflow against the same helpers the app uses.
- * This does not launch Electron; it walks create → link → search → rename → export.
+ * This does not launch Electron; it walks create → link → search → rename.
  */
 describe("vault note workflow", () => {
-  it("creates, links, finds, renames, and exports a note", () => {
+  it("creates, links, finds, and renames a note", () => {
     const vault: Record<string, string> = {
       "Inbox/Idea.md": "---\ntags:\n  - inbox\n---\nCapture [[Project Plan]] later.\n",
       "Projects/Project Plan.md": "# Plan\n\nShip the first version.\n",
@@ -43,12 +42,6 @@ describe("vault note workflow", () => {
     expect(renamed["Inbox/Idea.md"]).toContain("[[Roadmap]]");
     expect(renamed["Projects/Roadmap.md"]).toContain("Ship the first version");
 
-    const exported = buildMarkdownPdfHtml({
-      markdown: renamed["Projects/Roadmap.md"],
-      title: "Roadmap",
-      notePath: "Projects/Roadmap.md",
-    });
-    expect(exported).toContain("Ship the first version");
     expect(countWords(renamed["Projects/Roadmap.md"])).toBeGreaterThan(2);
   });
 

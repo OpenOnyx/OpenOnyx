@@ -1139,14 +1139,12 @@ export function LeafPaneEditor({
 
     try {
       const vaultPath = await api.getVaultPath();
-      const vaultFiles = vaultPath ? await api.getFileTree().catch(() => undefined) : undefined;
       const markdown = latestContentRef.current || content;
       const html = buildMarkdownPdfHtml({
         markdown,
         title: activeTab.name || activeTab.path.replace(/\.md$/i, ""),
         notePath: activeTab.path,
         vaultPath: vaultPath || undefined,
-        vaultFiles,
       });
       const result = await api.exportMarkdownPdf({
         html,

@@ -28,8 +28,10 @@ const statusItemClass =
   "inline-flex h-[26px] shrink-0 items-center gap-1.5 whitespace-nowrap px-1.5 text-[12px] leading-none text-[var(--status-bar-text-color)]";
 const crumbClass =
   "inline-flex max-w-[160px] items-center gap-1 overflow-hidden text-ellipsis whitespace-nowrap text-[12px] text-[var(--text-secondary)]";
+const crumbFocusClass =
+  "focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-1 focus-visible:outline-[var(--accent-primary)]";
 const crumbButtonClass =
-  `${crumbClass} h-[22px] cursor-pointer rounded-[4px] border-0 bg-transparent px-1 transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] focus-visible:outline focus-visible:outline-1 focus-visible:outline-[var(--accent-primary)]`;
+  `${crumbClass} ${crumbFocusClass} h-[22px] cursor-pointer rounded-[4px] border-0 bg-transparent px-1 transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]`;
 const crumbSepClass = "mx-0.5 text-[var(--text-faint)] opacity-70";
 
 interface StatusBarProps {
@@ -83,7 +85,7 @@ export function StatusBar({
       <div className={statusGroupClass} aria-label="Breadcrumbs">
         <button
           type="button"
-          className={`${statusItemClass} cursor-pointer rounded-[4px] border-0 bg-transparent hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]`}
+          className={`${statusItemClass} ${crumbFocusClass} cursor-pointer rounded-[4px] border-0 bg-transparent hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]`}
           title="Reveal root folder"
           aria-label="Reveal root folder"
           onClick={() => onRevealFolder?.("")}

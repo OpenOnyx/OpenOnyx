@@ -1,7 +1,6 @@
 import { marked } from "marked";
 import markedKatex from "marked-katex-extension";
 import DOMPurify from "dompurify";
-import { resolveVaultImageSrc } from "./resolveImageSrc";
 
 marked.use(markedKatex({ throwOnError: false }));
 
@@ -27,95 +26,14 @@ function toFileUri(vaultPath: string | undefined, src: string): string {
   return `file://${joined.split("/").map((part, index) => index === 0 ? part : encodeURIComponent(part)).join("/")}`;
 }
 
-function isImageEmbedPath(src: string): boolean {
-  return /\.(png|jpe?g|gif|webp|svg|avif|bmp)(?:[?#].*)?$/i.test(src.trim());
-}
-
-type VaultFileLike = {
-  path?: string;
-  name?: string;
-  isDirectory?: boolean;
-  children?: VaultFileLike[];
-};
-
-function normalizeVaultPath(value: string): string {
-  return value.replace(/\\/g, "/").replace(/^\/+/, "").replace(/\/+/g, "/");
-}
-
-function flattenVaultFiles(files: VaultFileLike[] | undefined): VaultFileLike[] | undefined {
-  if (!files) return undefined;
-
-  const flattened: VaultFileLike[] = [];
-  const visit = (entries: VaultFileLike[]) => {
-    for (const entry of entries) {
-      flattened.push(entry);
-      if (entry.children) visit(entry.children);
-    }
-  };
-  visit(files);
-  return flattened;
-}
-
-function vaultImageExists(src: string, vaultFiles: VaultFileLike[] | undefined): boolean {
-  if (!vaultFiles) return true;
-
-  const normalizedSrc = normalizeVaultPath(src).toLowerCase();
-  const srcBasename = normalizedSrc.split("/").pop();
-
-  return vaultFiles.some((file) => {
-    if (file.isDirectory) return false;
-
-    const filePath = file.path ? normalizeVaultPath(file.path).toLowerCase() : "";
-    const fileName = (file.name || filePath.split("/").pop() || "").toLowerCase();
-
-    return filePath === normalizedSrc || (!!srcBasename && fileName === srcBasename);
-  });
-}
-
-function parseWikiImageDisplay(displayText: string | undefined): { alt: string | null; width: number | null } {
-  if (!displayText) return { alt: null, width: null };
-
-  const parts = displayText.split("|").map((part) => part.trim()).filter(Boolean);
-  let width: number | null = null;
-  const altParts: string[] = [];
-
-  for (const part of parts) {
-    if (/^\d+$/.test(part) && width === null) {
-      width = Number(part);
-    } else {
-      altParts.push(part);
-    }
-  }
-
-  return {
-    alt: altParts.length > 0 ? altParts.join(" | ") : null,
-    width,
-  };
-}
-
-function preprocessMarkdown(markdown: string, vaultPath?: string, vaultFiles?: VaultFileLike[]): string {
+function preprocessMarkdown(markdown: string, vaultPath?: string): string {
   let processed = stripFrontmatter(markdown);
-  const flattenedVaultFiles = flattenVaultFiles(vaultFiles);
 
   processed = processed.replace(
     /!\[\[([^\]|#]+)(?:#([^\]|]+))?(?:\|([^\]]+))?\]\]/g,
     (_match, noteName, heading, displayText) => {
-      const src = String(noteName).trim();
-      const { alt, width } = parseWikiImageDisplay(displayText);
-      const label = alt || src;
-
-      if (isImageEmbedPath(src)) {
-        if (!vaultImageExists(src, flattenedVaultFiles)) {
-          return `<div class="embed-missing">${escapeHtml(src)}</div>`;
-        }
-
-        const resolvedSrc = resolveVaultImageSrc(src);
-        const style = width ? ` style="max-width: ${width}px; width: 100%;"` : "";
-        return `<img src="${escapeHtml(resolvedSrc)}" alt="${escapeHtml(label)}" title="${escapeHtml(label)}"${style}>`;
-      }
-
-      const labelText = displayText || src;
-      return `<div class="embed-missing">${escapeHtml(labelText)}${heading ? ` / ${escapeHtml(heading)}` : ""}</div>`;
+      const label = displayText || noteName;
+      return `<div class="embed-missing">${escapeHtml(label)}${heading ? ` / ${escapeHtml(heading)}` : ""}</div>`;
     },
   );
 
@@ -156,21 +74,19 @@ export function buildMarkdownPdfHtml({
   title,
   notePath,
   vaultPath,
-  vaultFiles,
 }: {
   markdown: string;
   title: string;
   notePath: string;
   vaultPath?: string;
-  vaultFiles?: VaultFileLike[];
 }): string {
-  const processed = preprocessMarkdown(markdown, vaultPath, vaultFiles);
+  const processed = preprocessMarkdown(markdown, vaultPath);
   const rendered = marked.parse(processed, { gfm: true, breaks: true }) as string;
   const safeHtml = DOMPurify.sanitize(rendered, {
     ADD_TAGS: ["input", "math", "semantics", "mrow", "mi", "mo", "mn", "msup", "mspace", "msqrt", "mfrac", "annotation"],
     ADD_ATTR: ["checked", "disabled", "type", "style", "viewBox", "fill", "stroke", "stroke-width", "stroke-linecap", "stroke-linejoin"],
     ADD_DATA_URI_TAGS: ["img"],
-    ALLOWED_URI_REGEXP: /^(?:(?:(?:f|ht)tps?|file|data|mailto|vault):|[^a-z]|[a-z+.\-]+(?:[^a-z+.\-:]|$))/i,
+    ALLOWED_URI_REGEXP: /^(?:(?:(?:f|ht)tps?|file|data|mailto):|[^a-z]|[a-z+.\-]+(?:[^a-z+.\-:]|$))/i,
   });
 
   const safeTitle = escapeHtml(title || notePath.replace(/\.md$/i, ""));

@@ -574,6 +574,9 @@ export function Sidebar({
   useEffect(() => {
     if (!revealFolderRequest) return;
     const targetPath = revealFolderRequest.path;
+    const maxRevealAttempts = 20;
+    let frame = 0;
+    let attempts = 0;
 
     setFilterQuery("");
     setSelectedFolder(targetPath);
@@ -595,14 +598,24 @@ export function Sidebar({
       return changed ? next : previous;
     });
 
-    const frame = window.requestAnimationFrame(() => {
+    const revealTarget = () => {
       const folderItems = document.querySelectorAll<HTMLElement>("[data-sidebar-folder-path]");
       const target = Array.from(folderItems).find(
         (element) => element.dataset.sidebarFolderPath === targetPath,
       );
-      target?.scrollIntoView({ block: "nearest" });
-      onRevealFolderHandled?.();
-    });
+      if (target) {
+        target.scrollIntoView({ block: "nearest" });
+        onRevealFolderHandled?.();
+        return;
+      }
+
+      attempts += 1;
+      if (attempts < maxRevealAttempts) {
+        frame = window.requestAnimationFrame(revealTarget);
+      }
+    };
+
+    frame = window.requestAnimationFrame(revealTarget);
 
     return () => window.cancelAnimationFrame(frame);
   }, [onRevealFolderHandled, revealFolderRequest]);
