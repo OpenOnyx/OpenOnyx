@@ -494,9 +494,18 @@ See [`docs/obsidian-plugin-compatibility.md`](docs/obsidian-plugin-compatibility
 
 ## Documentation
 
-- [`docs/spaces.md`](docs/spaces.md) explains the Spaces architecture, indexing pipeline, RAG lifecycle, storage model, and sync behavior.
-- [`docs/obsidian-plugin-compatibility.md`](docs/obsidian-plugin-compatibility.md) documents plugin API coverage and the real-plugin regression matrix.
-- [`changelog.md`](changelog.md) tracks project changes.
+The product website and user guide live in [`website/`](website/):
+
+```bash
+cd website
+npm install
+npm run dev
+```
+
+- [`website/`](website/) — marketing site, interactive vault graph, and user docs
+- [`docs/spaces.md`](docs/spaces.md) — Spaces architecture, indexing, RAG, storage, sync
+- [`docs/obsidian-plugin-compatibility.md`](docs/obsidian-plugin-compatibility.md) — plugin API coverage and the real-plugin regression matrix
+- [`changelog.md`](changelog.md) — project changes
 
 ## Contributing
 
