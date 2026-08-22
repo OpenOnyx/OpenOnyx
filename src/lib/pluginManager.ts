@@ -43,6 +43,7 @@ import type {
   PluginPermission,
   PluginApprovals,
 } from '../types/plugin';
+import { DEFAULT_PLUGIN_PERMISSIONS } from '../types/plugin';
 
 import { getAPI } from '../utils/api';
 const api = () => getAPI();
@@ -69,9 +70,7 @@ const APP_VERSION = '1.13.1';
 const LOAD_TIMEOUT_MS = 8000;
 const MAX_PARALLEL_LOADS = 3;
 
-// Default permissions plugins get if manifest doesn't declare any
-// (Obsidian compat: existing plugins don't have permissions in manifest)
-const DEFAULT_PERMISSIONS: PluginPermission[] = ['filesystem', 'network', 'ui', 'editor'];
+const DEFAULT_PERMISSIONS = DEFAULT_PLUGIN_PERMISSIONS;
 
 export interface PluginBundleFiles {
   manifestText: string;
@@ -432,10 +431,17 @@ export class PluginManager {
         const home = (() => {
           try { return (window as any).require?.('os')?.homedir?.() || ''; } catch { return ''; }
         })();
+        const denyFilesystem = () => Promise.reject(new Error(`[Plugin:${manifest.id}] Filesystem access denied`));
         const shell = {
           ...(electron.shell || {}),
-          openPath: (targetPath: string) => bridge.openPath?.(targetPath) ?? Promise.resolve(''),
-          showItemInFolder: (targetPath: string) => bridge.showItemInFolder?.(targetPath),
+          openPath: (targetPath: string) =>
+            permissions.includes('filesystem')
+              ? (bridge.openPath?.(targetPath) ?? Promise.resolve(''))
+              : denyFilesystem(),
+          showItemInFolder: (targetPath: string) =>
+            permissions.includes('filesystem')
+              ? bridge.showItemInFolder?.(targetPath)
+              : denyFilesystem(),
           openExternal: (url: string) => bridge.openExternal?.(url) ?? Promise.resolve(),
         };
         return {

@@ -11,6 +11,9 @@
 /** Granular permission types for plugin capabilities */
 export type PluginPermission = 'filesystem' | 'network' | 'ui' | 'editor' | 'system';
 
+/** Granted when a manifest omits permissions. Filesystem and network must be explicit. */
+export const DEFAULT_PLUGIN_PERMISSIONS: PluginPermission[] = ['ui', 'editor'];
+
 /** Human-readable descriptions for permission labels */
 export const PERMISSION_DESCRIPTIONS: Record<PluginPermission, { label: string; description: string; risk: 'low' | 'medium' | 'high' }> = {
   filesystem: {

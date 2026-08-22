@@ -24,6 +24,7 @@ import { marked } from "marked";
 import markedKatex from "marked-katex-extension";
 import DOMPurify from "dompurify";
 import { resolveVaultImageSrc } from "../../utils/resolveImageSrc";
+import { bindPreviewMediaFallbacks, sanitizePreviewHtml } from "../../utils/previewSanitize";
 import { getSmartEmbed, getDisplayDomain, cleanEmbedUrl, toggleUrlInMarkdown } from "../../utils/urlHelper";
 import { runMarkdownPostProcessors } from "../../lib/obsidian-api/markdown";
 import type { AppSettings } from "../settings/SettingsPage";
@@ -676,7 +677,7 @@ export function MarkdownPreview({
       return `<div class="url-preview-card link-only" data-url="${url}" style="position: relative; ${cardStyle}">
         <div class="url-preview-header">
           <div class="url-preview-info">
-            <img class="url-preview-favicon" src="${faviconUrl}" alt="" onerror="this.style.display='none'">
+            <img class="url-preview-favicon" src="${faviconUrl}" alt="">
             <span class="url-preview-title">${displayDomain}</span>
           </div>
           <div class="url-preview-actions">
@@ -874,12 +875,7 @@ export function MarkdownPreview({
     });
 
     // Sanitize
-    return DOMPurify.sanitize(html, {
-      ALLOWED_URI_REGEXP: /^(?:(?:(?:f|ht)tps?|mailto|tel|callto|cid|xmpp|vault):|[^a-z]|[a-z+.\-]+(?:[^a-z+.\-:]|$))/i,
-      ADD_ATTR: ["data-link", "data-tag", "data-line", "data-heading", "data-embed", "data-callout", "data-foldable", "data-collapsed", "data-theme", "data-video-id", "data-url", "data-active-player", "checked", "type", "style", "frameborder", "allow", "allowfullscreen", "scrolling", "width", "height", "sandbox", "src", "onmouseover", "onmouseout", "onerror", "viewBox", "fill", "stroke", "stroke-width", "stroke-linecap", "stroke-linejoin", "cx", "cy", "r", "x", "y", "rx", "ry", "x1", "y1", "x2", "y2", "d"],
-      ADD_TAGS: ["span", "input", "math", "semantics", "mrow", "mi", "mo", "mn", "msup", "mspace", "msqrt", "mfrac", "table", "tbody", "tr", "mtd", "mtr", "annotation", "iframe", "blockquote", "div", "svg", "path", "circle", "line", "rect", "polyline"],
-      ADD_DATA_URI_TAGS: ["img"],
-    });
+    return sanitizePreviewHtml(html);
   }, [debouncedContent, onEmbed, themeMode, getSmartEmbed, getUrlPreviewMarkup]);
 
   // Handle clicks on wiki-links, tags, and checkboxes
@@ -1041,6 +1037,7 @@ export function MarkdownPreview({
     if (lastHtmlRef.current !== renderedHtml ||processorVersion > 0) {
       previewRef.current.innerHTML = renderedHtml;
       lastHtmlRef.current = renderedHtml;
+      bindPreviewMediaFallbacks(previewRef.current);
     }
     
     // Function to upgrade YouTube iframes into HD Posters
@@ -1050,7 +1047,7 @@ export function MarkdownPreview({
       if (iframe.dataset.hdPosterApplied || iframe.dataset.activePlayer === "true") return;
 
       const videoId = src.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([^&?]+)/)?.[1];
-      if (!videoId) return;
+      if (!videoId || !/^[A-Za-z0-9_-]{6,20}$/.test(videoId)) return;
 
       iframe.dataset.hdPosterApplied = "true";
 
@@ -1061,19 +1058,36 @@ export function MarkdownPreview({
       wrapper.className = "yt-hd-poster";
       wrapper.style.cssText = "position: relative; width: 100%; aspect-ratio: 16 / 9; border-radius: 12px; overflow: hidden; background: #000; cursor: pointer; margin: 16px 0;";
 
-      wrapper.innerHTML = `
-        <img class="yt-poster-img" src="${hdThumb}" onerror="this.src='${hqThumb}'" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; transition: opacity 0.2s;">
-        <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 68px; height: 48px; background: rgba(255, 0, 0, 0.9); border-radius: 12px; display: flex; align-items: center; justify-content: center; pointer-events: none; box-shadow: none;">
-          <svg viewBox="0 0 24 24" style="width: 32px; height: 32px; fill: white;"><path d="M8 5v14l11-7z"/></svg>
-        </div>
-      `;
+      const poster = document.createElement("img");
+      poster.className = "yt-poster-img";
+      poster.src = hdThumb;
+      poster.style.cssText = "position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; transition: opacity 0.2s;";
+      poster.addEventListener("error", () => {
+        poster.src = hqThumb;
+      });
 
-      wrapper.onmouseover = () => { (wrapper.querySelector('img') as HTMLImageElement).style.opacity = '0.8'; };
-      wrapper.onmouseout = () => { (wrapper.querySelector('img') as HTMLImageElement).style.opacity = '1'; };
+      const playBadge = document.createElement("div");
+      playBadge.style.cssText = "position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 68px; height: 48px; background: rgba(255, 0, 0, 0.9); border-radius: 12px; display: flex; align-items: center; justify-content: center; pointer-events: none; box-shadow: none;";
+      playBadge.innerHTML = `<svg viewBox="0 0 24 24" style="width: 32px; height: 32px; fill: white;"><path d="M8 5v14l11-7z"/></svg>`;
 
-      wrapper.onclick = () => {
-        wrapper.innerHTML = `<iframe data-active-player="true" class="url-preview-iframe" src="https://www.youtube.com/embed/${videoId}?autoplay=1&vq=hd1080" allow="fullscreen; autoplay; clipboard-write; encrypted-media; picture-in-picture" allowfullscreen style="width:100%; height:100%; border:none; border-radius: 12px;"></iframe>`;
-      };
+      wrapper.append(poster, playBadge);
+      wrapper.addEventListener("mouseover", () => {
+        poster.style.opacity = "0.8";
+      });
+      wrapper.addEventListener("mouseout", () => {
+        poster.style.opacity = "1";
+      });
+
+      wrapper.addEventListener("click", () => {
+        const player = document.createElement("iframe");
+        player.dataset.activePlayer = "true";
+        player.className = "url-preview-iframe";
+        player.src = `https://www.youtube.com/embed/${videoId}?autoplay=1&vq=hd1080`;
+        player.allow = "fullscreen; autoplay; clipboard-write; encrypted-media; picture-in-picture";
+        player.allowFullscreen = true;
+        player.style.cssText = "width:100%; height:100%; border:none; border-radius: 12px;";
+        wrapper.replaceChildren(player);
+      });
 
       if (iframe.parentNode) {
         iframe.parentNode.replaceChild(wrapper, iframe);

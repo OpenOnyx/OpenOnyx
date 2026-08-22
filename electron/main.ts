@@ -14,6 +14,7 @@ import { FileSystemManager } from './fileSystem.js';
 import { SearchEngine } from './search.js';
 import { registerIpcHandlers } from './ipc.js';
 import { isInsideRoot } from './pathSafety.js';
+import { approveVaultPath } from './vaultAccess.js';
 
 // Register vault:// protocol as privileged before app is ready
 protocol.registerSchemesAsPrivileged([
@@ -645,7 +646,9 @@ app.whenReady().then(() => {
           properties: ['openDirectory'],
           title: 'Select Vault Directory',
         });
-    return result.canceled ? null : result.filePaths[0];
+    if (result.canceled || !result.filePaths[0]) return null;
+    approveVaultPath(result.filePaths[0]);
+    return result.filePaths[0];
   });
 
   buildMenu();

@@ -9,7 +9,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
-import { resolveInsideRoot } from './pathSafety.js';
+import { resolveInsideRoot, sanitizeAttachmentFileName } from './pathSafety.js';
 
 export interface FileEntry {
   name: string;
@@ -136,7 +136,7 @@ export class FileSystemManager {
   }
 
   async readBinary(filePath: string): Promise<Uint8Array> {
-    const absolutePath = path.isAbsolute(filePath) ? filePath : this.resolvePath(filePath);
+    const absolutePath = this.resolvePath(filePath);
     return new Uint8Array(await fs.promises.readFile(absolutePath));
   }
 
@@ -419,19 +419,20 @@ export class FileSystemManager {
    */
   async saveImage(fileName: string, base64Data: string): Promise<string> {
     if (!this.vaultPath) throw new Error('No vault path set');
+    const safeName = sanitizeAttachmentFileName(fileName);
     
     // Create attachments folder if it doesn't exist
-    const attachmentsDir = path.join(this.vaultPath, 'attachments');
+    const attachmentsDir = resolveInsideRoot(this.vaultPath, 'attachments');
     if (!fs.existsSync(attachmentsDir)) {
       fs.mkdirSync(attachmentsDir, { recursive: true });
     }
     
     // Generate unique filename if needed
-    let uniqueName = fileName;
+    let uniqueName = safeName;
     let counter = 1;
-    while (fs.existsSync(path.join(attachmentsDir, uniqueName))) {
-      const ext = path.extname(fileName);
-      const base = path.basename(fileName, ext);
+    while (fs.existsSync(resolveInsideRoot(this.vaultPath, path.join('attachments', uniqueName)))) {
+      const ext = path.extname(safeName);
+      const base = path.basename(safeName, ext);
       uniqueName = `${base}-${counter}${ext}`;
       counter++;
     }
@@ -440,7 +441,7 @@ export class FileSystemManager {
     const base64Content = base64Data.replace(/^data:image\/\w+;base64,/, '');
     
     // Write the image file
-    const imagePath = path.join(attachmentsDir, uniqueName);
+    const imagePath = resolveInsideRoot(this.vaultPath, path.join('attachments', uniqueName));
     fs.writeFileSync(imagePath, Buffer.from(base64Content, 'base64'));
     
     // Return relative path for markdown
@@ -525,15 +526,16 @@ export class FileSystemManager {
   ): Promise<{ relativePath: string; isDuplicate: boolean }> {
     if (!this.vaultPath) throw new Error('No vault path set');
 
-    const attachmentsDir = path.join(this.vaultPath, 'attachments');
+    const attachmentsDir = resolveInsideRoot(this.vaultPath, 'attachments');
     if (!fs.existsSync(attachmentsDir)) {
       fs.mkdirSync(attachmentsDir, { recursive: true });
     }
 
+    const safeName = sanitizeAttachmentFileName(fileName || 'image.png');
     const base64Content = base64Data.replace(/^data:image\/\w+;base64,/, '');
     const buffer = Buffer.from(base64Content, 'base64');
     const hash = this.hashContent(buffer);
-    const ext = path.extname(fileName);
+    const ext = path.extname(safeName);
 
     // Check if a file with this hash already exists
     const mappingPath = path.join(this.ensureDataDir(), 'attachment-map.json');
@@ -551,7 +553,7 @@ export class FileSystemManager {
 
     // New file — store with hash name
     const hashName = `${hash}${ext}`;
-    const imagePath = path.join(attachmentsDir, hashName);
+    const imagePath = resolveInsideRoot(this.vaultPath, path.join('attachments', hashName));
     fs.writeFileSync(imagePath, buffer);
 
     // Update mapping

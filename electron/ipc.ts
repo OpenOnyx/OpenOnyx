@@ -11,6 +11,9 @@ import * as nodePath from 'path';
 import { FileSystemManager } from './fileSystem.js';
 import { SearchEngine } from './search.js';
 import { allowedExternalUrl } from './externalUrl.js';
+import { assertPublicHttpUrl } from './outboundUrl.js';
+import { isInsideRoot } from './pathSafety.js';
+import { approveVaultPath, isApprovedVaultPath, seedApprovedVaultPaths } from './vaultAccess.js';
 
 export function registerIpcHandlers(
   ipcMain: IpcMain,
@@ -21,9 +24,28 @@ export function registerIpcHandlers(
   getPreviousPaths?: () => string[],
   removePreviousPath?: (vaultPath: string) => string[],
 ): void {
+  seedApprovedVaultPaths([
+    fsManager.getVaultPath?.(),
+    ...(getPreviousPaths ? getPreviousPaths() : []),
+  ]);
+
+  const resolveInsideCurrentVault = (targetPath: string): string => {
+    const vaultPath = fsManager.getVaultPath();
+    if (!vaultPath) throw new Error('No vault path set');
+    const resolved = nodePath.isAbsolute(targetPath)
+      ? nodePath.resolve(targetPath)
+      : fsManager.getAbsolutePath(targetPath);
+    if (!isInsideRoot(vaultPath, resolved)) {
+      throw new Error('Path is outside the active vault');
+    }
+    return resolved;
+  };
 
   // ── Vault Operations ──────────────────────────────
   ipcMain.handle('vault:setPath', async (_event, vaultPath: string) => {
+    if (vaultPath && !isApprovedVaultPath(vaultPath)) {
+      throw new Error('Vault path must come from a folder dialog or a previously opened vault');
+    }
     const success = fsManager.setVaultPath(vaultPath);
     if (success) {
       if (onVaultPathChange) onVaultPathChange(vaultPath);
@@ -57,20 +79,44 @@ export function registerIpcHandlers(
 
   ipcMain.handle('desktop:showOpenDialog', async (_event, options: Electron.OpenDialogOptions) => {
     const owner = getMainWindow();
-    return owner ? dialog.showOpenDialog(owner, options) : dialog.showOpenDialog(options);
+    const result = owner ? await dialog.showOpenDialog(owner, options) : await dialog.showOpenDialog(options);
+    result.filePaths?.forEach((filePath) => approveVaultPath(filePath));
+    return result;
   });
 
   ipcMain.handle('desktop:showSaveDialog', async (_event, options: Electron.SaveDialogOptions) => {
     const owner = getMainWindow();
-    return owner ? dialog.showSaveDialog(owner, options) : dialog.showSaveDialog(options);
+    const result = owner ? await dialog.showSaveDialog(owner, options) : await dialog.showSaveDialog(options);
+    approveVaultPath(result.filePath);
+    return result;
   });
 
-  ipcMain.handle('desktop:openPath', async (_event, targetPath: string) => shell.openPath(targetPath));
+  ipcMain.handle('desktop:openPath', async (_event, targetPath: string) => {
+    return shell.openPath(resolveInsideCurrentVault(targetPath));
+  });
   ipcMain.handle('desktop:openExternal', async (_event, url: string) => {
     await shell.openExternal(allowedExternalUrl(url));
   });
-  ipcMain.handle('desktop:showItemInFolder', (_event, targetPath: string) => shell.showItemInFolder(targetPath));
+  ipcMain.handle('desktop:showItemInFolder', (_event, targetPath: string) => {
+    shell.showItemInFolder(resolveInsideCurrentVault(targetPath));
+  });
   ipcMain.handle('desktop:getPath', (_event, name: Parameters<typeof app.getPath>[0]) => app.getPath(name));
+
+  ipcMain.handle('desktop:renamePath', async (_event, oldPath: string, newPath: string) => {
+    if (!oldPath || !newPath) throw new Error('Missing path');
+    if (!isApprovedVaultPath(oldPath)) {
+      throw new Error('Source vault is not approved');
+    }
+    const resolvedOld = nodePath.resolve(oldPath);
+    const resolvedNew = nodePath.resolve(newPath);
+    const sourceParent = nodePath.dirname(resolvedOld);
+    const destParent = nodePath.dirname(resolvedNew);
+    if (destParent !== sourceParent && !isApprovedVaultPath(destParent)) {
+      throw new Error('Destination is not approved');
+    }
+    await fs.rename(resolvedOld, resolvedNew);
+    approveVaultPath(resolvedNew);
+  });
 
   // ── File Operations ───────────────────────────────
   ipcMain.handle('fs:listFiles', async (_event, dirPath?: string) => {
@@ -216,7 +262,7 @@ export function registerIpcHandlers(
   // ── Network (CORS Bypass) ─────────────────────────
   ipcMain.handle('data:fetch', async (_event, url: string) => {
     try {
-      const res = await fetch(url, {
+      const res = await fetch(assertPublicHttpUrl(url), {
         headers: {
           'User-Agent': 'OpenOnyx/1.0',
           'Accept': 'application/json, text/plain, */*',
@@ -309,7 +355,7 @@ export function registerIpcHandlers(
 
   ipcMain.handle('network:request', async (_event, params: any) => {
     try {
-      const url = params.url;
+      const url = assertPublicHttpUrl(params?.url);
       const options: RequestInit = {
         method: params.method || 'GET',
         headers: {

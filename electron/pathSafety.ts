@@ -24,3 +24,16 @@ export function isSafeVaultProtocolPath(vaultPath: string, relativePath: string)
   const resolved = path.resolve(vaultPath, cleaned);
   return isInsideRoot(vaultPath, resolved);
 }
+
+/** Basename-only attachment name that cannot walk out of the attachments folder. */
+export function sanitizeAttachmentFileName(fileName: string): string {
+  const base = path.basename(fileName || "").trim();
+  if (!base || base === "." || base === "..") {
+    throw new Error("Invalid attachment file name");
+  }
+  const ext = path.extname(base);
+  if (ext && !/^\.[A-Za-z0-9]{1,8}$/.test(ext)) {
+    throw new Error("Invalid attachment file extension");
+  }
+  return base;
+}

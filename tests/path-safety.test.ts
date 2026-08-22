@@ -4,6 +4,7 @@ import {
   isInsideRoot,
   isSafeVaultProtocolPath,
   resolveInsideRoot,
+  sanitizeAttachmentFileName,
 } from "../electron/pathSafety";
 
 describe("path safety", () => {
@@ -29,5 +30,12 @@ describe("path safety", () => {
   it("blocks vault:// paths that walk out of the vault", () => {
     expect(isSafeVaultProtocolPath(root, "attachments/a.png")).toBe(true);
     expect(isSafeVaultProtocolPath(root, "../../etc/passwd")).toBe(false);
+  });
+
+  it("keeps attachment names inside the attachments folder", () => {
+    expect(sanitizeAttachmentFileName("../../etc/passwd.png")).toBe("passwd.png");
+    expect(sanitizeAttachmentFileName("photo.jpg")).toBe("photo.jpg");
+    expect(() => sanitizeAttachmentFileName("..")).toThrow("Invalid attachment file name");
+    expect(() => sanitizeAttachmentFileName("note.toolongext")).toThrow("Invalid attachment file extension");
   });
 });
