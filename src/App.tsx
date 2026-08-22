@@ -430,6 +430,7 @@ export default function App() {
   const [graphFullScreen, setGraphFullScreen] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
   const [showBookmarks, setShowBookmarks] = useState(false);
+  const [folderRevealRequest, setFolderRevealRequest] = useState<{ path: string; nonce: number } | null>(null);
   const [bookmarkStore, setBookmarkStore] = useState<{
     vaultPath: string | null;
     items: BookmarkEntry[];
@@ -4152,6 +4153,20 @@ export default function App() {
     setNoteContentCache,
   });
 
+  const handleRevealFolderInNavigation = useCallback((path: string) => {
+    setShowSidebar(true);
+    setShowSearch(false);
+    setShowBookmarks(false);
+    ooAppRef.current?.workspace?.revealDefaultView?.("left");
+    setFolderRevealRequest((previous) => ({
+      path,
+      nonce: (previous?.nonce ?? 0) + 1,
+    }));
+  }, []);
+  const handleRevealFolderHandled = useCallback(() => {
+    setFolderRevealRequest(null);
+  }, []);
+
   // ── Commands (for Command Palette) ──────────────────
   const commands = useAppCommands({
     handleNewNote,
@@ -5118,6 +5133,8 @@ export default function App() {
                   onToggleGroupAutoSave={handleToggleGroupAutoSave}
                   onAddFileToGroup={handleAddFileToGroup}
                   hasWallpaper={Boolean(settings.backgroundImage)}
+                  revealFolderRequest={folderRevealRequest}
+                  onRevealFolderHandled={handleRevealFolderHandled}
                 />
               )}
             </div>
@@ -5430,6 +5447,7 @@ export default function App() {
           showEditingMode={settings.showEditingModeStatusBar !== false}
           backlinkCount={backlinks.length}
           syncStatus={syncStatus}
+          onRevealFolder={handleRevealFolderInNavigation}
         />
       )}
     </div>

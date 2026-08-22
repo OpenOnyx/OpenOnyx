@@ -76,6 +76,8 @@ interface SidebarProps {
   onDuplicateGroup?: (id: string) => void;
   onToggleGroupAutoSave?: (id: string) => void;
   hasWallpaper?: boolean;
+  revealFolderRequest?: { path: string; nonce: number } | null;
+  onRevealFolderHandled?: () => void;
 }
 
 type SortMode =
@@ -399,6 +401,8 @@ export function Sidebar({
   onToggleGroupAutoSave = () => {},
   onAddFileToGroup = () => {},
   hasWallpaper = false,
+  revealFolderRequest = null,
+  onRevealFolderHandled,
 }: SidebarProps) {
   const [expandedDirs, setExpandedDirs] = useState<Set<string>>(new Set());
   const [selectedFolder, setSelectedFolder] = useState<string | null>("");
@@ -566,6 +570,55 @@ export function Sidebar({
       return changed ? next : previous;
     });
   }, [activeFilePath, starredNotes]);
+
+  useEffect(() => {
+    if (!revealFolderRequest) return;
+    const targetPath = revealFolderRequest.path;
+    const maxRevealAttempts = 20;
+    let frame = 0;
+    let attempts = 0;
+
+    setFilterQuery("");
+    setSelectedFolder(targetPath);
+    setIsFoldersCollapsed(false);
+
+    setExpandedDirs((previous) => {
+      const next = new Set(previous);
+      let currentPath = "";
+      let changed = false;
+
+      for (const part of targetPath.split("/").filter(Boolean)) {
+        currentPath = currentPath ? `${currentPath}/${part}` : part;
+        if (!next.has(currentPath)) {
+          next.add(currentPath);
+          changed = true;
+        }
+      }
+
+      return changed ? next : previous;
+    });
+
+    const revealTarget = () => {
+      const folderItems = document.querySelectorAll<HTMLElement>("[data-sidebar-folder-path]");
+      const target = Array.from(folderItems).find(
+        (element) => element.dataset.sidebarFolderPath === targetPath,
+      );
+      if (target) {
+        target.scrollIntoView({ block: "nearest" });
+        onRevealFolderHandled?.();
+        return;
+      }
+
+      attempts += 1;
+      if (attempts < maxRevealAttempts) {
+        frame = window.requestAnimationFrame(revealTarget);
+      }
+    };
+
+    frame = window.requestAnimationFrame(revealTarget);
+
+    return () => window.cancelAnimationFrame(frame);
+  }, [onRevealFolderHandled, revealFolderRequest]);
 
   const toggleDir = (path: string) => {
     setExpandedDirs((prev) => {
@@ -918,6 +971,7 @@ export function Sidebar({
       return (
         <React.Fragment key={entry.path}>
           <button
+            data-sidebar-folder-path={entry.path}
             className={cx(
               "nn-folder-item",
               isSelected && "active",
@@ -1216,6 +1270,7 @@ export function Sidebar({
                 >
                   {/* Special / virtual views */}
                   <button
+                    data-sidebar-folder-path=""
                     className={cx(
                       "nn-folder-item",
                       selectedFolder === "" && "active",
