@@ -139,7 +139,7 @@ function cx(...classes: Array<string | false | null | undefined>) {
 }
 
 const titlebarClass =
-  "titlebar onyx-titlebar relative z-[3200] flex h-[var(--titlebar-height)] min-h-[var(--titlebar-height)] w-full shrink-0 select-none items-center bg-[var(--titlebar-background,var(--bg-secondary))] text-[length:var(--font-ui-small)] border-b border-[var(--divider-color)] [-webkit-app-region:drag]";
+  "titlebar mod-top onyx-titlebar relative z-[3200] flex h-[var(--titlebar-height)] min-h-[var(--titlebar-height)] w-full shrink-0 select-none items-center bg-[var(--titlebar-background,var(--bg-secondary))] text-[length:var(--font-ui-small)] border-b border-[var(--divider-color)] [-webkit-app-region:drag]";
 const titlebarDragHandleClass =
   "absolute inset-0 z-[1] pointer-events-auto [-webkit-app-region:drag]";
 const titlebarLeftClass =
@@ -150,7 +150,7 @@ const titlebarActionBtnClass =
   "titlebar-action-btn flex h-8 w-8 cursor-pointer items-center justify-center rounded-[8px] border-0 bg-transparent p-0 text-[var(--text-secondary)] transition-all duration-120 pointer-events-auto [-webkit-app-region:no-drag] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]";
 const titlebarVaultActionsClass = "flex items-center gap-0.5 px-2";
 const titlebarTabsClass =
-  "relative z-[2] flex h-full min-w-0 flex-1 items-center overflow-hidden pl-1 pr-3 pointer-events-auto [-webkit-app-region:drag]";
+  "workspace-tab-header-container relative z-[2] flex h-full min-w-0 flex-1 items-center overflow-hidden pl-1 pr-3 pointer-events-auto [-webkit-app-region:drag]";
 const titlebarTabScrollClass =
   "relative z-[1] flex h-full min-w-0 flex-1 items-center gap-0.5 overflow-x-auto overflow-y-hidden px-1 pointer-events-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden [-webkit-app-region:drag]";
 const titlebarTabSlotClass =
@@ -162,9 +162,9 @@ const titlebarGroupSlotClass =
 const titlebarTabsRemainderClass =
   "h-full min-w-0 flex-1 shrink-0 pointer-events-auto [-webkit-app-region:drag]";
 const titlebarTabClass =
-  "titlebar-tab group relative z-[2] flex h-[30px] w-full min-w-0 cursor-grab items-center gap-1 whitespace-nowrap rounded-[8px] border border-transparent bg-transparent px-1 font-[var(--font-sans)] text-[13px] text-[var(--tab-text-color)] transition-[background-color,border-color,color,box-shadow] duration-75 [-webkit-app-region:no-drag] [scroll-margin-inline-start:6px] active:cursor-grabbing hover:bg-[var(--bg-hover)]";
+  "titlebar-tab workspace-tab-header group relative z-[2] flex h-[30px] w-full min-w-0 cursor-grab items-center gap-1 whitespace-nowrap rounded-[8px] border border-transparent bg-transparent px-1 font-[var(--font-sans)] text-[13px] text-[var(--tab-text-color)] transition-[background-color,border-color,color,box-shadow] duration-75 [-webkit-app-region:no-drag] [scroll-margin-inline-start:6px] active:cursor-grabbing hover:bg-[var(--bg-hover)]";
 const titlebarTabActiveClass =
-  "active z-[4] !border-[var(--border-subtle)] !bg-[var(--tab-background-active)] !text-[var(--tab-text-color-focused-active-current)] shadow-[0_1px_3px_rgba(15,23,42,0.08)]";
+  "active mod-active is-active z-[4] !border-[var(--border-subtle)] !bg-[var(--tab-background-active)] !text-[var(--tab-text-color-focused-active-current)] shadow-[0_1px_3px_rgba(15,23,42,0.08)]";
 const titlebarTabDropLeftClass =
   "drop-target-left !shadow-[inset_2px_0_0_var(--accent-color,#2563eb)]";
 const titlebarTabDropRightClass =
@@ -174,12 +174,12 @@ const titlebarGroupedTabClass =
 const titlebarGroupedActiveTabClass =
   "!bg-[var(--tab-background-active)] !shadow-[0_1px_3px_rgba(15,23,42,0.08)] opacity-100";
 const titlebarTabInnerClass =
-  "tab-inner flex h-full w-full items-center gap-1.5 overflow-hidden rounded-[8px] px-2";
+  "tab-inner workspace-tab-header-inner flex h-full w-full items-center gap-1.5 overflow-hidden rounded-[8px] px-2";
 const titlebarTabDotClass = "shrink-0 text-[8px] text-[var(--text-muted)]";
 const titlebarTabTitleClass =
-  "flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-left leading-none";
+  "workspace-tab-header-inner-title flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-left leading-none";
 const titlebarTabCloseClass =
-  "flex h-5 w-5 shrink-0 cursor-pointer items-center justify-center rounded-full border-0 bg-transparent p-0 text-[10px] text-[var(--text-muted)] opacity-0 transition-[var(--transition-fast)] group-hover:opacity-100 group-hover:text-[var(--tab-text-color-focused)] group-[.active]:opacity-100 group-[.active]:text-[var(--tab-text-color-focused)] hover:bg-[var(--bg-hover)] hover:text-[var(--tab-text-color-focused-active-current)]";
+  "workspace-tab-header-inner-close-button flex h-5 w-5 shrink-0 cursor-pointer items-center justify-center rounded-full border-0 bg-transparent p-0 text-[10px] text-[var(--text-muted)] opacity-0 transition-[var(--transition-fast)] group-hover:opacity-100 group-hover:text-[var(--tab-text-color-focused)] group-[.active]:opacity-100 group-[.active]:text-[var(--tab-text-color-focused)] hover:bg-[var(--bg-hover)] hover:text-[var(--tab-text-color-focused-active-current)]";
 const titlebarNewTabClass =
   "titlebar-new-tab titlebar-btn ml-0.5 !h-7 !w-7 shrink-0 !rounded-[8px]";
 const titlebarNewTabSlotClass =

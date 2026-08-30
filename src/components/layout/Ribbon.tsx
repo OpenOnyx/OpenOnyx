@@ -44,12 +44,12 @@ function OnyxMark({ size = 22 }: { size?: number }) {
 }
 
 const ribbonRootClass =
-  "ribbon onyx-launcher flex flex-col justify-between items-center w-[var(--ribbon-width)] bg-[var(--bg-launcher,var(--bg-secondary))] border-r border-[var(--divider-color)] shrink-0 pt-2.5 pb-3";
+  "ribbon workspace-ribbon side-dock-ribbon mod-left onyx-launcher flex flex-col justify-between items-center w-[var(--ribbon-width)] bg-[var(--background-secondary,var(--bg-launcher,var(--bg-secondary)))] border-r border-[var(--divider-color)] shrink-0 pt-1 pb-3";
 const ribbonGroupClass = "flex flex-col items-center gap-0.5";
 const ribbonBtnClass =
-  "flex h-9 w-9 cursor-pointer items-center justify-center rounded-[8px] border-0 bg-transparent text-[var(--text-secondary)] transition-colors duration-150 hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]";
+  "side-dock-ribbon-action clickable-icon flex h-9 w-9 cursor-pointer items-center justify-center rounded-[8px] border-0 bg-transparent text-[var(--text-secondary)] transition-colors duration-150 hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]";
 const ribbonBtnActiveClass =
-  "bg-[var(--bg-active)] text-[var(--text-primary)]";
+  "is-active bg-[var(--bg-active)] text-[var(--text-primary)]";
 const ribbonLogoClass =
   "mb-2 flex h-10 w-10 cursor-default items-center justify-center";
 const pluginRibbonIconClass =
@@ -125,10 +125,7 @@ export function Ribbon({
     <div
       className={ribbonRootClass}
       ref={ribbonRootRef}
-      style={{
-        ...isMac ? { paddingTop: '32px' } : {},
-        ...(hasWallpaper ? {} : { backgroundColor: 'var(--bg-launcher, var(--bg-secondary))' })
-      }}
+      style={isMac ? { paddingTop: '32px' } : undefined}
     >
       <div className={ribbonGroupClass} ref={ribbonItemsRef}>
 

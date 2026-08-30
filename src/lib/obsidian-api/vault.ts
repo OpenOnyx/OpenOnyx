@@ -303,6 +303,7 @@ export class OOVault extends Events {
       append: async (path: string, data: string) => {
         try {
           const existing = await api().readFile(path);
+          if (existing && (existing.endsWith(data) || existing.includes(data.trim()))) return;
           await api().writeFile(path, (existing || '') + data);
         } catch {
           await api().writeFile(path, data);

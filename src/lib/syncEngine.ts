@@ -335,12 +335,15 @@ export class SyncEngine {
 
   private async saveConflictCopy(payload: any) {
     try {
-      if (!payload.path || !payload.content) return;
-      const ext = payload.path.endsWith('.canvas') ? '.canvas' : '.md';
-      const basePath = payload.path.slice(0, -ext.length);
+      if (!payload.path || payload.content === undefined || payload.content === null) return;
+      const cleanPath = normalizeSyncPath(payload.path);
+      const ext = cleanPath.endsWith('.canvas') ? '.canvas' : '.md';
+      const basePath = cleanPath.slice(0, -ext.length);
       const conflictPath = `${basePath} (conflict)${ext}`;
 
       const api = getAPI();
+      const existingConflictContent = await api.readFile(conflictPath).catch(() => null);
+      if (existingConflictContent === payload.content) return;
       if (conflictPath.includes('/')) {
         const parentDir = conflictPath.split('/').slice(0, -1).join('/');
         try { await api.createDirectory(parentDir); } catch { /* exists */ }
@@ -437,6 +440,9 @@ export class SyncEngine {
         }
         if (payload.path) {
           payload.path = normalizeSyncPath(payload.path);
+        }
+        if (payload.content === undefined || payload.content === null) {
+          payload.content = "";
         }
         if (payload.is_canvas && payload.content) {
           try {

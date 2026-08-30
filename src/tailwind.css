@@ -9,9 +9,698 @@ body,
   overflow: hidden;
 }
 
+/* Baseline body styles */
+
 body {
   background: var(--bg-primary);
 }
+
+/* ── Baseline lightness & chroma values for OKLCH CSS theme snippets ── */
+/* ── Obsidian Base Color Palette + Extended Colors ── */
+:where(.theme-dark) {
+  --text-normal: var(--color-base-100);
+  --text-muted: var(--color-base-60);
+  --text-faint: var(--color-base-50);
+  --background-primary: var(--color-base-00);
+  --background-primary-alt: var(--color-base-05);
+  --background-secondary: var(--color-base-10);
+  --background-secondary-alt: var(--color-base-20);
+  --accent-primary: #3b82f6;
+  --accent-secondary: #2563eb;
+  --rtm-l-txt-normal: 0.85;
+  --rtm-l-txt-mute: 0.65;
+  --rtm-l-txt-faint: 0.45;
+  --rtm-c-txt: 0.12;
+  --rtm-c-accent: 1;
+  --rtm-l-low: 0.25;
+  --rtm-l-mid: 0.55;
+  --rtm-l-high: 0.85;
+  --rtm-l-neutral: 0.4;
+  --rtm-l-bg-paper: 0.14;
+  --rtm-l-bg-primary: 0.12;
+  --rtm-l-bg-primary-alt: 0.1;
+  --rtm-l-bg-secondary: 0.16;
+  --rtm-l-bg-secondary-alt: 0.18;
+  --rtm-l-bg-tertiary: 0.2;
+  --rtm-l-titlebar-bg-focus: 0.18;
+  --rtm-l-titlebar-txt-color-focus: 0.9;
+  --rtm-l-statusbar-bg: 0.14;
+  --rtm-l-acb: 0.6;
+  --rtm-l-metadata-property-border-color: 0.4;
+
+  /* Obsidian base color palette (dark mode) */
+  --color-base-00: #1c1c1c;
+  --color-base-05: #212121;
+  --color-base-10: #232323;
+  --color-base-20: #282828;
+  --color-base-25: #2e2e2e;
+  --color-base-30: #333333;
+  --color-base-35: #3f3f3f;
+  --color-base-40: #555555;
+  --color-base-50: #666666;
+  --color-base-60: #999999;
+  --color-base-70: #b3b3b3;
+  --color-base-100: #dadada;
+
+  /* Obsidian mono (dark mode) */
+  --mono-0: black;
+  --mono-100: white;
+  --mono-rgb-0: 0, 0, 0;
+  --mono-rgb-100: 255, 255, 255;
+
+  /* Obsidian extended colors (dark mode) */
+  --color-red: #fb464c;
+  --color-orange: #e9973f;
+  --color-yellow: #e0de71;
+  --color-green: #44cf6e;
+  --color-cyan: #53dfdd;
+  --color-blue: #027aff;
+  --color-purple: #a882ff;
+  --color-pink: #fa99cd;
+  --color-red-rgb: 251, 70, 76;
+  --color-orange-rgb: 233, 151, 63;
+  --color-yellow-rgb: 224, 222, 113;
+  --color-green-rgb: 68, 207, 110;
+  --color-cyan-rgb: 83, 223, 221;
+  --color-blue-rgb: 2, 122, 255;
+  --color-purple-rgb: 168, 130, 255;
+  --color-pink-rgb: 250, 153, 205;
+}
+
+:where(.theme-light) {
+  --text-normal: var(--color-base-100);
+  --text-muted: var(--color-base-60);
+  --text-faint: var(--color-base-50);
+  --background-primary: var(--color-base-00);
+  --background-primary-alt: var(--color-base-05);
+  --background-secondary: var(--color-base-10);
+  --background-secondary-alt: var(--color-base-20);
+  --accent-primary: #3b82f6;
+  --accent-secondary: #2563eb;
+  --rtm-l-txt-normal: 0.25;
+  --rtm-l-txt-mute: 0.45;
+  --rtm-l-txt-faint: 0.65;
+  --rtm-c-txt: 0.12;
+  --rtm-c-accent: 1;
+  --rtm-l-low: 0.75;
+  --rtm-l-mid: 0.45;
+  --rtm-l-high: 0.25;
+  --rtm-l-neutral: 0.6;
+  --rtm-l-bg-paper: 0.96;
+  --rtm-l-bg-primary: 0.98;
+  --rtm-l-bg-primary-alt: 1;
+  --rtm-l-bg-secondary: 0.94;
+  --rtm-l-bg-secondary-alt: 0.92;
+  --rtm-l-bg-tertiary: 0.9;
+  --rtm-l-titlebar-bg-focus: 0.92;
+  --rtm-l-titlebar-txt-color-focus: 0.1;
+  --rtm-l-statusbar-bg: 0.94;
+  --rtm-l-acb: 0.4;
+  --rtm-l-metadata-property-border-color: 0.6;
+
+  /* Obsidian base color palette (light mode) */
+  --color-base-00: #ffffff;
+  --color-base-05: #fcfcfc;
+  --color-base-10: #fafafa;
+  --color-base-20: #f6f6f6;
+  --color-base-25: #efefef;
+  --color-base-30: #e4e4e4;
+  --color-base-35: #dadada;
+  --color-base-40: #bdbdbd;
+  --color-base-50: #ababab;
+  --color-base-60: #707070;
+  --color-base-70: #5c5c5c;
+  --color-base-100: #222222;
+
+  /* Obsidian mono (light mode) */
+  --mono-0: white;
+  --mono-100: black;
+  --mono-rgb-0: 255, 255, 255;
+  --mono-rgb-100: 0, 0, 0;
+
+  /* Obsidian extended colors (light mode) */
+  --color-red: #e93147;
+  --color-orange: #ec7500;
+  --color-yellow: #e0ac00;
+  --color-green: #08b94e;
+  --color-cyan: #00bfbc;
+  --color-blue: #086ddd;
+  --color-purple: #7852ee;
+  --color-pink: #d53984;
+  --color-red-rgb: 233, 49, 71;
+  --color-orange-rgb: 236, 117, 0;
+  --color-yellow-rgb: 224, 172, 0;
+  --color-green-rgb: 8, 185, 78;
+  --color-cyan-rgb: 0, 191, 188;
+  --color-blue-rgb: 8, 109, 221;
+  --color-purple-rgb: 120, 82, 238;
+  --color-pink-rgb: 213, 57, 132;
+}
+
+/* ── Obsidian CSS Variable Compatibility Bridge ────────────────────── */
+/* Maps Obsidian's standard CSS variable names to OpenOnyx variables   */
+/* so that Obsidian themes and CSS snippets work out of the box.       */
+/* Themes set --background-primary etc.; our components use --bg-primary. */
+/* The fallback chain ensures both directions work.                     */
+:where(body, .app-container) {
+
+  /* ================================================================ */
+  /*  FOUNDATIONS                                                       */
+  /* ================================================================ */
+
+  /* -- Accent HSL components (snippets build custom shades from these) -- */
+  --accent-h: 258;
+  --accent-s: 88%;
+  --accent-l: 66%;
+  --color-accent: var(--accent-primary);
+  --color-accent-1: var(--accent-secondary, var(--accent-primary));
+  --color-accent-2: var(--accent-secondary, var(--accent-primary));
+  --color-accent-hsl: var(--accent-h), var(--accent-s), var(--accent-l);
+  --interactive-accent-hsl: var(--color-accent-hsl);
+
+  /* -- Background / surface variables -- */
+  --bg-primary: var(--background-primary);
+  --bg-secondary: var(--background-secondary, var(--background-primary-alt));
+  --bg-tertiary: var(--background-secondary-alt, var(--bg-secondary));
+  --background-modifier-border: var(--border-medium);
+  --background-modifier-border-hover: var(--border-strong, var(--background-modifier-border));
+  --background-modifier-border-focus: var(--accent-primary, var(--color-accent));
+  --background-modifier-form-field: var(--bg-input, var(--bg-secondary));
+  --background-modifier-hover: var(--bg-hover);
+  --background-modifier-active-hover: var(--bg-active);
+  --background-modifier-error-rgb: var(--color-red-rgb);
+  --background-modifier-error: var(--color-red);
+  --background-modifier-error-hover: var(--color-red);
+  --background-modifier-success-rgb: var(--color-green-rgb);
+  --background-modifier-success: var(--color-green);
+  --background-modifier-message: var(--bg-elevated, var(--bg-secondary));
+
+  /* -- Text variables -- */
+  --text-primary: var(--text-normal);
+  --text-secondary: var(--text-muted, var(--text-normal));
+  --text-tertiary: var(--text-faint, var(--text-muted));
+  --text-accent: var(--accent-primary);
+  --text-accent-hover: var(--accent-secondary, var(--accent-primary));
+  --text-on-accent: white;
+  --text-on-accent-inverted: black;
+  --text-success: var(--color-green);
+  --text-warning: var(--color-orange);
+  --text-error: var(--color-red);
+  --text-selection: var(--editor-selection-focused, rgba(37, 99, 235, 0.24));
+  --text-highlight-bg: var(--editor-selection, rgba(255, 255, 0, 0.2));
+  --text-highlight-bg-rgb: 255, 255, 0;
+  --caret-color: var(--accent-primary, var(--color-accent));
+
+  /* -- Interactive / accent -- */
+  --interactive-normal: var(--bg-secondary);
+  --interactive-hover: var(--bg-hover);
+  --interactive-accent: var(--accent-primary);
+  --interactive-accent-hover: var(--accent-secondary, var(--accent-primary));
+
+  /* -- Spacing grid (Obsidian 4px / 2px grid) -- */
+  --size-2-1: 2px;
+  --size-2-2: 4px;
+  --size-2-3: 6px;
+  --size-4-1: 4px;
+  --size-4-2: 8px;
+  --size-4-3: 12px;
+  --size-4-4: 16px;
+  --size-4-5: 20px;
+  --size-4-6: 24px;
+  --size-4-8: 32px;
+  --size-4-9: 36px;
+  --size-4-12: 48px;
+  --size-4-16: 64px;
+  --size-4-18: 72px;
+
+  /* -- Layers (z-index tokens) -- */
+  --layer-cover: 5;
+  --layer-sidedock: 10;
+  --layer-status-bar: 15;
+  --layer-popover: 30;
+  --layer-slides: 45;
+  --layer-modal: 50;
+  --layer-notice: 60;
+  --layer-menu: 65;
+  --layer-tooltip: 70;
+  --layer-dragged-item: 80;
+
+  /* -- Borders -- */
+  --border-width: 1px;
+
+  /* -- Radii -- */
+  --radius-s: var(--radius-sm, 4px);
+  --radius-m: var(--radius-md, 8px);
+  --radius-l: var(--radius-lg, 12px);
+  --radius-xl: 16px;
+
+  /* -- Cursors -- */
+  --cursor: default;
+  --cursor-link: pointer;
+
+  /* -- Icons -- */
+  --icon-size: 18px;
+  --icon-stroke: 1.75px;
+  --icon-color: var(--text-muted);
+  --icon-color-hover: var(--text-primary);
+  --icon-color-active: var(--text-primary);
+  --icon-color-focused: var(--text-secondary);
+  --icon-opacity: 0.85;
+  --icon-opacity-hover: 1;
+  --icon-opacity-active: 1;
+  --clickable-icon-radius: var(--radius-s);
+  --icon-xs: 14px;
+  --icon-s: 16px;
+  --icon-m: 18px;
+  --icon-l: 18px;
+  --icon-xl: 32px;
+  --icon-xs-stroke-width: 2px;
+  --icon-s-stroke-width: 2px;
+  --icon-m-stroke-width: 1.75px;
+  --icon-l-stroke-width: 1.75px;
+  --icon-xl-stroke-width: 1.25px;
+
+  /* ================================================================ */
+  /*  TYPOGRAPHY                                                        */
+  /* ================================================================ */
+
+  --font-interface-theme: inherit;
+  --font-text-theme: inherit;
+  --font-monospace-theme: var(--font-mono, monospace);
+  --font-text-size: 16px;
+  --font-smallest: 0.8em;
+  --font-smaller: 0.875em;
+  --font-small: 0.933em;
+  --font-ui-smaller: 12px;
+  --font-ui-small: 13px;
+  --font-ui-medium: 15px;
+  --font-ui-large: 20px;
+
+  /* Font weights */
+  --font-thin: 100;
+  --font-extralight: 200;
+  --font-light: 300;
+  --font-normal: 400;
+  --font-medium: 500;
+  --font-semibold: 600;
+  --font-bold: 700;
+  --font-extrabold: 800;
+  --font-black: 900;
+
+  /* Text formatting */
+  --font-weight: 400;
+  --bold-modifier: 200;
+  --bold-weight: 700;
+  --bold-color: var(--text-primary);
+  --italic-color: var(--text-primary);
+
+  /* Line heights */
+  --line-height-normal: 1.5;
+  --line-height-tight: 1.3;
+
+  /* Paragraph spacing */
+  --heading-spacing: 0.75em;
+  --p-spacing: 1em;
+
+  /* ================================================================ */
+  /*  EDITOR                                                            */
+  /* ================================================================ */
+
+  /* -- Headings -- */
+  --heading-formatting: var(--text-faint);
+  --h1-color: inherit;
+  --h2-color: inherit;
+  --h3-color: inherit;
+  --h4-color: inherit;
+  --h5-color: inherit;
+  --h6-color: inherit;
+  --h1-font: inherit;
+  --h2-font: inherit;
+  --h3-font: inherit;
+  --h4-font: inherit;
+  --h5-font: inherit;
+  --h6-font: inherit;
+  --h1-line-height: 1.2;
+  --h2-line-height: 1.2;
+  --h3-line-height: 1.3;
+  --h4-line-height: 1.4;
+  --h5-line-height: 1.4;
+  --h6-line-height: 1.4;
+  --h1-size: 2em;
+  --h2-size: 1.6em;
+  --h3-size: 1.37em;
+  --h4-size: 1.18em;
+  --h5-size: 1em;
+  --h6-size: 0.85em;
+  --h1-style: normal;
+  --h2-style: normal;
+  --h3-style: normal;
+  --h4-style: normal;
+  --h5-style: normal;
+  --h6-style: normal;
+  --h1-variant: normal;
+  --h2-variant: normal;
+  --h3-variant: normal;
+  --h4-variant: normal;
+  --h5-variant: normal;
+  --h6-variant: normal;
+  --h1-weight: 700;
+  --h2-weight: 600;
+  --h3-weight: 600;
+  --h4-weight: 600;
+  --h5-weight: 600;
+  --h6-weight: 600;
+
+  /* -- Inline title -- */
+  --inline-title-color: var(--text-primary);
+  --inline-title-font: inherit;
+  --inline-title-line-height: 1.2;
+  --inline-title-size: 1.8em;
+  --inline-title-style: normal;
+  --inline-title-variant: normal;
+  --inline-title-weight: 700;
+
+  /* -- Links -- */
+  --link-color: var(--editor-link, var(--accent-primary));
+  --link-color-hover: var(--editor-link-hover, var(--accent-secondary, var(--accent-primary)));
+  --link-decoration: underline;
+  --link-decoration-hover: underline;
+  --link-decoration-thickness: auto;
+  --link-weight: inherit;
+  --link-unresolved-color: var(--link-color);
+  --link-unresolved-opacity: 0.7;
+  --link-unresolved-filter: none;
+  --link-unresolved-decoration-style: solid;
+  --link-unresolved-decoration-color: inherit;
+  --link-external-color: var(--editor-link, var(--accent-primary));
+  --link-external-color-hover: var(--editor-link-hover, var(--accent-secondary, var(--accent-primary)));
+  --link-external-decoration: underline;
+  --link-external-decoration-hover: underline;
+
+  /* -- Tags -- */
+  --tag-color: var(--editor-tag, var(--accent-primary));
+  --tag-color-hover: var(--tag-color);
+  --tag-background: var(--editor-tag-bg, transparent);
+  --tag-background-hover: var(--tag-background);
+  --tag-decoration: none;
+  --tag-decoration-hover: none;
+  --tag-border-color: transparent;
+  --tag-border-color-hover: transparent;
+  --tag-border-width: 0px;
+  --tag-padding-x: 0;
+  --tag-padding-y: 0;
+  --tag-radius: var(--radius-s);
+  --tag-size: var(--font-smaller);
+  --tag-weight: inherit;
+
+  /* -- Code -- */
+  --code-normal: var(--editor-code, var(--text-primary));
+  --code-background: var(--bg-secondary);
+  --code-size: var(--font-smaller);
+  --code-white-space: pre-wrap;
+  --code-comment: var(--text-faint, #707070);
+  --code-function: var(--color-yellow);
+  --code-important: var(--color-orange);
+  --code-keyword: var(--color-pink);
+  --code-operator: var(--color-red);
+  --code-property: var(--color-cyan);
+  --code-punctuation: var(--text-muted);
+  --code-string: var(--color-green);
+  --code-tag: var(--color-red);
+  --code-value: var(--color-purple);
+
+  /* -- Blockquote -- */
+  --blockquote-border-color: var(--accent-primary);
+  --blockquote-background-color: transparent;
+  --blockquote-border-thickness: 3px;
+  --blockquote-font-style: normal;
+  --blockquote-color: inherit;
+
+  /* -- Horizontal rule -- */
+  --hr-color: var(--border-medium);
+  --hr-thickness: 2px;
+
+  /* -- Lists -- */
+  --list-indent: 2em;
+  --list-indent-editing: 2em;
+  --list-indent-source: 2em;
+  --list-spacing: 0.075em;
+  --list-marker-color: var(--text-faint);
+  --list-marker-color-hover: var(--text-muted);
+  --list-marker-color-collapsed: var(--text-accent);
+  --list-bullet-border: none;
+  --list-bullet-end-padding: 0;
+  --list-bullet-radius: 50%;
+  --list-bullet-size: 5px;
+  --list-bullet-transform: none;
+  --list-numbered-style: decimal;
+
+  /* -- Checkbox -- */
+  --checkbox-color: var(--accent-primary);
+  --checkbox-color-hover: var(--accent-secondary, var(--accent-primary));
+  --checkbox-border-color: var(--accent-primary);
+  --checkbox-border-color-hover: var(--checkbox-color-hover);
+  --checkbox-radius: var(--radius-s);
+  --checkbox-size: 15px;
+  --checkbox-marker-color: var(--text-on-accent, white);
+  --checklist-done-color: var(--text-muted);
+  --checklist-done-decoration: line-through;
+
+  /* -- Tables -- */
+  --table-background: transparent;
+  --table-border-width: 1px;
+  --table-border-color: var(--background-modifier-border);
+  --table-cell-vertical-alignment: top;
+  --table-white-space: normal;
+  --table-header-background: transparent;
+  --table-header-background-hover: var(--background-modifier-hover);
+  --table-header-border-width: var(--table-border-width);
+  --table-header-border-color: var(--table-border-color);
+  --table-header-font: inherit;
+  --table-header-size: var(--font-smaller);
+  --table-header-weight: var(--font-bold);
+  --table-header-color: var(--text-normal);
+  --table-line-height: var(--line-height-normal);
+  --table-text-size: inherit;
+  --table-text-color: var(--text-normal);
+  --table-column-max-width: none;
+  --table-column-alt-background: transparent;
+  --table-column-first-border-width: 0;
+  --table-column-last-border-width: 0;
+  --table-row-background-hover: var(--background-modifier-hover);
+  --table-row-alt-background: transparent;
+  --table-row-alt-background-hover: var(--table-row-background-hover);
+  --table-row-last-border-width: var(--table-border-width);
+  --table-selection: var(--color-accent);
+  --table-selection-blend-mode: multiply;
+  --table-selection-border-color: var(--color-accent);
+  --table-selection-border-width: 2px;
+  --table-selection-border-radius: 0;
+  --table-drag-handle-background: var(--background-modifier-hover);
+  --table-drag-handle-background-active: var(--interactive-accent);
+  --table-drag-handle-color: var(--text-faint);
+  --table-drag-handle-color-active: var(--text-on-accent);
+  --table-add-button-background: transparent;
+  --table-add-button-border-width: var(--table-border-width);
+  --table-add-button-border-color: var(--table-border-color);
+
+  /* -- Callouts -- */
+  --callout-border-width: 0px;
+  --callout-border-opacity: 0.25;
+  --callout-padding: var(--size-4-3) var(--size-4-4) var(--size-4-3) var(--size-4-6);
+  --callout-radius: var(--radius-s);
+  --callout-blend-mode: normal;
+  --callout-title-color: inherit;
+  --callout-title-padding: 0;
+  --callout-title-size: inherit;
+  --callout-title-weight: var(--font-semibold);
+  --callout-content-padding: 0;
+  --callout-content-background: transparent;
+  /* Callout type colors */
+  --callout-bug: var(--color-red);
+  --callout-default: var(--text-muted);
+  --callout-error: var(--color-red);
+  --callout-example: var(--color-purple);
+  --callout-fail: var(--color-red);
+  --callout-important: var(--color-cyan);
+  --callout-info: var(--color-blue);
+  --callout-question: var(--color-yellow);
+  --callout-success: var(--color-green);
+  --callout-summary: var(--color-cyan);
+  --callout-tip: var(--color-cyan);
+  --callout-todo: var(--color-blue);
+  --callout-warning: var(--color-orange);
+  --callout-quote: var(--text-muted);
+
+  /* -- Properties / Metadata -- */
+  --metadata-background: transparent;
+  --metadata-display-editing: flex;
+  --metadata-display-reading: none;
+  --metadata-max-width: var(--file-line-width);
+  --metadata-padding: var(--size-4-3) 0;
+  --metadata-border-color: var(--background-modifier-border);
+  --metadata-border-radius: var(--radius-m);
+  --metadata-border-width: 1px;
+  --metadata-gap: 0;
+  --metadata-divider-color: var(--background-modifier-border);
+  --metadata-divider-color-hover: var(--background-modifier-border-hover);
+  --metadata-divider-color-focus: var(--background-modifier-border-focus);
+  --metadata-divider-width: 1px;
+  --metadata-property-padding: var(--size-4-1) var(--size-4-3);
+  --metadata-property-radius: var(--radius-s);
+  --metadata-property-radius-hover: var(--radius-s);
+  --metadata-property-radius-focus: var(--radius-s);
+  --metadata-property-background: transparent;
+  --metadata-property-background-hover: var(--background-modifier-hover);
+  --metadata-property-background-active: var(--background-modifier-active-hover);
+  --metadata-label-background-hover: transparent;
+  --metadata-label-background-active: transparent;
+  --metadata-label-font-size: var(--font-ui-small);
+  --metadata-label-font-weight: var(--font-medium);
+  --metadata-sidebar-label-font-size: var(--font-ui-smaller);
+  --metadata-label-text-color: var(--text-muted);
+  --metadata-label-text-color-hover: var(--text-normal);
+  --metadata-label-width: 150px;
+  --metadata-input-height: var(--size-4-8);
+  --metadata-input-text-color: var(--text-normal);
+  --metadata-input-font-size: var(--font-ui-small);
+  --metadata-sidebar-input-font-size: var(--font-ui-smaller);
+  --metadata-input-background: transparent;
+  --metadata-input-background-hover: var(--background-modifier-hover);
+  --metadata-input-background-active: var(--background-modifier-form-field);
+
+  /* ================================================================ */
+  /*  COMPONENTS                                                        */
+  /* ================================================================ */
+
+  /* -- Nav items (File explorer, tree items) -- */
+  --nav-item-size: var(--font-ui-small);
+  --nav-item-color: var(--text-secondary, var(--text-muted));
+  --nav-item-color-hover: var(--text-primary, var(--text-normal));
+  --nav-item-color-active: var(--text-primary, var(--text-normal));
+  --nav-item-color-selected: var(--text-primary, var(--text-normal));
+  --nav-item-color-highlighted: var(--text-accent);
+  --nav-item-background-hover: var(--bg-hover, var(--background-modifier-hover));
+  --nav-item-background-active: var(--bg-active, var(--background-modifier-active-hover));
+  --nav-item-background-selected: var(--bg-active, var(--background-modifier-active-hover));
+  --nav-item-padding: var(--size-4-1) var(--size-4-3);
+  --nav-item-parent-padding: var(--nav-item-padding);
+  --nav-item-children-padding-start: 0;
+  --nav-item-children-margin-start: var(--size-4-3);
+  --nav-item-weight: var(--font-normal);
+  --nav-item-weight-hover: var(--nav-item-weight);
+  --nav-item-weight-active: var(--nav-item-weight);
+  --nav-item-white-space: nowrap;
+  --nav-indentation-guide-width: 1px;
+  --nav-indentation-guide-color: var(--background-modifier-border);
+  --nav-collapse-icon-color: var(--text-faint);
+  --nav-collapse-icon-color-collapsed: var(--text-faint);
+  /* Navigation headings */
+  --nav-heading-color: var(--text-muted);
+  --nav-heading-color-hover: var(--text-normal);
+  --nav-heading-color-collapsed: var(--text-faint);
+  --nav-heading-color-collapsed-hover: var(--text-muted);
+  --nav-heading-weight: var(--font-semibold);
+  --nav-heading-weight-hover: var(--nav-heading-weight);
+
+  /* -- Tabs -- */
+  --tab-background-active: var(--bg-primary, var(--background-primary));
+  --tab-text-color: var(--text-muted);
+  --tab-text-color-active: var(--text-primary, var(--text-normal));
+  --tab-text-color-focused: var(--text-muted);
+  --tab-text-color-focused-active: var(--text-primary, var(--text-normal));
+  --tab-text-color-focused-highlighted: var(--text-accent);
+  --tab-text-color-focused-active-current: var(--text-primary, var(--text-normal));
+  --tab-font-size: var(--font-ui-small);
+  --tab-font-weight: inherit;
+  --tab-container-background: var(--bg-secondary, var(--background-secondary));
+  --tab-divider-color: var(--background-modifier-border);
+  --tab-outline-width: 2px;
+  --tab-curve: 6px;
+  --tab-radius: 0;
+  --tab-radius-active: 0;
+  --tab-width: auto;
+  --tab-max-width: none;
+  /* Tab stacks */
+  --tab-stacked-pane-width: 40px;
+  --tab-stacked-header-width: var(--tab-stacked-pane-width);
+  --tab-stacked-font-size: var(--font-ui-small);
+  --tab-stacked-font-weight: inherit;
+  --tab-stacked-text-align: start;
+  --tab-stacked-text-transform: none;
+  --tab-stacked-text-writing-mode: vertical-lr;
+  --tab-stacked-shadow: none;
+
+  /* -- Modal -- */
+  --modal-background: var(--bg-primary, var(--background-primary));
+  --modal-width: 600px;
+  --modal-height: auto;
+  --modal-max-width: 90vw;
+  --modal-max-height: 85vh;
+  --modal-max-width-narrow: 400px;
+  --modal-border-width: 0px;
+  --modal-border-color: var(--background-modifier-border);
+  --modal-radius: var(--radius-l);
+  --modal-community-sidebar-width: 280px;
+
+  /* -- Scrollbar -- */
+  --scrollbar-bg: transparent;
+  --scrollbar-thumb-bg: var(--color-base-35, rgba(255, 255, 255, 0.1));
+  --scrollbar-active-thumb-bg: var(--color-base-40, rgba(255, 255, 255, 0.2));
+
+  /* ================================================================ */
+  /*  WINDOW                                                            */
+  /* ================================================================ */
+
+  /* -- Ribbon -- */
+  --ribbon-background: var(--bg-secondary, var(--background-secondary));
+  --ribbon-background-collapsed: var(--ribbon-background);
+  --ribbon-width: 44px;
+  --ribbon-padding: var(--size-4-2);
+
+  /* -- Status bar -- */
+  --status-bar-background: var(--bg-secondary, var(--background-secondary));
+  --status-bar-border-color: var(--divider-color, var(--background-modifier-border));
+  --status-bar-border-width: 1px;
+  --status-bar-font-size: var(--font-ui-smaller);
+  --status-bar-text-color: var(--text-muted);
+  --status-bar-position: sticky;
+  --status-bar-radius: 0;
+  --status-bar-scroll-padding: 0;
+
+  /* -- Titlebar / Window frame -- */
+  --titlebar-background: var(--bg-secondary, var(--background-secondary));
+  --titlebar-background-focused: var(--titlebar-background);
+  --titlebar-border-width: 0px;
+  --titlebar-border-color: var(--background-modifier-border);
+  --titlebar-text-color: var(--text-muted);
+  --titlebar-text-color-focused: var(--text-normal);
+  --titlebar-text-weight: var(--font-medium);
+  --header-height: 40px;
+
+  /* -- Divider -- */
+  --divider-color: var(--background-modifier-border);
+  --divider-color-hover: var(--color-accent);
+  --divider-width: 1px;
+  --divider-width-hover: 3px;
+  --divider-vertical-height: 16px;
+
+  /* -- Workspace -- */
+  --workspace-background-translucent: rgba(0, 0, 0, 0.5);
+
+  /* -- File explorer / Vault profile -- */
+  --vault-profile-display: flex;
+  --vault-profile-actions-display: flex;
+  --vault-profile-font-size: var(--font-ui-small);
+  --vault-profile-font-weight: var(--font-semibold);
+  --vault-profile-color: var(--text-normal);
+  --vault-profile-color-hover: var(--text-normal);
+
+  /* -- File header -- */
+  --file-line-width: 700px;
+
+}
+
 
 .app-tooltip {
   position: fixed;
@@ -589,39 +1278,124 @@ body.is-dragging svg {
 }
 
 .markdown-preview h1, .markdown-rendered h1, .markdown-preview-view h1, .readme-content h1 {
+  font-family: var(--h1-font, inherit);
   font-size: var(--h1-size, 2em) !important;
   font-weight: var(--h1-weight, 700) !important;
-  color: var(--h1-color, var(--text-primary)) !important;
+  color: var(--h1-color, var(--text-primary));
   line-height: var(--h1-line-height, 1.2) !important;
   margin-top: 1.5rem !important;
   margin-bottom: 0.8rem !important;
 }
 
 .markdown-preview h2, .markdown-rendered h2, .markdown-preview-view h2, .readme-content h2 {
+  font-family: var(--h2-font, inherit);
   font-size: var(--h2-size, 1.6em) !important;
   font-weight: var(--h2-weight, 600) !important;
-  color: var(--h2-color, var(--text-primary)) !important;
+  color: var(--h2-color, var(--text-primary));
   line-height: var(--h2-line-height, 1.2) !important;
   margin-top: 1.4rem !important;
   margin-bottom: 0.7rem !important;
 }
 
 .markdown-preview h3, .markdown-rendered h3, .markdown-preview-view h3, .readme-content h3 {
+  font-family: var(--h3-font, inherit);
   font-size: var(--h3-size, 1.37em) !important;
   font-weight: var(--h3-weight, 600) !important;
-  color: var(--h3-color, var(--text-primary)) !important;
+  color: var(--h3-color, var(--text-primary));
   line-height: var(--h3-line-height, 1.3) !important;
   margin-top: 1.3rem !important;
   margin-bottom: 0.6rem !important;
 }
 
 .markdown-preview h4, .markdown-rendered h4, .markdown-preview-view h4, .readme-content h4 {
+  font-family: var(--h4-font, inherit);
   font-size: var(--h4-size, 1.25em) !important;
   font-weight: var(--h4-weight, 600) !important;
-  color: var(--h4-color, var(--text-primary)) !important;
+  color: var(--h4-color, var(--text-primary));
   line-height: var(--h4-line-height, 1.4) !important;
   margin-top: 1.2rem !important;
   margin-bottom: 0.5rem !important;
+}
+
+.markdown-preview h5, .markdown-rendered h5, .markdown-preview-view h5, .readme-content h5 {
+  font-family: var(--h5-font, inherit);
+  font-size: var(--h5-size, 1.1em) !important;
+  font-weight: var(--h5-weight, 600) !important;
+  color: var(--h5-color, var(--text-primary));
+  line-height: var(--h5-line-height, 1.4) !important;
+  margin-top: 1.1rem !important;
+  margin-bottom: 0.4rem !important;
+}
+
+.markdown-preview h6, .markdown-rendered h6, .markdown-preview-view h6, .readme-content h6 {
+  font-family: var(--h6-font, inherit);
+  font-size: var(--h6-size, 1em) !important;
+  font-weight: var(--h6-weight, 600) !important;
+  color: var(--h6-color, var(--text-primary));
+  line-height: var(--h6-line-height, 1.4) !important;
+  margin-top: 1rem !important;
+  margin-bottom: 0.3rem !important;
+}
+
+/* ── CodeMirror Editor Heading Styles ──────────────────────────────── */
+/* Maps --h1-size, --h1-weight etc. to the CodeMirror heading lines    */
+/* so that Obsidian themes can style individual heading levels.        */
+.cm-heading-1, .HyperMD-header-1, .cm-header-1 {
+  color: var(--h1-color, inherit);
+  font-family: var(--h1-font, inherit);
+  font-size: var(--h1-size, 2em) !important;
+  font-weight: var(--h1-weight, 700) !important;
+  line-height: var(--h1-line-height, 1.2) !important;
+}
+.cm-heading-2, .HyperMD-header-2, .cm-header-2 {
+  color: var(--h2-color, inherit);
+  font-family: var(--h2-font, inherit);
+  font-size: var(--h2-size, 1.5em) !important;
+  font-weight: var(--h2-weight, 600) !important;
+  line-height: var(--h2-line-height, 1.25) !important;
+}
+.cm-heading-3, .HyperMD-header-3, .cm-header-3 {
+  color: var(--h3-color, inherit);
+  font-family: var(--h3-font, inherit);
+  font-size: var(--h3-size, 1.25em) !important;
+  font-weight: var(--h3-weight, 600) !important;
+  line-height: var(--h3-line-height, 1.3) !important;
+}
+.cm-heading-4, .HyperMD-header-4, .cm-header-4 {
+  color: var(--h4-color, inherit);
+  font-family: var(--h4-font, inherit);
+  font-size: var(--h4-size, 1.1em) !important;
+  font-weight: var(--h4-weight, 600) !important;
+  line-height: var(--h4-line-height, 1.35) !important;
+}
+.cm-heading-5, .HyperMD-header-5, .cm-header-5 {
+  color: var(--h5-color, inherit);
+  font-family: var(--h5-font, inherit);
+  font-size: var(--h5-size, 1em) !important;
+  font-weight: var(--h5-weight, 600) !important;
+  line-height: var(--h5-line-height, 1.4) !important;
+}
+.cm-heading-6, .HyperMD-header-6, .cm-header-6 {
+  color: var(--h6-color, inherit);
+  font-family: var(--h6-font, inherit);
+  font-size: var(--h6-size, 0.85em) !important;
+  font-weight: var(--h6-weight, 600) !important;
+  line-height: var(--h6-line-height, 1.45) !important;
+}
+
+/* Tag colors in CodeMirror */
+.cm-tag-mark { color: var(--tag-color, var(--editor-tag, inherit)); }
+
+/* Link colors in CodeMirror */
+.cm-wikilink { color: var(--link-color, var(--editor-link, inherit)); }
+
+.markdown-preview p,
+.markdown-rendered p,
+.markdown-preview-view p,
+.readme-content p {
+  line-height: var(--line-height-normal, 1.5);
+  margin-block-start: var(--p-spacing, 1em);
+  margin-block-end: var(--p-spacing, 1em);
 }
 
 .markdown-preview blockquote,
@@ -629,11 +1403,11 @@ body.is-dragging svg {
 .markdown-preview-view blockquote,
 .readme-content blockquote {
   border-left: var(--blockquote-border-thickness, 3px) solid var(--blockquote-border-color, var(--interactive-accent, #3b82f6)) !important;
-  background-color: var(--bg-secondary) !important;
-  color: var(--text-secondary) !important;
+  background-color: var(--blockquote-background, var(--background-secondary, var(--bg-secondary))) !important;
+  color: var(--blockquote-color, var(--text-secondary)) !important;
   padding: 0.5rem 1rem !important;
   margin: 1rem 0 !important;
-  font-style: italic !important;
+  font-style: var(--blockquote-font-style, italic) !important;
 }
 
 .markdown-preview table,
@@ -653,7 +1427,7 @@ body.is-dragging svg {
   background-color: var(--table-header-background, var(--bg-tertiary)) !important;
   color: var(--table-header-color, var(--text-primary)) !important;
   font-weight: 600 !important;
-  padding: 0.6rem 1rem !important;
+  padding: var(--table-header-padding, 0.6rem 1rem) !important;
   border: var(--table-border-width, 1px) solid var(--table-border-color, var(--border-medium)) !important;
 }
 
@@ -661,7 +1435,7 @@ body.is-dragging svg {
 .markdown-rendered td,
 .markdown-preview-view td,
 .readme-content td {
-  padding: 0.6rem 1rem !important;
+  padding: var(--table-cell-padding, 0.6rem 1rem) !important;
   border: var(--table-border-width, 1px) solid var(--table-border-color, var(--border-medium)) !important;
 }
 
@@ -669,7 +1443,7 @@ body.is-dragging svg {
 .markdown-rendered tr:nth-child(even),
 .markdown-preview-view tr:nth-child(even),
 .readme-content tr:nth-child(even) {
-  background-color: rgba(255, 255, 255, 0.01) !important;
+  background-color: var(--table-row-alt-background, rgba(255, 255, 255, 0.01)) !important;
 }
 
 .markdown-preview code,
@@ -678,7 +1452,7 @@ body.is-dragging svg {
 .readme-content code {
   background-color: var(--code-background, var(--bg-tertiary)) !important;
   color: var(--code-normal, var(--editor-code, #f0c788)) !important;
-  padding: 0.2rem 0.4rem !important;
+  padding: var(--code-padding, 0.2rem 0.4rem) !important;
   border-radius: var(--radius-sm) !important;
   font-family: var(--font-mono, monospace) !important;
   font-size: 0.9em !important;
@@ -688,12 +1462,12 @@ body.is-dragging svg {
 .markdown-rendered pre,
 .markdown-preview-view pre,
 .readme-content pre {
-  background-color: var(--code-background, var(--bg-tertiary)) !important;
-  padding: 1rem !important;
+  background-color: var(--code-block-background, var(--code-background, var(--bg-tertiary))) !important;
+  padding: var(--code-block-padding, 1rem) !important;
   border-radius: var(--radius-md) !important;
   overflow-x: auto !important;
   margin: 1rem 0 !important;
-  border: 1px solid var(--border-subtle) !important;
+  border: var(--code-block-border-width, 1px) solid var(--code-block-border-color, var(--border-subtle)) !important;
 }
 
 .markdown-preview pre code,
@@ -1322,6 +2096,21 @@ img.emoji {
   z-index: 5;
 }
 
+/* ── Ribbon Icon Refinements ── */
+.workspace-ribbon .clickable-icon {
+  color: var(--text-secondary) !important;
+}
+
+.workspace-ribbon .clickable-icon:hover {
+  color: var(--text-primary) !important;
+  background: var(--bg-hover) !important;
+}
+
+.workspace-ribbon .clickable-icon.is-active {
+  color: var(--text-primary) !important;
+  background: var(--bg-active) !important;
+}
+
 .onyx-tree {
 }
 
@@ -1372,22 +2161,28 @@ img.emoji {
 
 /* Optimize scrollbar rendering on Linux/Windows */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 8px;
+  height: 8px;
 }
 
 ::-webkit-scrollbar-track {
-  background: transparent;
+  background: var(--scrollbar-bg, transparent);
 }
 
 ::-webkit-scrollbar-thumb {
-  background: var(--scrollbar-thumb, rgba(128, 128, 128, 0.2));
-  border-radius: 3px;
+  background: var(--scrollbar-thumb-bg, rgba(128, 128, 128, 0.2));
+  border-radius: 4px;
   transition: background 0.15s ease;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--scrollbar-thumb-hover, rgba(128, 128, 128, 0.4));
+  background: var(--scrollbar-active-thumb-bg, rgba(128, 128, 128, 0.4));
+}
+
+.nav-folder-children {
+  padding-left: var(--nav-item-children-padding-start, 0);
+  margin-left: var(--nav-item-children-margin-start, 12px);
+  border-left: var(--nav-indentation-guide-width, 1px) solid var(--nav-indentation-guide-color, var(--divider-color));
 }
 
 /* Hide Notebook Navigator shortcuts button and related container elements */
@@ -1405,7 +2200,7 @@ img.emoji {
   height: 100%;
   width: 100%;
   overflow: hidden;
-  background-color: var(--inner-panel-bg, var(--bg-primary, #1e1e1e));
+  background-color: transparent;
 }
 
 /* Folders Pane (Left column) */
@@ -1417,8 +2212,8 @@ img.emoji {
   height: 100%;
   overflow-y: auto;
   overflow-x: hidden;
-  background-color: var(--inner-panel-bg, var(--bg-secondary, #161617));
-  padding: 8px 4px;
+  background-color: transparent;
+  padding: 0 4px 8px 4px;
 }
 
 /* Notes Pane (Right column) */
@@ -1441,26 +2236,27 @@ img.emoji {
   gap: 6px;
   width: 100%;
   padding: 6px 8px;
-  border-radius: 6px;
+  border-radius: var(--rtm-interface-radius, 6px);
   font-size: 12.5px;
-  color: var(--text-secondary);
+  color: var(--rtm-active-folder-color, var(--nav-item-color-hover, var(--text-secondary)));
   background: transparent;
   border: none;
   cursor: pointer;
   text-align: left;
-  transition: background 0.15s ease, color 0.15s ease;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
 }
 
 .nn-folder-item:hover {
   background-color: var(--bg-hover);
-  color: var(--text-primary);
+  color: var(--rtm-active-folder-color, var(--text-primary));
 }
 
 .nn-folder-item.active {
   background-color: var(--bg-hover, #2c2c2e);
-  color: var(--text-primary);
+  color: var(--rtm-active-folder-color, var(--text-primary));
   font-weight: 500;
 }
+
 
 /* Note Card in Apple Notes Style */
 .nn-note-card {
@@ -1581,14 +2377,13 @@ img.emoji {
 /* Folders Back Navigation Header Bar */
 .nn-compact-header {
   display: flex;
+  height: 36px;
+  min-height: 36px;
   align-items: center;
-  margin-top: -2px;
-  margin-left: -6px;
-  margin-right: -6px;
-  margin-bottom: 8px;
-  padding: 8px 8px 8px 10px;
+  margin: 0;
+  padding: 0 10px;
   background-color: var(--inner-panel-bg, var(--bg-secondary, #161617));
-  border-bottom: 1px solid var(--border-subtle, #2a2a2b);
+  border-bottom: 1px solid var(--divider-color);
   gap: 8px;
   flex-shrink: 0;
   box-sizing: border-box;
@@ -1737,6 +2532,47 @@ html[data-theme="light"] .app.has-wallpaper .sort-menu {
 }
 
 
+/* Obsidian CSS Snippets Folder & File Hiding Compatibility */
+.nav-folder[style*="display: none"],
+.nav-folder[style*="display:none"],
+.nav-folder-title[style*="display: none"],
+.nav-folder-title[style*="display:none"],
+.nav-folder-children[style*="display: none"],
+.nav-folder-children[style*="display:none"],
+div[data-path][style*="display: none"],
+div[data-path][style*="display:none"] {
+  display: none !important;
+}
 
+.nav-folder-title[style*="display: none"] + .nav-folder-children,
+.nav-folder-title[style*="display:none"] + .nav-folder-children,
+div[data-path]:has(> [style*="display: none"]) {
+  display: none !important;
+}
+
+.nav-folder:has(> .nav-folder-title[style*="display: none"]),
+.nav-folder:has(> .nav-folder-title[style*="display:none"]) {
+  display: none !important;
+}
+
+/* ── Obsidian Workspace Leaf & Pane Theme Compatibility ───────────────── */
+.workspace-leaf {
+  border: var(--rtm-workspace-secondary-border, none);
+  border-radius: var(--rtm-workspace-leaf-radius, var(--rtm-interface-radius, 0px));
+}
+
+/* ── Sidebar & Ribbon Window Top Alignment Overrides ────────────────── */
+.workspace-ribbon.mod-left,
+.workspace-ribbon.mod-right {
+  margin-top: 0 !important;
+}
+
+.workspace-split.mod-left-split .workspace-tabs,
+.workspace-split.mod-left-split .workspace-tab-container,
+.workspace-split.mod-right-split .workspace-tabs,
+.workspace-split.mod-right-split .workspace-tab-container {
+  padding-top: 0 !important;
+  margin-top: 0 !important;
+}
 
 

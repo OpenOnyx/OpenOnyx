@@ -1,6 +1,7 @@
 import React from "react";
 import type { PluginRegistration, PluginSettingTabRegistration } from "../../types/plugin";
 import type { Command as AppCommand } from "../../types";
+import type { SnippetManager } from "../../lib/snippetManager";
 import type { LocalVaultCollaborator, LocalVaultInvite } from "../../lib/localdb";
 import { SettingsCenter, type StudioTab } from "./SettingsCenter";
 
@@ -237,7 +238,8 @@ export type SettingsSection =
   | "quick-switcher"
   | "templates"
   | "collaboration"
-  | "about";
+  | "about"
+  | "css-snippets";
 
 export interface SettingsPageProps {
   settings: AppSettings;
@@ -263,6 +265,7 @@ export interface SettingsPageProps {
   vaultPath?: string;
   onVaultReconstructed?: (path: string) => void;
   initialSection?: SettingsSection;
+  snippetManager?: SnippetManager;
 }
 
 function mapSectionToStudioTab(section?: SettingsSection): StudioTab {
@@ -293,6 +296,8 @@ function mapSectionToStudioTab(section?: SettingsSection): StudioTab {
       return "collaboration";
     case "about":
       return "system";
+    case "css-snippets":
+      return "css-snippets";
     default:
       return "home";
   }
@@ -314,6 +319,7 @@ export function SettingsPage({
   vaultPath,
   onVaultReconstructed,
   initialSection,
+  snippetManager,
 }: SettingsPageProps) {
   const initialTab = mapSectionToStudioTab(initialSection);
 
@@ -334,6 +340,7 @@ export function SettingsPage({
       vaultPath={vaultPath}
       onVaultReconstructed={onVaultReconstructed}
       initialTab={initialTab}
+      snippetManager={snippetManager}
     />
   );
 }

@@ -100,11 +100,16 @@ export function RightSidebar({
 
   return (
     <div
-      className="right-sidebar-panel flex flex-col h-full bg-[var(--bg-tree,var(--bg-secondary))] select-none overflow-hidden"
+      className="right-sidebar-panel workspace-leaf flex flex-col h-full bg-[var(--background-secondary)] select-none overflow-hidden"
       style={{ width: `${width}px` }}
     >
-      {/* Active Tab Panel Body */}
-      <div className="flex-1 overflow-hidden relative">
+      <div
+        className="workspace-leaf-content flex flex-col h-full overflow-hidden"
+        data-type="outline"
+        style={{ height: "100%", width: "100%" }}
+      >
+        {/* Active Tab Panel Body */}
+        <div className="flex-1 overflow-hidden relative">
         {activeTab === "outline" && (
           <OutlinePane
             content={currentContent}
@@ -192,6 +197,7 @@ export function RightSidebar({
             </div>
           </div>
         )}
+        </div>
       </div>
     </div>
   );

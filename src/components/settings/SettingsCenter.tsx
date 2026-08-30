@@ -2,6 +2,7 @@ import React, { useState, useLayoutEffect, useRef } from "react";
 import type { AppSettings } from "./SettingsPage";
 import type { PluginRegistration, PluginSettingTabRegistration } from "../../types/plugin";
 import type { Command as AppCommand } from "../../types";
+import type { SnippetManager } from "../../lib/snippetManager";
 import { SettingsHome } from "./components/SettingsHome";
 import { LiveTypographyStudio } from "./components/LiveTypographyStudio";
 import { LiveThemeStudio } from "./components/LiveThemeStudio";
@@ -15,6 +16,7 @@ import { authManager } from "../../lib/auth";
 import { AuthModal } from "../modals/AuthModal";
 import { version as APP_VERSION } from "../../../package.json";
 import { DEFAULT_SETTINGS } from "./SettingsPage";
+import { CSSSnippetsManager } from "./components/CSSSnippetsManager";
 
 export type StudioTab =
   | "home"
@@ -26,7 +28,8 @@ export type StudioTab =
   | "extensions"
   | "system"
   | "hotkeys"
-  | "collaboration";
+  | "collaboration"
+  | "css-snippets";
 
 interface SettingsCenterProps {
   settings: AppSettings;
@@ -44,6 +47,7 @@ interface SettingsCenterProps {
   vaultPath?: string;
   onVaultReconstructed?: (path: string) => void;
   initialTab?: StudioTab;
+  snippetManager?: SnippetManager;
 }
 
 const STUDIOS = [
@@ -54,6 +58,7 @@ const STUDIOS = [
   { id: "ai" as const, label: "AI", desc: "Providers, models & note indexer" },
   { id: "sync" as const, label: "Sync", desc: "Cloud database & storage connection" },
   { id: "extensions" as const, label: "Extensions", desc: "Community plugins & core suite" },
+  { id: "css-snippets" as const, label: "CSS Snippets", desc: "Custom stylesheets & styles reload" },
   { id: "system" as const, label: "System", desc: "Updates, accounts & factory reset" },
 ];
 
@@ -73,6 +78,7 @@ export function SettingsCenter({
   vaultPath,
   onVaultReconstructed,
   initialTab = "home",
+  snippetManager,
 }: SettingsCenterProps) {
   const [activeTab, setActiveTab] = useState<StudioTab>(initialTab);
   const [searchQuery, setSearchQuery] = useState("");
@@ -117,6 +123,8 @@ export function SettingsCenter({
       setActiveTab("editor");
     } else if (q.includes("theme") || q.includes("color") || q.includes("dark") || q.includes("light") || q.includes("zoom") || q.includes("ribbon") || q.includes("wallpaper") || q.includes("background")) {
       setActiveTab("appearance");
+    } else if (q.includes("snippet") || q.includes("css")) {
+      setActiveTab("css-snippets");
     } else if (q.includes("ai") || q.includes("model") || q.includes("openai") || q.includes("openrouter") || q.includes("claude") || q.includes("key")) {
       setActiveTab("ai");
     } else if (q.includes("database") || q.includes("supabase") || q.includes("sql") || q.includes("sync")) {
@@ -531,6 +539,11 @@ export function SettingsCenter({
                       onVaultReconstructed={onVaultReconstructed}
                       onGoToAccount={() => setActiveTab("system")}
                     />
+                  )}
+
+                  {/* 10. CSS Snippets */}
+                  {activeTab === "css-snippets" && snippetManager && (
+                    <CSSSnippetsManager snippetManager={snippetManager} />
                   )}
                 </div>
               </main>

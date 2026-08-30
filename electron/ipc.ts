@@ -495,4 +495,36 @@ export function registerIpcHandlers(
       return false;
     }
   });
+
+  // ── CSS Snippets ──────────────────────────────────────────
+  ipcMain.handle('snippets:import', async (_event, filePaths: string[]) => {
+    const vaultPath = fsManager.getVaultPath();
+    if (!vaultPath) throw new Error('No vault path set');
+
+    const snippetsDir = nodePath.join(vaultPath, '.obsidian', 'snippets');
+    await fs.mkdir(snippetsDir, { recursive: true });
+
+    const imported: string[] = [];
+    for (const filePath of filePaths) {
+      try {
+        const fileName = nodePath.basename(filePath);
+        const destPath = nodePath.join(snippetsDir, fileName);
+        const content = await fs.readFile(filePath, 'utf-8');
+        await fs.writeFile(destPath, content, 'utf-8');
+        imported.push(fileName);
+      } catch (err) {
+        console.warn(`[Snippets] Failed to import ${filePath}:`, err);
+      }
+    }
+    return imported;
+  });
+
+  ipcMain.handle('snippets:export', async (_event, srcRelPath: string, destAbsPath: string) => {
+    const vaultPath = fsManager.getVaultPath();
+    if (!vaultPath) throw new Error('No vault path set');
+
+    const srcAbsPath = nodePath.join(vaultPath, srcRelPath);
+    const content = await fs.readFile(srcAbsPath, 'utf-8');
+    await fs.writeFile(destAbsPath, content, 'utf-8');
+  });
 }

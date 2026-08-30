@@ -200,8 +200,46 @@ class YDocManagerImpl {
       }
     }
 
-    // 5. If doc is STILL empty, initialize from local filesystem
-    if (!isDocPopulated()) {
+    // 4b. Reconcile / repair duplicated IndexedDB state against local filesystem
+    if (!isCanvas && isDocPopulated()) {
+      try {
+        const api = getAPI();
+        const diskContent = await api.readFile(cleanPath);
+        if (diskContent && diskContent.length > 0) {
+          const cleanDisk = diskContent.trim();
+          const currentText = text.toString();
+
+          // Fast O(1) check for bloated or duplicated text snapshots
+          let needsRepair = false;
+          const currentLen = text.length;
+
+          if (currentLen > 100000 && currentLen > cleanDisk.length * 1.5) {
+            // Extreme document bloat from previous duplication bugs
+            needsRepair = true;
+          } else if (cleanDisk.length > 20 && currentLen > cleanDisk.length * 1.2) {
+            if (currentText.slice(0, cleanDisk.length) === cleanDisk) {
+              needsRepair = true;
+            }
+          }
+
+          const sanitizedDisk = stripDuplicateMarkdownBlocks(diskContent);
+          if (needsRepair || sanitizedDisk !== diskContent) {
+            console.warn(`[YJS] Repairing duplicated/bloated text for ${cleanPath} (${currentLen} -> ${sanitizedDisk.length} chars).`);
+            doc.transact(() => {
+              text.delete(0, text.length);
+              text.insert(0, sanitizedDisk);
+            }, 'dedup-repair');
+            try { await idbPersistence.clearData(); } catch {}
+            try { await api.writeFile(cleanPath, sanitizedDisk); } catch {}
+          }
+        }
+      } catch {
+        // best effort
+      }
+    }
+
+    // 5. If doc is STILL empty and has no transaction history, initialize from local filesystem
+    if (!isDocPopulated() && doc.store.clients.size === 0) {
       if (isCanvas) {
         try {
           const api = getAPI();
@@ -216,9 +254,13 @@ class YDocManagerImpl {
       } else {
         try {
           const api = getAPI();
-          const fileContent = await api.readFile(cleanPath);
-          if (fileContent && fileContent.length > 0) {
+          const rawContent = await api.readFile(cleanPath);
+          if (rawContent && rawContent.length > 0) {
+            const fileContent = stripDuplicateMarkdownBlocks(rawContent);
             doc.transact(() => {
+              if (text.length > 0) {
+                text.delete(0, text.length);
+              }
               text.insert(0, fileContent);
             }, 'init');
             console.log(`[YJS] Hydrated document from filesystem (.md) (${fileContent.length} chars)`);
@@ -338,6 +380,30 @@ class YDocManagerImpl {
   get openDocCount(): number {
     return this.entries.size;
   }
+}
+
+export function stripDuplicateMarkdownBlocks(content: string): string {
+  if (!content || content.length < 50) return content;
+  const sections = content.split(/(?=\n#\s|^#\s)/);
+  if (sections.length <= 1) return content;
+
+  const seen = new Set<string>();
+  const deduplicated: string[] = [];
+
+  for (const section of sections) {
+    const trimmed = section.trim();
+    if (!trimmed) continue;
+    if (seen.has(trimmed)) {
+      continue;
+    }
+    seen.add(trimmed);
+    deduplicated.push(section);
+  }
+
+  if (deduplicated.length < sections.length) {
+    return deduplicated.join('');
+  }
+  return content;
 }
 
 export const yDocManager = new YDocManagerImpl();

@@ -67,7 +67,7 @@ interface EditorHeaderProps {
 const editorChromeClass =
   "onyx-note-chrome flex shrink-0 flex-col border-b border-[var(--divider-color)] bg-[var(--bg-primary)]";
 const editorHeaderClass =
-  "flex h-10 min-h-10 select-none items-center justify-between bg-[var(--bg-primary)] px-4";
+  "view-header flex h-9 min-h-9 select-none items-center justify-between bg-[var(--bg-primary)] px-4";
 const editorHeaderSideClass = "flex flex-[0_0_auto] items-center gap-1.5";
 const editorHeaderRightClass = `${editorHeaderSideClass} justify-end`;
 const editorHeaderCenterClass =
@@ -77,7 +77,7 @@ const breadcrumbsClass =
 const breadcrumbPartClass =
   "max-w-[150px] cursor-pointer overflow-hidden text-ellipsis whitespace-nowrap transition-colors duration-150 hover:text-[var(--text-secondary)]";
 const activeBreadcrumbPartClass =
-  "max-w-[250px] font-medium text-[var(--text-secondary)]";
+  "view-header-title max-w-[250px] font-medium text-[var(--text-secondary)]";
 const breadcrumbSeparatorClass = "mx-1 shrink-0 opacity-50";
 const editorHeaderBtnClass =
   "flex h-8 min-w-8 cursor-pointer items-center justify-center rounded-[6px] border-0 bg-transparent px-2 text-[var(--text-muted)] transition-all duration-150 hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]";

@@ -118,6 +118,14 @@ export class OOApp {
       theme: '',
       themes: {} as Record<string, any>,
       async requestLoadSnippets() {
+        // Delegate to SnippetManager if available
+        const mgr = (window as any).__oo_snippet_manager;
+        if (mgr) {
+          await mgr.scan();
+          this.snippets = mgr.getSnippetNames();
+          return this.snippets;
+        }
+        // Fallback: scan .obsidian/snippets directly
         const listing = await thisApp.vault.adapter.list('.obsidian/snippets').catch(() => ({
           files: [],
           folders: [],
@@ -129,14 +137,30 @@ export class OOApp {
         return this.snippets;
       },
       async setCssEnabledStatus(snippet: string, enabled: boolean) {
+        // Delegate to SnippetManager if available
+        const mgr = (window as any).__oo_snippet_manager;
+        if (mgr) {
+          await mgr.setEnabled(snippet, enabled);
+          return;
+        }
         if (enabled) enabledSnippets.add(snippet);
         else enabledSnippets.delete(snippet);
         thisApp.saveLocalStorage('enabled-css-snippets', Array.from(enabledSnippets));
       },
       async loadSnippet(snippet: string) {
+        const mgr = (window as any).__oo_snippet_manager;
+        if (mgr) {
+          await mgr.enable(snippet);
+          return;
+        }
         enabledSnippets.add(snippet);
       },
       unloadSnippet(snippet: string) {
+        const mgr = (window as any).__oo_snippet_manager;
+        if (mgr) {
+          void mgr.disable(snippet);
+          return;
+        }
         enabledSnippets.delete(snippet);
       },
     };

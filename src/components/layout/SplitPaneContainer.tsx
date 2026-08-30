@@ -237,7 +237,7 @@ const splitClasses = {
   root: "flex flex-1 w-full h-full overflow-hidden",
   container: "flex flex-1 w-full h-full overflow-hidden",
   child: "flex flex-col overflow-hidden min-w-0 min-h-0",
-  leafPane: "flex flex-col flex-1 overflow-hidden min-w-0 min-h-0 relative",
+  leafPane: "workspace-tabs flex flex-col flex-1 overflow-hidden min-w-0 min-h-0 relative",
   leafContent: "flex flex-col flex-1 overflow-hidden relative",
   dividerBase: "shrink-0 bg-(--divider-color) z-10 relative hover:bg-(--accent-primary) after:content-[''] after:absolute after:z-[11]",
   dividerHorizontal: "w-px cursor-col-resize after:top-0 after:bottom-0 after:-left-[3px] after:-right-[3px]",
@@ -424,9 +424,15 @@ function PaneRenderer({
         className={splitClasses.leafPane}
         onClick={() => onFocusLeaf(node.id)}
       >
-        <div className={splitClasses.leafContent}>
-          {renderContent(node)}
-          <DropZoneOverlay onDrop={onDrop} leafId={node.id} />
+        <div className="workspace-tab-container flex flex-col flex-1 overflow-hidden min-w-0 min-h-0 relative">
+          <div className="workspace-leaf flex flex-col flex-1 overflow-hidden relative">
+            <div className="workspace-leaf-content flex flex-col flex-1 overflow-hidden relative" data-type="markdown">
+              <div className="view-content flex flex-col flex-1 overflow-hidden relative">
+                {renderContent(node)}
+                <DropZoneOverlay onDrop={onDrop} leafId={node.id} />
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     );

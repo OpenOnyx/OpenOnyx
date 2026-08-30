@@ -98,6 +98,7 @@ import type { PluginCommand, PluginRibbonAction, PluginStatusBarItem, PluginRegi
 import { getNoteName, generateId, debounce, isDarkTheme } from "./utils/helpers";
 import { useAppCommands } from "./hooks/useAppCommands";
 import { useRenameNote } from "./hooks/useRenameNote";
+import { getSnippetManager, destroySnippetManager } from "./lib/snippetManager";
 import { useVaultSession } from "./hooks/useVaultSession";
 import { useLayoutGroups } from "./hooks/useLayoutGroups";
 import { useInlineSuggestions } from "./hooks/useInlineSuggestions";
@@ -1507,6 +1508,8 @@ export default function App() {
     // Determine and apply base theme mode (dark/light) for embeds and components
     const isDark = isDarkTheme(theme, settings);
     document.documentElement.setAttribute("data-theme-mode", isDark ? "dark" : "light");
+    document.documentElement.classList.toggle("theme-dark", isDark);
+    document.documentElement.classList.toggle("theme-light", !isDark);
     document.body.classList.toggle("theme-dark", isDark);
     document.body.classList.toggle("theme-light", !isDark);
 
@@ -2148,6 +2151,15 @@ export default function App() {
   // ── Sync global window property for plugin compatibility ─────
   useEffect(() => {
     (window as any).__oo_vault_path = vaultPath;
+    if (vaultPath) {
+      destroySnippetManager();
+      const snippetManager = getSnippetManager();
+      (window as any).__oo_snippet_manager = snippetManager;
+      void snippetManager.initialize();
+    } else {
+      destroySnippetManager();
+      delete (window as any).__oo_snippet_manager;
+    }
   }, [vaultPath]);
 
   // ── Reset Caches and Queue on Vault Path Change ─────
@@ -5054,10 +5066,12 @@ export default function App() {
         {vaultPath && !isFTUXZeroState && (
           <div
             ref={leftSidebarShellRef}
-            className="relative h-full min-w-0 shrink-0 overflow-hidden transition-[width] duration-150 ease-out will-change-[width]"
+            className="relative h-full min-w-0 shrink-0 overflow-hidden transition-[width] duration-150 ease-out will-change-[width] workspace-split mod-left-split"
             style={{ width: showSidebar ? "var(--sidebar-width)" : 0 }}
           >
-            <div className="h-full w-full">
+            <div className="h-full w-full workspace-tabs">
+              <div className="h-full w-full workspace-tab-container flex flex-col">
+                <div className="h-full w-full workspace-leaf flex flex-col">
               {showBookmarks ? (
                 <BookmarksPanel
                   bookmarks={bookmarks}
@@ -5138,6 +5152,8 @@ export default function App() {
                   onRevealFolderHandled={handleRevealFolderHandled}
                 />
               )}
+                </div>
+              </div>
             </div>
             {showSidebar && (
               <div
@@ -5227,12 +5243,12 @@ export default function App() {
               isFullScreen={isNativeFullScreen}
             />
             <div className="flex flex-row flex-1 min-h-0 overflow-hidden">
-              <div className={`editor-column flex flex-col flex-1 min-w-0 overflow-hidden ${settings.backgroundImage ? '' : 'bg-[var(--bg-primary)]'}`}>
+              <div className={`editor-column flex flex-col flex-1 min-w-0 overflow-hidden ${settings.backgroundImage ? '' : 'bg-[var(--background-primary)]'}`}>
                 {vaultPath && !isFTUXZeroState && activeTab?.path && activeTab.path !== "__new_tab__" && !activeTab.path.startsWith("__") && viewMode !== "preview" && (
                   <FormattingToolbar />
                 )}
                 <div
-                  className={`main-content flex min-w-0 flex-1 overflow-hidden ${settings.backgroundImage ? '' : 'bg-[var(--bg-primary)]'}`}
+                  className={`main-content flex min-w-0 flex-1 overflow-hidden ${settings.backgroundImage ? '' : 'bg-[var(--background-primary)]'}`}
                   ref={mainContentRef}
           style={{
             display: "flex",
@@ -5282,6 +5298,7 @@ export default function App() {
               {/* Split Pane System -- replaces the single editor pane */}
               {shouldShowEditorPane && (
                 <div
+                  className="workspace-split mod-vertical mod-root"
                   style={{
                     flex: hasAuxPane ? `0 0 ${editorPaneWidth}%` : 1,
                     height: "100%",
@@ -5398,7 +5415,7 @@ export default function App() {
         {showRightSidebar && !isFTUXZeroState && (
           <div
             ref={rightSidebarShellRef}
-            className="relative flex h-full min-w-0 shrink-0 flex-row overflow-hidden transition-[width] duration-150 ease-out will-change-[width]"
+            className="relative flex h-full min-w-0 shrink-0 flex-row overflow-hidden transition-[width] duration-150 ease-out will-change-[width] workspace-split mod-right-split"
             style={{ width: showRightSidebar ? "var(--right-sidebar-width)" : 0 }}
           >
             <div
@@ -5412,7 +5429,8 @@ export default function App() {
                 zIndex: 100,
               }}
             />
-            <div className="flex h-full min-w-0 w-full flex-row overflow-hidden">
+            <div className="flex h-full min-w-0 w-full flex-row overflow-hidden workspace-tabs">
+              <div className="h-full w-full workspace-tab-container flex flex-col">
               <RightSidebar
                 activeTab={rightSidebarTab}
                 currentContent={currentContent}
@@ -5436,6 +5454,7 @@ export default function App() {
                   }
                 }}
               />
+              </div>
             </div>
           </div>
         )}
@@ -5496,6 +5515,7 @@ export default function App() {
             setSettingsSection("home");
           }}
           initialSection={settingsSection as any}
+          snippetManager={getSnippetManager()}
           commands={[
             ...commands,
             ...pluginCommands.map(pc => ({

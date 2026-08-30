@@ -29,12 +29,21 @@ installGlobalTooltips();
 // Mirror the computed Tailwind values, rather than another class set, so this
 // does not alter the selected theme's CSS cascade.
 const syncThemeVariablesToBody = () => {
-  const computed = getComputedStyle(document.documentElement);
-  for (const property of computed) {
-    if (property.startsWith('--')) {
-      document.body.style.setProperty(property, computed.getPropertyValue(property));
+  // Run asynchronously after render to prevent UI freezing / layout thrashing
+  requestAnimationFrame(() => {
+    const computed = getComputedStyle(document.documentElement);
+    const updates: [string, string][] = [];
+    for (let i = 0; i < computed.length; i++) {
+      const property = computed[i];
+      if (property.startsWith('--')) {
+        updates.push([property, computed.getPropertyValue(property)]);
+      }
     }
-  }
+    // Batch write all properties to body style
+    for (const [property, value] of updates) {
+      document.body.style.setProperty(property, value);
+    }
+  });
 };
 (window as any).__oo_sync_theme_variables_to_body = syncThemeVariablesToBody;
 syncThemeVariablesToBody();

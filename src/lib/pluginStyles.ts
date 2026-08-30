@@ -887,3 +887,76 @@ input[type="range"]::-webkit-slider-thumb {
 `;
   document.head.appendChild(style);
 }
+
+/** Inject OpenOnyx design tokens as CSS custom properties for snippet authors */
+export function injectDesignTokens(): void {
+  if (document.querySelector('style[data-openonyx-tokens]')) return;
+
+  const style = document.createElement('style');
+  style.setAttribute('data-openonyx-tokens', 'true');
+  style.textContent = `
+/* ── OpenOnyx Design Tokens ──────────────────────────────────────────
+ * Stable CSS custom properties for CSS snippet and theme authors.
+ * These alias the internal theme variables and automatically update
+ * when the user changes themes.
+ * ──────────────────────────────────────────────────────────────────── */
+:root {
+  /* Colors */
+  --oo-color-bg-primary: var(--bg-primary);
+  --oo-color-bg-secondary: var(--bg-secondary);
+  --oo-color-bg-tertiary: var(--bg-tertiary);
+  --oo-color-bg-elevated: var(--bg-elevated);
+  --oo-color-bg-hover: var(--bg-hover);
+  --oo-color-bg-active: var(--bg-active);
+  --oo-color-text-primary: var(--text-primary);
+  --oo-color-text-secondary: var(--text-secondary);
+  --oo-color-text-muted: var(--text-muted);
+  --oo-color-text-faint: var(--text-faint, var(--text-muted));
+  --oo-color-accent: var(--accent-primary, var(--color-accent));
+  --oo-color-accent-hover: var(--color-accent-1, var(--color-accent));
+  --oo-color-accent-active: var(--color-accent-2, var(--color-accent));
+  --oo-color-text-on-accent: var(--text-on-accent, #ffffff);
+  --oo-color-border-subtle: var(--border-subtle);
+  --oo-color-border-medium: var(--border-medium);
+  --oo-color-border-strong: var(--border-strong, var(--border-medium));
+  --oo-color-divider: var(--divider-color, var(--border-subtle));
+
+  /* Typography */
+  --oo-font-sans: var(--font-text, Inter, system-ui, -apple-system, sans-serif);
+  --oo-font-mono: var(--font-monospace, ui-monospace, SFMono-Regular, monospace);
+  --oo-font-size-xs: 11px;
+  --oo-font-size-sm: 13px;
+  --oo-font-size-md: 15px;
+  --oo-font-size-lg: 18px;
+  --oo-font-size-xl: 22px;
+
+  /* Spacing */
+  --oo-spacing-xs: 4px;
+  --oo-spacing-sm: 8px;
+  --oo-spacing-md: 16px;
+  --oo-spacing-lg: 24px;
+  --oo-spacing-xl: 32px;
+  --oo-spacing-2xl: 48px;
+
+  /* Border Radius */
+  --oo-radius-xs: 2px;
+  --oo-radius-sm: 4px;
+  --oo-radius-md: 8px;
+  --oo-radius-lg: 12px;
+  --oo-radius-xl: 16px;
+  --oo-radius-full: 9999px;
+
+  /* Shadows */
+  --oo-shadow-sm: var(--shadow-sm, 0 1px 2px rgba(0, 0, 0, 0.1));
+  --oo-shadow-md: var(--shadow-md, 0 2px 8px rgba(0, 0, 0, 0.15));
+  --oo-shadow-lg: var(--shadow-lg, 0 8px 24px rgba(0, 0, 0, 0.2));
+
+  /* Transitions */
+  --oo-transition-fast: 0.1s ease;
+  --oo-transition-normal: 0.2s ease;
+  --oo-transition-slow: 0.3s ease;
+}
+`;
+  document.head.appendChild(style);
+}
+

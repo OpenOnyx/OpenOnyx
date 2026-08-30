@@ -160,59 +160,100 @@ export function LeafPaneEditor({
   const [yCollabExtension, setYCollabExtension] = useState<Extension | undefined>(undefined);
   const yDocResultRef = useRef<OpenDocResult | null>(null);
 
-  // Open/close Y.Doc when CRDT mode activates/deactivates or tab changes
+  // Fast local disk content loading + background Yjs CRDT binding
   useEffect(() => {
-    if (!useCRDT || activeTab.path === '__new_tab__') {
-      setYCollabExtension(undefined);
+    let isActive = true;
+    setIsLoading(true);
+
+    if (activeTab.path === "__new_tab__") {
+      setIsLoading(false);
       return;
     }
 
     const spaceId = collaborationEngine.activeSpaceId;
-    if (!spaceId) {
-      setYCollabExtension(undefined);
-      return;
-    }
-
-    let cancelled = false;
+    const isCRDTActive = useCRDT && !!spaceId;
 
     (async () => {
+      // 1. ALWAYS load content from local disk immediately for instant rendering
       try {
-        // Dynamically import y-codemirror.next to keep bundle size down
-        // when CRDT is not active.
-        const [{ yCollab, yUndoManagerKeymap }, { keymap }] = await Promise.all([
-          import('y-codemirror.next'),
-          import('@codemirror/view'),
-        ]);
-
-        const result = await yDocManager.openDoc(activeTab.path, spaceId);
-        if (cancelled) {
-          yDocManager.closeDoc(activeTab.path, spaceId);
+        const exists = await api.fileExists(activeTab.path);
+        if (!isActive) return;
+        if (!exists) {
+          setFileExists(false);
+          setIsLoading(false);
           return;
         }
 
-        yDocResultRef.current = result;
+        const diskContent = await api.readFile(activeTab.path);
+        if (!isActive) return;
 
-        const ext: Extension = [
-          yCollab(result.text, result.awareness, { undoManager: result.undoManager }),
-          keymap.of(yUndoManagerKeymap),
-        ];
-        console.log(`[YJS] Bound CodeMirror for note: ${activeTab.path} (guid: ${result.doc.guid})`);
-        setYCollabExtension(ext);
+        if (spaceId) {
+          const note = await localDB.getNoteByPath(spaceId, activeTab.path);
+          if (!isActive) return;
+          docVersionRef.current = normalizeVersion(note?.version);
+          docHashRef.current = note?.content_hash || await sha256Hex(diskContent);
+        } else {
+          docVersionRef.current = 0;
+          docHashRef.current = await sha256Hex(diskContent);
+        }
+
+        contentCacheRef.current.set(activeTab.path, diskContent);
+        setContentPath(activeTab.path);
+        setContent(diskContent);
+        latestContentRef.current = diskContent;
+        latestContentPathRef.current = activeTab.path;
+        onContentChangeGlobalRef.current(activeTab.path, diskContent, false);
+        setIsLoading(false);
       } catch (err) {
-        console.error('[CRDT] Failed to open Y.Doc:', err);
-        setYCollabExtension(undefined);
+        if (isActive) {
+          setFileExists(false);
+          setContentPath(activeTab.path);
+          setContent("");
+          latestContentRef.current = "";
+          latestContentPathRef.current = activeTab.path;
+          setIsLoading(false);
+          console.error("Failed to load note content:", err);
+          return;
+        }
+      }
+
+      // 2. Attach Yjs CRDT collaboration asynchronously in the background if active
+      if (isCRDTActive && spaceId && isActive) {
+        try {
+          const [{ yCollab, yUndoManagerKeymap }, { keymap }] = await Promise.all([
+            import('y-codemirror.next'),
+            import('@codemirror/view'),
+          ]);
+
+          const result = await yDocManager.openDoc(activeTab.path, spaceId);
+          if (!isActive) {
+            yDocManager.closeDoc(activeTab.path, spaceId);
+            return;
+          }
+
+          yDocResultRef.current = result;
+          const ext: Extension = [
+            yCollab(result.text, result.awareness, { undoManager: result.undoManager }),
+            keymap.of(yUndoManagerKeymap),
+          ];
+
+          setYCollabExtension(ext);
+          console.log(`[YJS] Bound CodeMirror for note: ${activeTab.path} (guid: ${result.doc.guid})`);
+        } catch (err) {
+          console.error('[CRDT] Failed to open Y.Doc during background load:', err);
+        }
       }
     })();
 
     return () => {
-      cancelled = true;
+      isActive = false;
       if (yDocResultRef.current && spaceId) {
         yDocManager.closeDoc(activeTab.path, spaceId);
         yDocResultRef.current = null;
       }
       setYCollabExtension(undefined);
     };
-  }, [useCRDT, activeTab.path]);
+  }, [activeTab.path, useCRDT]);
 
   const handleEditorViewReady = useCallback((view: EditorView | null) => {
     editorViewRef.current = view;
@@ -394,7 +435,7 @@ export function LeafPaneEditor({
     latestContentRef.current = newContent;
     latestContentPathRef.current = sourcePath;
 
-    if (!isUserEdit) {
+    if (useCRDT || !isUserEdit) {
       if (contentDebounceTimeoutRef.current) {
         clearTimeout(contentDebounceTimeoutRef.current);
         contentDebounceTimeoutRef.current = null;
@@ -465,6 +506,10 @@ export function LeafPaneEditor({
       }, 2500);
     }
 
+    // In CRDT mode (Yjs), YjsPersistence handles debounced filesystem flushes and
+    // database snapshots directly. Skip legacy timers to avoid race conditions.
+    if (useCRDT) return;
+
     // Auto-save to local disk (debounced)
     if (autoSaveTimer.current) {
       clearTimeout(autoSaveTimer.current);
@@ -522,10 +567,10 @@ export function LeafPaneEditor({
         }
       }, 300);
     }
-  }, [activeTab.path, onContentChangeGlobal, collabFailSafe]);
+  }, [useCRDT, activeTab.path, onContentChangeGlobal, collabFailSafe]);
 
   const scheduleFullDocumentBroadcast = useCallback((contentToBroadcast: string, delay = 400) => {
-    if (!collaborationEngine.activeSpaceId) return;
+    if (useCRDT || !collaborationEngine.activeSpaceId) return;
     if (collabFailSafe) return;
     if (!activeTab.path || activeTab.path === "__new_tab__") return;
 
@@ -544,7 +589,7 @@ export function LeafPaneEditor({
         content_hash: hash,
       });
     }, delay);
-  }, [activeTab.path, collabFailSafe]);
+  }, [useCRDT, activeTab.path, collabFailSafe]);
 
   // ── Operation-Based Broadcast ───────────────────────────────────────────────
 
@@ -554,7 +599,7 @@ export function LeafPaneEditor({
    * We broadcast them to all peers immediately.
    */
   const handleCollabOperations = useCallback((ops: CollabOperation[]) => {
-    if (!collaborationEngine.activeSpaceId) return;
+    if (useCRDT || !collaborationEngine.activeSpaceId) return;
     if (collabFailSafe) return;
     if (!activeTab.path || activeTab.path === "__new_tab__") return;
 
@@ -936,9 +981,9 @@ export function LeafPaneEditor({
     return unsub;
   }, [activeTab.path, onContentChangeGlobal, collabFailSafe, enterFailSafeMode]);
 
-  // Re-sync active note upon network reconnection or page focus
+  // Re-sync active note upon network reconnection or page focus (non-CRDT mode only)
   useEffect(() => {
-    if (activeTab.path === "__new_tab__") return;
+    if (useCRDT || activeTab.path === "__new_tab__") return;
     if (!collaborationEngine.activeSpaceId) return;
 
     const handleReSync = async () => {
@@ -1031,7 +1076,7 @@ export function LeafPaneEditor({
       window.removeEventListener('focus', handleReSync);
       window.removeEventListener('collaboration:realtime', handleRealtimeEvent);
     };
-  }, [activeTab.path, handleCursorChange, scheduleFullDocumentBroadcast]);
+  }, [useCRDT, activeTab.path, handleCursorChange, scheduleFullDocumentBroadcast]);
 
   // ── Cleanup ─────────────────────────────────────────────────────────────────
 
@@ -1224,7 +1269,7 @@ export function LeafPaneEditor({
 
   return (
     <div
-      className="leaf-editor-host relative flex h-full min-h-0 min-w-0 flex-col overflow-hidden"
+      className="leaf-editor-host workspace-leaf relative flex h-full min-h-0 min-w-0 flex-col overflow-hidden"
       onMouseDownCapture={() => {
         if (!isFocused && onFocusLeaf) {
           onFocusLeaf(leaf.id);
@@ -1236,99 +1281,105 @@ export function LeafPaneEditor({
         }
       }}
     >
-      <EditorHeader
-        filePath={activeTab.path}
-        viewMode={viewMode}
-        onViewModeChange={handleViewModeChange}
-        onToggleInsight={() => onToggleInsight(!showInlineInsight)}
-        activeEditors={activeEditors}
-        onToggleBacklinks={onToggleBacklinks}
-        onSplitRight={() => onSplitRight?.(leaf.id, activeTab)}
-        onSplitDown={() => onSplitDown?.(leaf.id, activeTab)}
-        onRename={() => onRenameFileMenu?.(activeTab.path)}
-        onMoveFile={() => onMoveFileMenu?.(activeTab.path)}
-        onBookmark={() => onBookmarkFile?.(activeTab.path)}
-        onAddProperty={handleAddFileProperty}
-        onExportPdf={() => void handleExportPdf()}
-        onFind={() => document.dispatchEvent(new CustomEvent("editor:open-search"))}
-        onReplace={() => document.dispatchEvent(new CustomEvent("editor:open-search"))}
-        onCopyRelativePath={() => onCopyRelativePath?.(activeTab.path)}
-        onCopyAbsolutePath={() => onCopyAbsolutePath?.(activeTab.path)}
-        onOpenInDefaultApp={() => onOpenInDefaultApp?.(activeTab.path)}
-        onShowInSystemExplorer={() => onShowInSystemExplorer?.(activeTab.path)}
-        onRevealInNavigation={() => onRevealInNavigation?.(activeTab.path)}
-        onDeleteFile={() => onDeleteFile?.(activeTab.path)}
-        canCopyAbsolutePath={canCopyAbsolutePath}
-        isFocused={isFocused}
-      />
-      {activeTab.path === "__new_tab__" ? (
-        <NewTabView
-          onNewNote={() => {
-            window.dispatchEvent(new CustomEvent("oo:new-note"));
-          }}
-          onSearch={() => {
-            window.dispatchEvent(new CustomEvent("oo:fuzzy-search"));
-          }}
-          onClose={() => onTabClose(activeTab.id)}
-        />
-      ) : (
-        <>
-        {collabFailSafe && (
-          <div style={{
-            padding: "8px 12px",
-            borderBottom: "1px solid var(--border-color)",
-            background: "var(--bg-secondary)",
-            color: "var(--text-primary)",
-            fontSize: 12,
-          }}>
-            Realtime paused after repeated sync conflicts. This note is view-only until refresh.
-          </div>
-        )}
-        <Editor
-          tabs={leaf.tabs}
-          activeTabId={activeTab.id}
-          content={editorContent}
+      <div
+        className="workspace-leaf-content relative flex h-full min-h-0 min-w-0 flex-col overflow-hidden"
+        data-type={activeTab.path === "__new_tab__" ? "empty" : "markdown"}
+        style={{ height: "100%", width: "100%" }}
+      >
+        <EditorHeader
+          filePath={activeTab.path}
           viewMode={viewMode}
-          isFocused={isFocused}
-          availableNotes={allNoteNames}
-          onAdjustFontSize={onAdjustFontSize}
-          onTabSelect={(id) => onTabSelect(leaf.id, id)}
-          onTabClose={onTabClose}
-          onContentChange={handleContentChange}
           onViewModeChange={handleViewModeChange}
-          onLinkClick={onLinkClick}
-          onImagePaste={onImagePaste}
-          onGetNoteContent={getNoteContent}
-          suggestions={editorSuggestions}
-          nextStepSuggestions={editorNextStepSuggestions}
-          onAcceptSuggestion={onAcceptSuggestion}
-          onRejectSuggestion={onRejectSuggestion}
-          onOpenNote={onOpenNote}
-          annotation={inlineAnnotation}
-          showInsight={showInlineInsight}
-          onToggleInsight={onToggleInsight}
-          theme={theme}
-          settings={settings}
-          onCollabOperations={isCollabSpace ? handleCollabOperations : undefined}
-          onCursorChange={isCollabSpace && !useCRDT ? handleCursorChange : undefined}
-          remoteCursors={isCollabSpace && !useCRDT ? remoteCursors : undefined}
-          localClientId={isCollabSpace && !useCRDT ? collaborationEngine.currentClientId : undefined}
-          onEditorViewReady={handleEditorViewReady}
-          getViewState={getViewState}
-          onViewStateChange={onViewStateChange}
-          readOnly={collabFailSafe}
-          onGenerateInsight={onGenerateInsight}
-          isGeneratingInsight={isGeneratingInsight}
-          yCollabExtension={yCollabExtension}
+          onToggleInsight={() => onToggleInsight(!showInlineInsight)}
+          activeEditors={activeEditors}
+          onToggleBacklinks={onToggleBacklinks}
+          onSplitRight={() => onSplitRight?.(leaf.id, activeTab)}
+          onSplitDown={() => onSplitDown?.(leaf.id, activeTab)}
+          onRename={() => onRenameFileMenu?.(activeTab.path)}
+          onMoveFile={() => onMoveFileMenu?.(activeTab.path)}
+          onBookmark={() => onBookmarkFile?.(activeTab.path)}
+          onAddProperty={handleAddFileProperty}
+          onExportPdf={() => void handleExportPdf()}
+          onFind={() => document.dispatchEvent(new CustomEvent("editor:open-search"))}
+          onReplace={() => document.dispatchEvent(new CustomEvent("editor:open-search"))}
+          onCopyRelativePath={() => onCopyRelativePath?.(activeTab.path)}
+          onCopyAbsolutePath={() => onCopyAbsolutePath?.(activeTab.path)}
+          onOpenInDefaultApp={() => onOpenInDefaultApp?.(activeTab.path)}
+          onShowInSystemExplorer={() => onShowInSystemExplorer?.(activeTab.path)}
+          onRevealInNavigation={() => onRevealInNavigation?.(activeTab.path)}
+          onDeleteFile={() => onDeleteFile?.(activeTab.path)}
+          canCopyAbsolutePath={canCopyAbsolutePath}
+          isFocused={isFocused}
         />
-        {isLoading && (
-          <div
-            aria-hidden="true"
-            className="pointer-events-none absolute inset-x-0 bottom-0 top-[38px] bg-[color-mix(in_srgb,var(--bg-primary)_78%,transparent)]"
+        {activeTab.path === "__new_tab__" ? (
+          <NewTabView
+            onNewNote={() => {
+              window.dispatchEvent(new CustomEvent("oo:new-note"));
+            }}
+            onSearch={() => {
+              window.dispatchEvent(new CustomEvent("oo:fuzzy-search"));
+            }}
+            onClose={() => onTabClose(activeTab.id)}
           />
+        ) : (
+          <>
+          {collabFailSafe && (
+            <div style={{
+              padding: "8px 12px",
+              borderBottom: "1px solid var(--border-color)",
+              background: "var(--bg-secondary)",
+              color: "var(--text-primary)",
+              fontSize: 12,
+            }}>
+              Realtime paused after repeated sync conflicts. This note is view-only until refresh.
+            </div>
+          )}
+          <Editor
+            tabs={leaf.tabs}
+            activeTabId={activeTab.id}
+            content={editorContent}
+            viewMode={viewMode}
+            isFocused={isFocused}
+            availableNotes={allNoteNames}
+            onAdjustFontSize={onAdjustFontSize}
+            onTabSelect={(id) => onTabSelect(leaf.id, id)}
+            onTabClose={onTabClose}
+            onContentChange={handleContentChange}
+            onViewModeChange={handleViewModeChange}
+            onLinkClick={onLinkClick}
+            onImagePaste={onImagePaste}
+            onGetNoteContent={getNoteContent}
+            suggestions={editorSuggestions}
+            nextStepSuggestions={editorNextStepSuggestions}
+            onAcceptSuggestion={onAcceptSuggestion}
+            onRejectSuggestion={onRejectSuggestion}
+            onOpenNote={onOpenNote}
+            annotation={inlineAnnotation}
+            showInsight={showInlineInsight}
+            onToggleInsight={onToggleInsight}
+            theme={theme}
+            settings={settings}
+            onCollabOperations={isCollabSpace ? handleCollabOperations : undefined}
+            onCursorChange={isCollabSpace && !useCRDT ? handleCursorChange : undefined}
+            remoteCursors={isCollabSpace && !useCRDT ? remoteCursors : undefined}
+            localClientId={isCollabSpace && !useCRDT ? collaborationEngine.currentClientId : undefined}
+            onEditorViewReady={handleEditorViewReady}
+            getViewState={getViewState}
+            onViewStateChange={onViewStateChange}
+            readOnly={collabFailSafe}
+            onGenerateInsight={onGenerateInsight}
+            isGeneratingInsight={isGeneratingInsight}
+            yCollabExtension={yCollabExtension}
+          />
+          {isLoading && (
+            <div
+              aria-hidden="true"
+              className="pointer-events-none absolute inset-x-0 bottom-0 top-[38px] bg-[color-mix(in_srgb,var(--bg-primary)_78%,transparent)]"
+            />
+          )}
+          </>
         )}
-        </>
-      )}
+      </div>
     </div>
   );
 }

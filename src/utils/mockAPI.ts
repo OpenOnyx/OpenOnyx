@@ -725,6 +725,10 @@ export function createMockAPI(): ElectronAPI {
       },
       health: async () => true,
     },
+
+    // CSS Snippets (mock)
+    snippetsImport: async (_filePaths: string[]) => [],
+    snippetsExport: async (_srcRelPath: string, _destAbsPath: string) => {},
   };
 
   return mockAPI;

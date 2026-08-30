@@ -229,17 +229,19 @@ const sidebarRootClass =
 const sidebarCollapsedClass =
   "collapsed !m-0 hidden !w-0 !min-w-0 !max-w-0 !overflow-hidden !border-x-0 !p-0";
 const sidebarHeaderClass =
-  "flex min-h-8 shrink-0 items-center justify-between gap-1 px-2 py-1";
+  "nav-header flex h-9 min-h-9 shrink-0 items-center justify-between gap-1 px-2 py-0 border-b border-[var(--divider-color)] bg-[var(--background-secondary,var(--bg-secondary))]";
 const sidebarActionsClass = "flex shrink-0 flex-nowrap items-center justify-end gap-px ml-auto";
 const sidebarBtnClass =
   "flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-[6px] border-0 bg-transparent text-[var(--text-secondary)] transition-[var(--transition-fast)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]";
 const sidebarBtnActiveClass =
   "bg-[color-mix(in_srgb,var(--accent-primary)_12%,transparent)] text-[var(--accent-primary)]";
+const sidebarFilterContainerClass =
+  "search-input-container flex h-9 min-h-9 shrink-0 items-center px-2 border-b border-[var(--divider-color)] bg-[var(--background-secondary,var(--bg-secondary))]";
 const sidebarFilterClass =
-  "onyx-quick-search mx-2 mt-2 mb-1.5 flex items-center gap-2 rounded-full bg-[var(--bg-input,var(--bg-tertiary))] px-3 py-1.5 shadow-none";
+  "search-input-wrapper onyx-quick-search flex-1 flex h-[28px] items-center gap-2 rounded-md bg-[var(--background-modifier-form-field,var(--bg-input,var(--bg-tertiary)))] px-3 py-0 shadow-none";
 const sidebarFilterIconClass = "shrink-0 text-[var(--text-muted)]";
 const sidebarFilterInputClass =
-  "flex-1 min-w-0 border-0 bg-transparent py-0.5 font-sans text-[13px] text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)]";
+  "search-input flex-1 min-w-0 border-0 bg-transparent py-0.5 font-sans text-[13px] text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)]";
 const sidebarFilterClearClass =
   "flex cursor-pointer items-center justify-center rounded-full border-0 bg-transparent p-0.5 text-[var(--text-muted)] transition-[var(--transition-fast)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]";
 const sidebarSortMenuClass =
@@ -253,7 +255,7 @@ const fileExplorerClass =
 const fileExplorerDragClass =
   "bg-[rgba(var(--accent-color-rgb,37,99,235),0.05)] shadow-[inset_0_0_0_2px_var(--accent-primary)]";
 const fileTreeItemBaseClass =
-  "file-tree-item group relative mb-px flex min-h-[28px] w-full cursor-pointer items-center gap-1.5 rounded-[var(--nav-item-radius,6px)] border-0 bg-transparent py-0.5 pl-6 pr-2 text-left font-sans text-[13px] leading-[1.3] text-[var(--nav-item-color)] transition-[background-color,color,box-shadow] duration-75 hover:bg-[var(--nav-item-background-hover)] hover:text-[var(--nav-item-color-hover)]";
+  "file-tree-item tree-item-self group relative mb-px flex min-h-[28px] w-full cursor-pointer items-center gap-1.5 rounded-[var(--nav-item-radius,6px)] border-0 bg-transparent py-0.5 pl-6 pr-2 text-left font-sans text-[13px] leading-[1.3] text-[var(--nav-item-color)] transition-[background-color,color,box-shadow] duration-75 hover:bg-[var(--nav-item-background-hover)] hover:text-[var(--nav-item-color-hover)]";
 const fileTreeItemActiveClass =
   "active !bg-[var(--bg-tree-selected,var(--nav-item-background-selected))] !text-[var(--nav-item-color-selected)] shadow-[0_1px_2px_rgba(15,23,42,0.06)] font-medium";
 const fileTreeItemDraggingClass =
@@ -268,7 +270,7 @@ const folderCountClass =
 const treeChildrenWrapperClass =
   "file-tree-children-wrapper grid grid-rows-[0fr] overflow-hidden transition-[grid-template-rows] duration-[250ms] ease-[cubic-bezier(0.4,0,0.2,1)]";
 const treeChildrenClass =
-  "file-tree-children min-h-0 py-0 pl-2 ml-2";
+  "file-tree-children min-h-0 py-0";
 const emptyFolderHintClass =
   "py-1.5 pl-7 pr-2 text-[11px] italic text-[var(--text-muted)] opacity-60";
 const renameInputClass =
@@ -749,6 +751,8 @@ export function Sidebar({
 
   const renderFileTree = (entries: FileEntry[], depth: number = 0) => {
     return entries.map((entry) => {
+      const cleanPath = entry.path.replace(/^\/+|\/+$/g, '');
+      const entryName = entry.name.replace(/^\/+|\/+$/g, '');
       const isExpanded = effectiveExpanded.has(entry.path);
       const isActive = entry.path === activeFilePath;
       const isDragOver = entry.path === dragOverPath;
@@ -757,10 +761,26 @@ export function Sidebar({
       const childCount = entry.isDirectory && entry.children ? countChildren(entry.children) : 0;
 
       return (
-        <React.Fragment key={entry.path}>
-          <button
+        <div
+          key={entry.path}
+          data-path={cleanPath}
+          data-path-name={entryName}
+          data-depth={depth}
+          className={cx(
+            "tree-item",
+            entry.isDirectory ? "nav-folder" : "nav-file",
+            entry.isDirectory && !isExpanded && "is-collapsed",
+          )}
+        >
+          <div
+            role="button"
+            tabIndex={0}
+            data-path={cleanPath}
+            data-path-name={entryName}
+            data-sidebar-folder-path={entry.isDirectory ? cleanPath : undefined}
             className={cx(
               fileTreeItemBaseClass,
+              entry.isDirectory ? "nav-folder-title" : "nav-file-title",
               isActive && fileTreeItemActiveClass,
               isDragOver && fileTreeItemDragOverClass,
               isDragging && fileTreeItemDraggingClass,
@@ -773,6 +793,19 @@ export function Sidebar({
                 entry.extension === ".canvas"
               ) {
                 onFileSelect(entry.path);
+              }
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                if (entry.isDirectory) {
+                  toggleDir(entry.path);
+                } else if (
+                  entry.extension === ".md" ||
+                  entry.extension === ".canvas"
+                ) {
+                  onFileSelect(entry.path);
+                }
               }
             }}
             onContextMenu={(e) =>
@@ -792,9 +825,23 @@ export function Sidebar({
             }}
           >
             {entry.isDirectory && (
-              <span className={cx(chevronClass, isExpanded && "open rotate-90")}>
-                <ChevronRight size={16} strokeWidth={2.25} />
-              </span>
+              <div
+                className={cx("tree-item-icon collapse-icon", isExpanded && "is-open")}
+                style={{
+                  position: "absolute",
+                  left: "6px",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  width: "16px",
+                  height: "16px",
+                  transform: isExpanded ? "rotate(90deg)" : "none",
+                  transition: "transform 0.1s ease",
+                  color: "var(--text-faint)",
+                }}
+              >
+                <ChevronRight size={14} strokeWidth={2.25} className="svg-icon" />
+              </div>
             )}
 
             {isRenaming ? (
@@ -809,17 +856,17 @@ export function Sidebar({
                 />
               </form>
             ) : (
-              <span className={fileNameClass}>
+              <span className={cx(fileNameClass, "tree-item-inner", entry.isDirectory ? "nav-folder-title-content" : "nav-file-title-content")}>
                 {entry.isDirectory ? entry.name : getNoteName(entry.name)}
               </span>
             )}
             {entry.isDirectory && childCount > 0 && !isRenaming && (
               <span className={folderCountClass}>{childCount}</span>
             )}
-          </button>
+          </div>
 
           {entry.isDirectory && entry.children && (
-            <div className={cx(treeChildrenWrapperClass, isExpanded && "open grid-rows-[1fr]")}>
+            <div className={cx(treeChildrenWrapperClass, "nav-folder-children", isExpanded && "open grid-rows-[1fr]")}>
               <div className={treeChildrenClass}>
                 {entry.children.length > 0 ? (
                   renderFileTree(sortEntries(entry.children, sortMode), depth + 1)
@@ -829,7 +876,7 @@ export function Sidebar({
               </div>
             </div>
           )}
-        </React.Fragment>
+        </div>
       );
     });
   };
@@ -969,12 +1016,12 @@ export function Sidebar({
       const isRenaming = entry.path === renamingPath;
 
       return (
-        <React.Fragment key={entry.path}>
+        <div key={entry.path} className="nav-folder" data-path={entry.path}>
           <button
             data-sidebar-folder-path={entry.path}
             className={cx(
-              "nn-folder-item",
-              isSelected && "active",
+              "nn-folder-item nav-folder-title tree-item-self",
+              isSelected && "active is-active",
               isDragOver && "bg-[rgba(var(--accent-color-rgb,37,99,235),0.08)] shadow-[inset_0_0_0_1px_var(--accent-primary)]",
               entry.path === draggingPath && "opacity-40 scale-[0.98]"
             )}
@@ -1027,7 +1074,9 @@ export function Sidebar({
             >
               <ChevronRight size={14} strokeWidth={2.25} />
             </span>
-            <Folder size={14} className="shrink-0 opacity-70" />
+            <span className="tree-item-icon shrink-0 opacity-70 flex items-center justify-center">
+              <Folder size={14} className="svg-icon" />
+            </span>
             {isRenaming ? (
               <form onSubmit={handleRenameSubmit} onClick={(e) => e.stopPropagation()} style={{ flex: 1 }}>
                 <input
@@ -1047,7 +1096,7 @@ export function Sidebar({
               </form>
             ) : (
               <>
-                <span className="flex-1 overflow-hidden text-ellipsis whitespace-nowrap">
+                <span className="nav-folder-title-content tree-item-inner flex-1 overflow-hidden text-ellipsis whitespace-nowrap">
                   {entry.name}
                 </span>
                 {noteCount > 0 && (
@@ -1059,11 +1108,11 @@ export function Sidebar({
             )}
           </button>
           {isExpanded && childDirs.length > 0 && (
-            <div className="file-tree-children">
+            <div className="file-tree-children nav-folder-children">
               {renderFoldersOnlyTree(sortEntries(entry.children || [], sortMode), depth + 1)}
             </div>
           )}
-        </React.Fragment>
+        </div>
       );
     });
   };
@@ -1114,11 +1163,9 @@ export function Sidebar({
   return (
     <>
       <div 
-        className={cx(sidebarRootClass, !visible && sidebarCollapsedClass)}
-        style={{
-          ...isMac ? { paddingTop: '32px' } : {},
-          ...(hasWallpaper ? {} : { backgroundColor: 'var(--bg-tree, var(--bg-secondary))' })
-        }}
+        className={cx(sidebarRootClass, "workspace-leaf-content", !visible && sidebarCollapsedClass)}
+        data-type="file-explorer"
+        style={isMac ? { paddingTop: '32px' } : undefined}
       >
         {hasPrimaryPluginView ? (
           <PluginViewPanel
@@ -1128,27 +1175,29 @@ export function Sidebar({
           />
         ) : (
           <>
-            {/* Quick search */}
-            <div className={sidebarFilterClass}>
-              <Search size={14} className={sidebarFilterIconClass} strokeWidth={1.75} />
-              <input
-                type="search"
-                className={sidebarFilterInputClass}
-                placeholder="Search notes..."
-                value={filterQuery}
-                onChange={(e) => setFilterQuery(e.target.value)}
-                aria-label="Quick search"
-              />
-              {filterQuery && (
-                <button
-                  type="button"
-                  className={sidebarFilterClearClass}
-                  onClick={() => setFilterQuery("")}
-                  title="Clear"
-                >
-                  <X size={14} />
-                </button>
-              )}
+            {/* Quick search (Row 1 - aligns to Tabs) */}
+            <div className={sidebarFilterContainerClass}>
+              <div className={sidebarFilterClass}>
+                <Search size={14} className={sidebarFilterIconClass} strokeWidth={1.75} />
+                <input
+                  type="search"
+                  className={sidebarFilterInputClass}
+                  placeholder="Search notes..."
+                  value={filterQuery}
+                  onChange={(e) => setFilterQuery(e.target.value)}
+                  aria-label="Quick search"
+                />
+                {filterQuery && (
+                  <button
+                    type="button"
+                    className={sidebarFilterClearClass}
+                    onClick={() => setFilterQuery("")}
+                    title="Clear"
+                  >
+                    <X size={14} />
+                  </button>
+                )}
+              </div>
             </div>
 
             {/* Top Vault Selector Toolbar */}
@@ -1261,11 +1310,11 @@ export function Sidebar({
             </div>
 
             {/* Apple Notes Content Wrapper */}
-            <div className="nn-explorer-container flex-1">
+            <div className="nn-explorer-container nav-files-container view-content flex-1">
               {/* Left column: Folders, Groups */}
               {!isFoldersCollapsed ? (
                 <div
-                  className="nn-folders-pane"
+                  className="nn-folders-pane file-explorer"
                   style={{ width: "100%" }}
                 >
                   {/* Special / virtual views */}
@@ -1291,16 +1340,14 @@ export function Sidebar({
                   <div className="mx-2 my-2 h-px bg-[var(--border-subtle)]" />
                   
                   {/* Folders tree */}
-                  <div className="sidebar-section">
-                    <div className="px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)]">
-                      Folders
-                    </div>
-                    {processedTree.length > 0 ? (
-                      renderFoldersOnlyTree(processedTree)
-                    ) : (
-                      <div className="px-2 py-1.5 text-xs italic text-[var(--text-muted)]">No folders</div>
-                    )}
+                  <div className="px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)]">
+                    Folders
                   </div>
+                  {processedTree.length > 0 ? (
+                    renderFoldersOnlyTree(processedTree)
+                  ) : (
+                    <div className="px-2 py-1.5 text-xs italic text-[var(--text-muted)]">No folders</div>
+                  )}
 
                   <div className="mx-2 my-2 h-px bg-[var(--border-subtle)]" />
 
@@ -1362,7 +1409,7 @@ export function Sidebar({
               ) : (
                 /* Right column: Notes cards */
                 <div 
-                  className="nn-notes-pane file-explorer"
+                  className="nn-notes-pane file-explorer flex flex-col h-full min-h-0 overflow-hidden !p-0"
                   onDragOver={(e) => handleDragOver(e, "")}
                   onDragLeave={handleDragLeave}
                   onDrop={(e) => handleDrop(e, "")}
@@ -1383,99 +1430,102 @@ export function Sidebar({
                       {selectedFolder === "" ? "Root Directory" : selectedFolder ? selectedFolder.split("/").pop() : "Root Directory"}
                     </span>
                   </div>
-                {groupedNotes.length > 0 ? (
-                  groupedNotes.map((section) => {
-                    const isCollapsed = collapsedSections[section.id];
-                    return (
-                      <React.Fragment key={section.id}>
-                        <button
-                          className="nn-section-header"
-                          onClick={() =>
-                            setCollapsedSections((prev) => ({
-                              ...prev,
-                              [section.id]: !prev[section.id],
-                            }))
-                          }
-                        >
-                          <span>{section.title}</span>
-                          <ChevronDown
-                            size={12}
-                            className="nn-section-header-chevron"
-                            style={{
-                              transform: isCollapsed ? "rotate(-90deg)" : "none",
-                            }}
-                          />
-                        </button>
-                        {!isCollapsed &&
-                          section.notes.map((note) => {
-                            const isActive = note.path === activeFilePath;
-                            const isStarred = starredNotes.includes(note.path);
-                            const snippet = previews[note.path];
-                            const dateStr = getRelativeDate(note.modifiedAt);
-                            const isCanvas = note.extension === ".canvas";
 
-                            const isRenaming = note.path === renamingPath;
-                            return (
-                              <div
-                                key={note.path}
-                                className={cx("nn-note-card", isActive && "active")}
-                                onClick={(e) => {
-                                  if (isRenaming) {
-                                    e.stopPropagation();
-                                    return;
-                                  }
-                                  onFileSelect(note.path);
+                  <div className="flex-1 overflow-y-auto min-h-0 px-2 pb-4">
+                    {groupedNotes.length > 0 ? (
+                      groupedNotes.map((section) => {
+                        const isCollapsed = collapsedSections[section.id];
+                        return (
+                          <React.Fragment key={section.id}>
+                            <button
+                              className="nn-section-header"
+                              onClick={() =>
+                                setCollapsedSections((prev) => ({
+                                  ...prev,
+                                  [section.id]: !prev[section.id],
+                                }))
+                              }
+                            >
+                              <span>{section.title}</span>
+                              <ChevronDown
+                                size={12}
+                                className="nn-section-header-chevron"
+                                style={{
+                                  transform: isCollapsed ? "rotate(-90deg)" : "none",
                                 }}
-                                onContextMenu={(e) => handleContextMenu(e, note.path, false)}
-                                draggable={!isRenaming}
-                                onDragStart={(e) => handleDragStart(e, note.path)}
-                              >
-                                {isRenaming ? (
-                                  <form onSubmit={handleRenameSubmit} onClick={(e) => e.stopPropagation()} style={{ width: '100%', marginBottom: '4px' }}>
-                                    <input
-                                      className={renameInputClass}
-                                      value={renameValue}
-                                      onChange={(e) => setRenameValue(e.target.value)}
-                                      onBlur={handleRenameSubmit}
-                                      onKeyDown={(e) => {
-                                        if (e.key === 'Escape') {
-                                          setRenamingPath(null);
-                                          setRenameValue("");
-                                        }
-                                      }}
-                                      autoFocus
-                                      onClick={(e) => e.stopPropagation()}
-                                    />
-                                  </form>
-                                ) : (
-                                  <div className="nn-card-title">{getNoteName(note.name)}</div>
-                                )}
-                                <div className="nn-card-meta">
-                                  {snippet && snippet !== "No additional text" && (
-                                    <div className="nn-card-snippet">{snippet}</div>
-                                  )}
-                                  <div className="nn-card-date">{dateStr}</div>
-                                </div>
-                                {(isCanvas || isStarred) && (
-                                  <div className="nn-card-indicators">
-                                    {isCanvas && <span className="nn-badge">Canvas</span>}
-                                    {isStarred && <Star size={12} className="text-amber-500 fill-amber-500 shrink-0" />}
+                              />
+                            </button>
+                            {!isCollapsed &&
+                              section.notes.map((note) => {
+                                const isActive = note.path === activeFilePath;
+                                const isStarred = starredNotes.includes(note.path);
+                                const snippet = previews[note.path];
+                                const dateStr = getRelativeDate(note.modifiedAt);
+                                const isCanvas = note.extension === ".canvas";
+
+                                const isRenaming = note.path === renamingPath;
+                                return (
+                                  <div
+                                    key={note.path}
+                                    className={cx("nn-note-card", isActive && "active")}
+                                    onClick={(e) => {
+                                      if (isRenaming) {
+                                        e.stopPropagation();
+                                        return;
+                                      }
+                                      onFileSelect(note.path);
+                                    }}
+                                    onContextMenu={(e) => handleContextMenu(e, note.path, false)}
+                                    draggable={!isRenaming}
+                                    onDragStart={(e) => handleDragStart(e, note.path)}
+                                  >
+                                    {isRenaming ? (
+                                      <form onSubmit={handleRenameSubmit} onClick={(e) => e.stopPropagation()} style={{ width: '100%', marginBottom: '4px' }}>
+                                        <input
+                                          className={renameInputClass}
+                                          value={renameValue}
+                                          onChange={(e) => setRenameValue(e.target.value)}
+                                          onBlur={handleRenameSubmit}
+                                          onKeyDown={(e) => {
+                                            if (e.key === 'Escape') {
+                                              setRenamingPath(null);
+                                              setRenameValue("");
+                                            }
+                                          }}
+                                          autoFocus
+                                          onClick={(e) => e.stopPropagation()}
+                                        />
+                                      </form>
+                                    ) : (
+                                      <div className="nn-card-title">{getNoteName(note.name)}</div>
+                                    )}
+                                    <div className="nn-card-meta">
+                                      {snippet && snippet !== "No additional text" && (
+                                        <div className="nn-card-snippet">{snippet}</div>
+                                      )}
+                                      <div className="nn-card-date">{dateStr}</div>
+                                    </div>
+                                    {(isCanvas || isStarred) && (
+                                      <div className="nn-card-indicators">
+                                        {isCanvas && <span className="nn-badge">Canvas</span>}
+                                        {isStarred && <Star size={12} className="text-amber-500 fill-amber-500 shrink-0" />}
+                                      </div>
+                                    )}
                                   </div>
-                                )}
-                              </div>
-                            );
-                          })}
-                      </React.Fragment>
-                    );
-                  })
-                ) : (
-                  <div className="flex h-full flex-col items-center justify-center gap-2 text-center text-xs text-[var(--text-muted)] p-4">
-                    <FileText size={24} className="opacity-30" />
-                    <div>No notes here</div>
+                                );
+                              })}
+                          </React.Fragment>
+                        );
+                      })
+                    ) : (
+                      <div className="flex h-full flex-col items-center justify-center gap-2 text-center text-xs text-[var(--text-muted)] p-4">
+                        <FileText size={24} className="opacity-30" />
+                        <div>No notes here</div>
+                      </div>
+                    )}
                   </div>
-                )}
-              </div>
-            )}
+                </div>
+              )}
             </div>
           </>
         )}

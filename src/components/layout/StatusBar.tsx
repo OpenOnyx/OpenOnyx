@@ -22,17 +22,17 @@ import type { PluginStatusBarItem } from '../../types/plugin';
 import { VimModeIndicator } from "./VimModeIndicator";
 
 const statusBarClass =
-  "onyx-statusbar relative z-[180] flex h-[28px] w-full shrink-0 items-center justify-between overflow-hidden border-t border-[var(--divider-color)] bg-[var(--status-bar-background)] px-3 text-[12px] font-medium text-[var(--status-bar-text-color)]";
-const statusGroupClass = "flex min-w-0 items-center gap-1";
+  "status-bar onyx-statusbar relative z-[180] flex h-[28px] w-full shrink-0 items-center justify-between overflow-hidden border-t border-[var(--divider-color)] bg-[var(--status-bar-background,var(--bg-secondary))] px-3 text-[12px] font-medium text-[var(--status-bar-text-color,var(--text-muted))]";
+const statusGroupClass = "status-bar-group flex min-w-0 items-center gap-1";
 const statusItemClass =
-  "inline-flex h-[26px] shrink-0 items-center gap-1.5 whitespace-nowrap px-1.5 text-[12px] leading-none text-[var(--status-bar-text-color)]";
+  "status-bar-item inline-flex h-[26px] shrink-0 items-center gap-1.5 whitespace-nowrap px-1.5 text-[12px] leading-none text-[var(--status-bar-text-color,var(--text-muted))]";
 const crumbClass =
-  "inline-flex max-w-[160px] items-center gap-1 overflow-hidden text-ellipsis whitespace-nowrap text-[12px] text-[var(--text-secondary)]";
+  "status-bar-item inline-flex max-w-[160px] items-center gap-1 overflow-hidden text-ellipsis whitespace-nowrap text-[12px] text-[var(--status-bar-text-color,var(--text-secondary))]";
 const crumbFocusClass =
   "focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-1 focus-visible:outline-[var(--accent-primary)]";
 const crumbButtonClass =
-  `${crumbClass} ${crumbFocusClass} h-[22px] cursor-pointer rounded-[4px] border-0 bg-transparent px-1 transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]`;
-const crumbSepClass = "mx-0.5 text-[var(--text-faint)] opacity-70";
+  `${crumbClass} ${crumbFocusClass} cursor-pointer border-0 bg-transparent px-1 transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]`;
+const crumbSepClass = "mx-0.5 text-[var(--status-bar-text-color,var(--text-faint))] opacity-70";
 
 interface StatusBarProps {
   activeTab: Tab | null;

@@ -226,7 +226,7 @@ const editorAnnotationEmptyTextClass =
 const editorAnnotationGenerateClass =
   "flex cursor-pointer items-center gap-1.5 rounded border-0 bg-[var(--accent-color,#3b82f6)] px-3 py-1.5 text-xs font-medium text-white";
 const editorContainerClass =
-  "editor-container relative flex min-h-0 flex-1 flex-row overflow-hidden";
+  "editor-container view-content markdown-source-view cm-s-obsidian mod-cm6 is-live-preview relative flex min-h-0 flex-1 flex-row overflow-hidden";
 const editorLightboxBackdropClass =
   "fixed inset-0 z-[9999] flex items-center justify-center bg-[color-mix(in_srgb,var(--bg-primary)_45%,transparent)] backdrop-blur-[3px]";
 const editorLightboxModalClass =
@@ -1115,15 +1115,37 @@ function imageWidgetPlugin(onOpenLightbox: (src: string, alt: string) => void) {
 
 const markdownHighlightStyle = HighlightStyle.define([
   {
-    tag: [
-      t.heading1,
-      t.heading2,
-      t.heading3,
-      t.heading4,
-      t.heading5,
-      t.heading6,
-      t.heading,
-    ],
+    tag: [t.heading1],
+    color: "var(--h1-color, var(--editor-heading))",
+    fontWeight: "700",
+  },
+  {
+    tag: [t.heading2],
+    color: "var(--h2-color, var(--editor-heading))",
+    fontWeight: "700",
+  },
+  {
+    tag: [t.heading3],
+    color: "var(--h3-color, var(--editor-heading))",
+    fontWeight: "700",
+  },
+  {
+    tag: [t.heading4],
+    color: "var(--h4-color, var(--editor-heading))",
+    fontWeight: "700",
+  },
+  {
+    tag: [t.heading5],
+    color: "var(--h5-color, var(--editor-heading))",
+    fontWeight: "700",
+  },
+  {
+    tag: [t.heading6],
+    color: "var(--h6-color, var(--editor-heading))",
+    fontWeight: "700",
+  },
+  {
+    tag: [t.heading],
     color: "var(--editor-heading)",
     fontWeight: "700",
   },
@@ -1143,11 +1165,11 @@ const markdownHighlightStyle = HighlightStyle.define([
   },
   {
     tag: [t.link, t.url],
-    color: "var(--editor-link)",
+    color: "var(--link-color, var(--editor-link))",
     textDecoration: "underline",
   },
-  { tag: [t.strong], color: "var(--editor-emphasis)", fontWeight: "700" },
-  { tag: [t.emphasis], color: "var(--editor-emphasis)", fontStyle: "italic" },
+  { tag: [t.strong], color: "var(--bold-color, var(--editor-emphasis))", fontWeight: "700" },
+  { tag: [t.emphasis], color: "var(--italic-color, var(--editor-emphasis))", fontStyle: "italic" },
   {
     tag: [t.strikethrough],
     color: "var(--editor-muted-token)",
@@ -1155,10 +1177,10 @@ const markdownHighlightStyle = HighlightStyle.define([
   },
   {
     tag: [t.monospace],
-    color: "var(--editor-code)",
-    fontFamily: "var(--font-mono)",
+    color: "var(--code-normal, var(--editor-code))",
+    fontFamily: "var(--font-monospace-theme, var(--font-mono))",
   },
-  { tag: [t.name, t.propertyName, t.labelName], color: "var(--text-primary)" },
+  { tag: [t.name, t.propertyName, t.labelName], color: "var(--text-normal)" },
   {
     tag: [t.invalid],
     color: "var(--danger)",
@@ -1966,12 +1988,16 @@ function addInactiveBlockPreviewDecorations(
         new CheckboxWidget(/\[[xX]\]/.test(checkbox)),
       );
     } else {
-      const markerText = /^\d/.test(listMatch[2]) ? listMatch[2] : "•";
+      const isOrdered = /^\d/.test(listMatch[2]);
+      const markerText = isOrdered ? listMatch[2] : "•";
+      const markerClass = isOrdered
+        ? "cm-live-list-marker cm-formatting cm-formatting-list-ol list-number"
+        : "cm-live-list-marker cm-formatting cm-formatting-list-ul list-bullet";
       replaceMarkdownSyntax(
         decorations,
         markerFrom,
         markerTo,
-        new InlineTextWidget(markerText, "cm-live-list-marker"),
+        new InlineTextWidget(markerText, markerClass),
       );
     }
 
@@ -1979,7 +2005,7 @@ function addInactiveBlockPreviewDecorations(
     decorations.push(
       Decoration.line({
         attributes: {
-          class: `${checkbox ? "cm-live-task-line" : "cm-live-list-line"} cm-live-indent-${depth}`,
+          class: `${checkbox ? "cm-live-task-line" : "cm-live-list-line"} cm-live-indent-${depth} HyperMD-list-line HyperMD-list-line-${depth}`,
         },
       }).range(lineFrom),
     );
@@ -1998,7 +2024,7 @@ function addInactiveBlockPreviewDecorations(
     hideMarkdownSyntax(decorations, lineFrom + offset, lineFrom + offset + quoteMatch[2].length);
     decorations.push(
       Decoration.line({
-        attributes: { class: "cm-live-blockquote-line" },
+        attributes: { class: "cm-live-blockquote-line HyperMD-quote" },
       }).range(lineFrom),
     );
   }
@@ -2061,9 +2087,12 @@ function markdownLivePreviewPlugin() {
 
             if (isFence) {
               if (!isActive) {
+                const isEndFence = inCodeBlock;
                 decorations.push(
                   Decoration.line({
-                    attributes: { class: "cm-live-codeblock-line" },
+                    attributes: {
+                      class: `cm-live-codeblock-line HyperMD-codeblock ${isEndFence ? "HyperMD-codeblock-end-bg" : "HyperMD-codeblock-begin-bg"}`,
+                    },
                   }).range(line.from),
                 );
               }
@@ -2075,7 +2104,7 @@ function markdownLivePreviewPlugin() {
               if (!isActive) {
                 decorations.push(
                   Decoration.line({
-                    attributes: { class: "cm-live-codeblock-line" },
+                    attributes: { class: "cm-live-codeblock-line HyperMD-codeblock" },
                   }).range(line.from),
                 );
               }
@@ -2131,13 +2160,19 @@ function markdownLivePreviewPlugin() {
               }
 
               // Apply heading font size as a line decoration
-              const sizes = ["2.0em", "1.6em", "1.37em", "1.25em", "1.1em", "1em"];
-              const fontSize = sizes[level - 1] || "1em";
+              const sizeVars = ["var(--h1-size, 2em)", "var(--h2-size, 1.6em)", "var(--h3-size, 1.37em)", "var(--h4-size, 1.25em)", "var(--h5-size, 1.1em)", "var(--h6-size, 1em)"];
+              const weightVars = ["var(--h1-weight, 700)", "var(--h2-weight, 700)", "var(--h3-weight, 700)", "var(--h4-weight, 700)", "var(--h5-weight, 700)", "var(--h6-weight, 700)"];
+              const fontVars = ["var(--h1-font, inherit)", "var(--h2-font, inherit)", "var(--h3-font, inherit)", "var(--h4-font, inherit)", "var(--h5-font, inherit)", "var(--h6-font, inherit)"];
+              const lineHeightVars = ["var(--h1-line-height, 1.3)", "var(--h2-line-height, 1.3)", "var(--h3-line-height, 1.3)", "var(--h4-line-height, 1.3)", "var(--h5-line-height, 1.3)", "var(--h6-line-height, 1.3)"];
+              const fontSize = sizeVars[level - 1] || "1em";
+              const fontWeight = weightVars[level - 1] || "700";
+              const fontFamily = fontVars[level - 1] || "inherit";
+              const lineHeight = lineHeightVars[level - 1] || "1.3";
               decorations.push(
                 Decoration.line({
                   attributes: {
-                    style: `font-size: ${fontSize}; line-height: 1.3; font-weight: 700; font-family: var(--font-family); color: var(--editor-heading);`,
-                    class: `cm-heading-${level}`,
+                    style: `font-size: ${fontSize}; line-height: ${lineHeight}; font-weight: ${fontWeight}; font-family: ${fontFamily};`,
+                    class: `cm-heading-${level} HyperMD-header HyperMD-header-${level} cm-header-${level}`,
                   },
                 }).range(line.from),
               );
@@ -3477,9 +3512,10 @@ export function Editor({
   // value that was current at view-creation time.
   const yCollabExtensionRef = useRef(yCollabExtension);
   useEffect(() => {
-    yCollabExtensionRef.current = yCollabExtension;
-    if (viewRef.current) {
-      viewRef.current.dispatch({
+    const view = viewRef.current;
+    if (view && yCollabExtensionRef.current !== yCollabExtension) {
+      yCollabExtensionRef.current = yCollabExtension;
+      view.dispatch({
         effects: collabCompartmentRef.current.reconfigure(
           yCollabExtension
             ? [yCollabExtension]
@@ -4496,7 +4532,7 @@ export function Editor({
               (tr) =>
                 tr.annotation(Transaction.remote) ||
                 tr.isUserEvent("setContent"),
-            );
+            ) || !!yCollabExtensionRef.current;
             const isUserEdit = !isRemoteOrSync;
             // Read from refs to avoid stale closures -- the CM view is
             // created once per tab and these callbacks change when the
@@ -4573,7 +4609,7 @@ export function Editor({
           "&": {
             height: "100%",
             fontSize: "var(--editor-pane-font-size)",
-            color: "var(--text-primary)",
+            color: "var(--text-normal)",
             backgroundColor: "transparent",
             caretColor: "var(--editor-caret)",
           },
@@ -4751,7 +4787,7 @@ export function Editor({
             borderCollapse: "collapse",
             fontFamily: "var(--font-family)",
             fontSize: "var(--editor-pane-font-size)",
-            color: "var(--text-primary)",
+            color: "var(--text-normal)",
             border: "var(--table-border-width, 1px) solid var(--table-border-color, var(--border-medium))",
           },
           ".cm-live-table th, .cm-live-table td": {
@@ -4761,7 +4797,7 @@ export function Editor({
           },
           ".cm-live-table th": {
             backgroundColor: "var(--table-header-background, var(--bg-tertiary))",
-            color: "var(--table-header-color, var(--text-primary))",
+            color: "var(--table-header-color, var(--text-normal))",
             fontWeight: "600",
           },
           ".cm-live-table tr:nth-child(even) td": {
@@ -4793,7 +4829,7 @@ export function Editor({
           },
           ".cm-live-table-control:hover": {
             backgroundColor: "var(--bg-hover)",
-            color: "var(--text-primary)",
+            color: "var(--text-normal)",
             borderColor: "var(--border-medium)",
           },
           ".cm-live-list-marker": {
@@ -4872,7 +4908,7 @@ export function Editor({
           ".cm-inline-ai-removed": {
             backgroundColor: "color-mix(in srgb, var(--danger, #ef4444) 24%, transparent)",
             borderBottom: "1px solid color-mix(in srgb, var(--danger, #ef4444) 65%, transparent)",
-            color: "var(--text-primary)",
+            color: "var(--text-normal)",
             textDecoration: "line-through",
             textDecorationColor: "color-mix(in srgb, var(--danger, #ef4444) 75%, transparent)",
             borderRadius: "2px",
@@ -6309,7 +6345,7 @@ export function Editor({
                   viewMode === "editor" || viewMode === "split"
                     ? "block"
                     : "none",
-                ...(settings?.backgroundImage ? {} : { backgroundColor: "var(--bg-primary)" }),
+                ...(settings?.backgroundImage ? {} : { backgroundColor: "var(--background-primary)" }),
               }}
             />
 
@@ -6320,6 +6356,7 @@ export function Editor({
             {(viewMode === "preview" || viewMode === "split") && (
               <div
                 ref={previewRef}
+                className="markdown-preview-view is-reading-view markdown-rendered prose"
                 onContextMenu={handleContextMenu}
                 style={{
                   flex:
@@ -6329,7 +6366,7 @@ export function Editor({
                   minWidth: 0,
                   overflow: "auto",
                   height: "100%",
-                  ...(settings?.backgroundImage ? {} : { backgroundColor: "var(--bg-primary)" }),
+                  ...(settings?.backgroundImage ? {} : { backgroundColor: "var(--background-primary)" }),
                 }}
               >
 
