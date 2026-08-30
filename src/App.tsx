@@ -91,6 +91,7 @@ import {
   insertTabIntoLeaf,
   removeTabFromTree,
   setActiveTabInLeaf,
+  updateTabInTree,
   moveTabInTree,
   splitLeaf,
 } from "./components/layout/SplitPaneContainer";
@@ -110,7 +111,7 @@ import {
 } from "./utils/tabGroups";
 import { getAPI } from "./utils/api";
 import { PluginManager } from "./lib/pluginManager";
-import { getSnippetManager, stopCssSnippets } from "./lib/cssSnippets";
+import { getSnippetManager, isSnippetPath, stopCssSnippets } from "./lib/cssSnippets";
 import { OOApp } from "./lib/obsidian-api/app";
 import { TFile } from "./lib/obsidian-api";
 import { PluginPermissionModal } from "./components/plugins/PluginPermissionModal";
@@ -1257,20 +1258,23 @@ export default function App() {
 
     setPaneTree((prev) => {
       let tree = prev;
+      const stillToAdd = [...addedTabs];
 
-      // Remove tabs that were closed
+      // Remove tabs that were closed. Replacing the last tab in a leaf
+      // (New tab → real file) must keep the incoming tabs, not drop them.
       for (const id of removedIds) {
         const result = removeTabFromTree(tree, id);
         if (!result) {
-          tree = createLeaf([]);
+          tree = createLeaf(stillToAdd, stillToAdd[0]?.id ?? null);
+          stillToAdd.length = 0;
           setFocusedLeafId(tree.id);
-          return tree;
+        } else {
+          tree = result;
         }
-        tree = result;
       }
 
       // Add new tabs to the focused leaf
-      for (const tab of addedTabs) {
+      for (const tab of stillToAdd) {
         if (!findLeafWithTab(tree, tab.id)) {
           const targetLeaf = findLeafById(tree, focusedLeafId) || findFirstLeaf(tree);
           tree = insertTabIntoLeaf(tree, targetLeaf.id, tab);
@@ -2849,7 +2853,7 @@ export default function App() {
   // ── File Operations ─────────────────────────────────
   const openFile = async (filePath: string, mode?: ViewMode) => {
     filePath = resolveRenamedPath(filePath);
-    const targetMode = mode ?? settings.defaultView ?? "editor";
+    const targetMode = isSnippetPath(filePath) ? "editor" : (mode ?? settings.defaultView ?? "editor");
     const cachedViewState = scrollCursorCacheRef.current[filePath] || {};
     if (mode || !cachedViewState.viewMode) {
       scrollCursorCacheRef.current[filePath] = {
@@ -2928,6 +2932,52 @@ export default function App() {
       baseTabs = tabs.filter(t => t.id !== activeTabId);
     }
 
+    // TitleBar reads the flat `tabs` list; the editor pane reads `paneTree`.
+    // Opening a file must update both in the same turn or the chrome shows
+    // the file while the leaf stays on New tab.
+    const placeTabInWorkspace = (tab: Tab, mode: "insert" | "inplace") => {
+      skipTabSyncRef.current = true;
+      if (mode === "inplace") {
+        setTabs((prev) => prev.map((t) => (t.id === tab.id ? tab : t)));
+        setActiveTabId(tab.id);
+        setPaneTree((prev) => {
+          if (findLeafWithTab(prev, tab.id)) return updateTabInTree(prev, tab.id, tab);
+          const target = findLeafById(prev, focusedLeafId) || findFirstLeaf(prev);
+          setFocusedLeafId(target.id);
+          return insertTabIntoLeaf(prev, target.id, tab);
+        });
+        return;
+      }
+      setTabs((prev) => {
+        const withoutReplaced = replacingNewTabId
+          ? prev.filter((t) => t.id !== replacingNewTabId)
+          : prev;
+        if (withoutReplaced.some((t) => t.id === tab.id)) return withoutReplaced;
+        return [...withoutReplaced, tab];
+      });
+      setActiveTabId(tab.id);
+      setPaneTree((prev) => {
+        let tree = prev;
+        if (replacingNewTabId && replacingNewTabId !== tab.id) {
+          const result = removeTabFromTree(tree, replacingNewTabId);
+          if (!result) {
+            const leaf = createLeaf([tab], tab.id);
+            setFocusedLeafId(leaf.id);
+            return leaf;
+          }
+          tree = result;
+        }
+        const existingLeaf = findLeafWithTab(tree, tab.id);
+        if (existingLeaf) {
+          setFocusedLeafId(existingLeaf.id);
+          return setActiveTabInLeaf(tree, existingLeaf.id, tab.id);
+        }
+        const target = findLeafById(tree, focusedLeafId) || findFirstLeaf(tree);
+        setFocusedLeafId(target.id);
+        return insertTabIntoLeaf(tree, target.id, tab);
+      });
+    };
+
     const existingBaseTab = baseTabs.find((t) => t.path === filePath);
     const isGroupTab = existingBaseTab && existingBaseTab.groupId === activeGroupId;
 
@@ -2997,12 +3047,7 @@ export default function App() {
       
       const existingCanvasTab = baseTabs.find((t) => t.path === filePath);
       if (existingCanvasTab) {
-        setTabs(baseTabs); // Apply the removal of New Tab if it happened
-        setActiveTabId(existingCanvasTab.id);
-        const leaf = findLeafWithTab(paneTree, existingCanvasTab.id);
-        if (leaf) {
-          setFocusedLeafId(leaf.id);
-        }
+        placeTabInWorkspace(existingCanvasTab, "insert");
       } else {
         const canvasTab: Tab = {
           id: generateId(),
@@ -3010,8 +3055,7 @@ export default function App() {
           name: getNoteName(filePath),
           isModified: false,
         };
-        setTabs([...baseTabs, canvasTab]);
-        setActiveTabId(canvasTab.id);
+        placeTabInWorkspace(canvasTab, "insert");
       }
       setCurrentContent("");
       setBacklinks([]);
@@ -3021,12 +3065,7 @@ export default function App() {
     // Check if tab already exists in our base set
     const existingTab = baseTabs.find((t) => t.path === filePath);
     if (existingTab) {
-      setTabs(baseTabs); // Apply removal of New Tab if it happened
-      setActiveTabId(existingTab.id);
-      const leaf = findLeafWithTab(paneTree, existingTab.id);
-      if (leaf) {
-        setFocusedLeafId(leaf.id);
-      }
+      placeTabInWorkspace(existingTab, "insert");
       const content = await readOrCreateMissingMarkdown(filePath);
       setCurrentContent(content);
       setViewMode(targetMode);
@@ -3034,17 +3073,24 @@ export default function App() {
       return;
     }
 
-    // Open new tab
+    // Open new tab. Reuse the New tab's id so the leaf does not empty itself
+    // while the replacement is applied.
     const content = await readOrCreateMissingMarkdown(filePath);
-    const newTab: Tab = {
-      id: generateId(),
-      path: filePath,
-      name: getNoteName(filePath),
-      isModified: false,
-    };
+    const newTab: Tab = replacingNewTabId && activeTab
+      ? {
+          ...activeTab,
+          path: filePath,
+          name: getNoteName(filePath),
+          isModified: false,
+        }
+      : {
+          id: generateId(),
+          path: filePath,
+          name: getNoteName(filePath),
+          isModified: false,
+        };
 
-    setTabs([...baseTabs, newTab]);
-    setActiveTabId(newTab.id);
+    placeTabInWorkspace(newTab, replacingNewTabId ? "inplace" : "insert");
     setCurrentContent(content);
     setViewMode(targetMode);
     loadBacklinks(filePath);
@@ -5252,7 +5298,7 @@ export default function App() {
             />
             <div className="flex flex-row flex-1 min-h-0 overflow-hidden">
               <div className={`editor-column flex flex-col flex-1 min-w-0 overflow-hidden ${settings.backgroundImage ? '' : 'bg-[var(--bg-primary)]'}`}>
-                {vaultPath && !isFTUXZeroState && activeTab?.path && activeTab.path !== "__new_tab__" && !activeTab.path.startsWith("__") && viewMode !== "preview" && (
+                {vaultPath && !isFTUXZeroState && activeTab?.path && activeTab.path !== "__new_tab__" && !activeTab.path.startsWith("__") && viewMode !== "preview" && !isSnippetPath(activeTab.path) && (
                   <FormattingToolbar />
                 )}
                 <div

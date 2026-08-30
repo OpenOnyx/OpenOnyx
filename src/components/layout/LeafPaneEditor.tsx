@@ -22,6 +22,7 @@ import { Transaction } from "@codemirror/state";
 import type { Extension } from "@codemirror/state";
 import type { EditorView } from "@codemirror/view";
 import { yDocManager, type OpenDocResult } from "../../lib/yDocManager";
+import { isObsidianSnippetPath, isSnippetPath } from "../../lib/snippetManager";
 
 const api = getAPI();
 
@@ -272,7 +273,7 @@ export function LeafPaneEditor({
       pendingSaveRef.current = null;
       const { path, content, collabMeta } = pending;
 
-      if (path && path !== "__new_tab__") {
+      if (path && path !== "__new_tab__" && !isObsidianSnippetPath(path)) {
         // Run disk save immediately
         try {
           await api.writeFile(path, content);
@@ -472,7 +473,7 @@ export function LeafPaneEditor({
     autoSaveTimer.current = setTimeout(async () => {
       autoSaveTimer.current = null;
       const pending = pendingSaveRef.current;
-      if (!pending) return;
+      if (!pending || isObsidianSnippetPath(pending.path)) return;
 
       try {
         await api.writeFile(pending.path, pending.content);
@@ -1088,6 +1089,10 @@ export function LeafPaneEditor({
   // Restore viewMode state when tab changes
   useEffect(() => {
     if (activeTab.path && activeTab.path !== "__new_tab__") {
+      if (isSnippetPath(activeTab.path)) {
+        setViewMode("editor");
+        return;
+      }
       const cached = getViewState?.(activeTab.path);
       if (cached?.viewMode) {
         setViewMode(cached.viewMode);
@@ -1098,6 +1103,10 @@ export function LeafPaneEditor({
   }, [activeTab.path, getViewState, settings.defaultView]);
 
   const handleViewModeChange = (mode: ViewMode) => {
+    if (isSnippetPath(activeTab.path)) {
+      setViewMode("editor");
+      return;
+    }
     setViewMode(mode);
     if (activeTab.path && activeTab.path !== "__new_tab__") {
       onViewStateChange?.(activeTab.path, { viewMode: mode });
@@ -1239,6 +1248,7 @@ export function LeafPaneEditor({
       <EditorHeader
         filePath={activeTab.path}
         viewMode={viewMode}
+        hideNoteChrome={isSnippetPath(activeTab.path)}
         onViewModeChange={handleViewModeChange}
         onToggleInsight={() => onToggleInsight(!showInlineInsight)}
         activeEditors={activeEditors}

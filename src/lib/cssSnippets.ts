@@ -73,6 +73,8 @@ export {
   getCssSnippets,
   getEnabledCssSnippetSet,
   getSnippetManager,
+  isObsidianSnippetPath,
+  isOpenOnyxSnippetPath,
   isSnippetPath,
   openCssSnippetsFolder,
   peekSnippetManager,

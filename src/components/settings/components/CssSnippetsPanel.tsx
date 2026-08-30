@@ -61,6 +61,7 @@ export function CssSnippetsPanel() {
             Extra stylesheets on top of the current theme. Files live in{" "}
             <code>.openonyx/snippets</code>. Vaults from Obsidian also load{" "}
             <code>.obsidian/snippets</code>. Same name: the OpenOnyx file wins.
+            Snippets that only target Obsidian editor classes may do nothing here.
           </p>
         </div>
         {snippets.length > 0 && (
@@ -229,23 +230,29 @@ export function CssSnippetsPanel() {
               />
               <button
                 type="button"
-                title="Edit in OpenOnyx"
+                title={
+                  snippet.source === "obsidian"
+                    ? "Opens an OpenOnyx copy. The .obsidian file is left unchanged."
+                    : "Edit in OpenOnyx"
+                }
                 onClick={() => void run((mgr) => mgr.openInEditor(snippet.id))}
                 className="text-[11px] text-[var(--text-muted)] hover:text-[var(--text-primary)]"
               >
                 Edit
               </button>
-              <button
-                type="button"
-                title="Rename"
-                onClick={() => {
-                  setRenamingId(snippet.id);
-                  setRenameValue(snippet.id);
-                }}
-                className="text-[11px] text-[var(--text-muted)] hover:text-[var(--text-primary)]"
-              >
-                Rename
-              </button>
+              {snippet.source === "openonyx" && (
+                <button
+                  type="button"
+                  title="Rename"
+                  onClick={() => {
+                    setRenamingId(snippet.id);
+                    setRenameValue(snippet.id);
+                  }}
+                  className="text-[11px] text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+                >
+                  Rename
+                </button>
+              )}
               <button
                 type="button"
                 title="Export"
@@ -254,18 +261,20 @@ export function CssSnippetsPanel() {
               >
                 Export
               </button>
-              <button
-                type="button"
-                title="Delete"
-                onClick={() => {
-                  if (window.confirm(`Delete snippet “${snippet.id}”?`)) {
-                    void run((mgr) => mgr.deleteSnippet(snippet.id));
-                  }
-                }}
-                className="text-[11px] text-red-400 hover:text-red-300"
-              >
-                Delete
-              </button>
+              {snippet.source === "openonyx" && (
+                <button
+                  type="button"
+                  title="Delete"
+                  onClick={() => {
+                    if (window.confirm(`Delete snippet “${snippet.id}”?`)) {
+                      void run((mgr) => mgr.deleteSnippet(snippet.id));
+                    }
+                  }}
+                  className="text-[11px] text-red-400 hover:text-red-300"
+                >
+                  Delete
+                </button>
+              )}
             </div>
           ))
         )}

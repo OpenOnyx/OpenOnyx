@@ -7,6 +7,8 @@ import {
   getCssSnippets,
   getEnabledCssSnippetSet,
   getSnippetManager,
+  isObsidianSnippetPath,
+  isOpenOnyxSnippetPath,
   isSnippetPath,
   peekSnippetManager,
   mergeAppearanceEnabled,
@@ -70,9 +72,10 @@ function makeApi(options?: {
           .map((key) => key.slice(subDir.length + 1)),
       ),
       listFiles: vi.fn(async (dirPath?: string) => {
-        if (dirPath === ".obsidian/snippets") {
+        if (dirPath === ".obsidian/snippets" || dirPath === ".openonyx/snippets") {
+          const prefix = `${dirPath}/`;
           return Array.from(vaultFiles.keys())
-            .filter((path) => path.startsWith(".obsidian/snippets/") && path.endsWith(".css"))
+            .filter((path) => path.startsWith(prefix) && path.endsWith(".css"))
             .map((path): FileEntry => {
               const name = path.split("/").pop()!;
               return { name, path, isDirectory: false };
@@ -130,6 +133,12 @@ describe("css snippet helpers", () => {
     expect(isSnippetPath(".obsidian/snippets/pretty.css")).toBe(true);
     expect(isSnippetPath("Notes/snippets/pretty.css")).toBe(false);
     expect(isSnippetPath("Notes/pretty.css")).toBe(false);
+  });
+
+  it("does not treat other snippets folders as vault CSS snippets", () => {
+    expect(isOpenOnyxSnippetPath(".openonyx/snippets/pretty.css")).toBe(true);
+    expect(isObsidianSnippetPath(".obsidian/snippets/pretty.css")).toBe(true);
+    expect(isObsidianSnippetPath(".openonyx/snippets/pretty.css")).toBe(false);
   });
 });
 
@@ -335,6 +344,47 @@ describe("css snippet manager", () => {
     expect(peekSnippetManager()).toBe(second);
     expect(document.querySelectorAll("style[data-oo-snippet]").length).toBe(1);
     expect(document.querySelector('style[data-oo-snippet="wide"]')).not.toBeNull();
+  });
+
+  it("refuses to rename, delete, or write an Obsidian snippet in place", async () => {
+    const { api } = makeApi({
+      obsidianFiles: { "legacy.css": ".legacy { color: lime; }" },
+    });
+    const deleteFile = vi.fn(async () => {});
+    api.deleteFile = deleteFile;
+    (window as any).electronAPI = api;
+
+    await startCssSnippets({ pollMs: null });
+    const mgr = getSnippetManager();
+
+    expect(await mgr.renameSnippet("legacy", "renamed")).toBe(false);
+    expect(api.renameFile).not.toHaveBeenCalled();
+    expect(await mgr.deleteSnippet("legacy")).toBe(false);
+    expect(deleteFile).not.toHaveBeenCalled();
+    expect(getCssSnippetNames()).toEqual(["legacy"]);
+  });
+
+  it("copies an Obsidian snippet to .openonyx before Edit", async () => {
+    const { api, writeFile } = makeApi({
+      obsidianFiles: { "legacy.css": ".legacy { color: lime; }" },
+    });
+    (window as any).electronAPI = api;
+    const opened: string[] = [];
+    (window as any).__oo_open_file = async (path: string) => {
+      opened.push(path);
+    };
+
+    await startCssSnippets({ pollMs: null });
+    await getSnippetManager().openInEditor("legacy");
+
+    expect(writeFile).toHaveBeenCalledWith(
+      ".openonyx/snippets/legacy.css",
+      expect.stringContaining("lime"),
+    );
+    expect(opened).toEqual([".openonyx/snippets/legacy.css"]);
+    expect(getSnippetManager().getSnippets().find((snippet) => snippet.id === "legacy")?.source).toBe(
+      "openonyx",
+    );
   });
 
   it("refuses to rename onto an existing snippet", async () => {

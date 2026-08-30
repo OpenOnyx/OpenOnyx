@@ -175,6 +175,21 @@ function updateSplitRatio(
   };
 }
 
+/** Replace a tab's identity in-place so a New tab can become a real file. */
+function updateTabInTree(node: PaneNode, tabId: string, next: Tab): PaneNode {
+  if (node.type === "leaf") {
+    const idx = node.tabs.findIndex((t) => t.id === tabId);
+    if (idx === -1) return node;
+    const nextTabs = node.tabs.slice();
+    nextTabs[idx] = { ...nextTabs[idx], ...next, id: tabId };
+    return { ...node, tabs: nextTabs, activeTabId: tabId };
+  }
+  const left = updateTabInTree(node.children[0], tabId, next);
+  const right = updateTabInTree(node.children[1], tabId, next);
+  if (left === node.children[0] && right === node.children[1]) return node;
+  return { ...node, children: [left, right] };
+}
+
 /** Set active tab in a specific leaf. */
 function setActiveTabInLeaf(
   node: PaneNode,
@@ -657,6 +672,7 @@ export {
   findFirstLeaf,
   findLeafById,
   setActiveTabInLeaf,
+  updateTabInTree,
 };
 
 function moveTabInTree(

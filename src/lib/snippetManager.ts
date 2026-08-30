@@ -44,10 +44,15 @@ const ABSOLUTE_CSS_URL_RE = /^(?:[a-z][a-z0-9+.-]*:|#|\/)/i;
 
 export function isSnippetPath(filePath: string): boolean {
   const normalized = filePath.replace(/\\/g, "/");
-  return (
-    normalized.includes(".openonyx/snippets/") ||
-    normalized.includes(".obsidian/snippets/")
-  );
+  return isOpenOnyxSnippetPath(normalized) || isObsidianSnippetPath(normalized);
+}
+
+export function isOpenOnyxSnippetPath(filePath: string): boolean {
+  return filePath.replace(/\\/g, "/").includes(".openonyx/snippets/");
+}
+
+export function isObsidianSnippetPath(filePath: string): boolean {
+  return filePath.replace(/\\/g, "/").includes(".obsidian/snippets/");
 }
 
 export function rewriteSnippetCssUrls(snippetPath: string, css: string): string {
@@ -295,9 +300,10 @@ export class SnippetManager {
     const snippet = this.snippets.get(id);
     const nextId = snippetNameFromFile(`${newName.replace(/[^a-zA-Z0-9\-_ ]/g, "").trim()}.css`);
     if (!snippet || !nextId) return false;
+    if (snippet.source === "obsidian") return false;
     if (nextId === id) return true;
     if (this.snippets.has(nextId)) return false;
-    const dir = snippet.source === "openonyx" ? OPENONYX_VAULT_DIR : OBSIDIAN_DIR;
+    const dir = OPENONYX_VAULT_DIR;
     const newPath = `${dir}/${nextId}.css`;
     const api = getAPI();
     try {
@@ -329,8 +335,7 @@ export class SnippetManager {
       let copyName = `${id}-copy`;
       let counter = 1;
       while (this.snippets.has(copyName)) copyName = `${id}-copy-${counter++}`;
-      const dir = snippet.source === "openonyx" ? OPENONYX_VAULT_DIR : OBSIDIAN_DIR;
-      await api.writeFile(`${dir}/${copyName}.css`, content);
+      await api.writeFile(`${OPENONYX_VAULT_DIR}/${copyName}.css`, content);
       await this.scan();
       this.emit();
       return copyName;
@@ -342,7 +347,7 @@ export class SnippetManager {
 
   async deleteSnippet(id: string): Promise<boolean> {
     const snippet = this.snippets.get(id);
-    if (!snippet) return false;
+    if (!snippet || snippet.source === "obsidian") return false;
     const api = getAPI();
     try {
       this.unloadSnippetCSS(id);
@@ -411,12 +416,38 @@ export class SnippetManager {
     if (typeof api.openPath === "function") await api.openPath(OPENONYX_VAULT_DIR);
   }
 
-  async openInEditor(id: string): Promise<void> {
+  /** Copy an Obsidian snippet into `.openonyx/snippets` so Edit never writes `.obsidian`. */
+  async copyToOpenOnyx(id: string): Promise<string | null> {
+    if (!this.alive) return null;
     const snippet = this.snippets.get(id);
-    if (!snippet) return;
+    if (!snippet) return null;
+    const dest = `${OPENONYX_VAULT_DIR}/${snippet.fileName}`;
+    if (snippet.source === "openonyx") return snippet.relativePath;
+    const api = getAPI();
+    if (typeof api.fileExists === "function" && (await api.fileExists(dest))) {
+      await this.scan();
+      this.emit();
+      return dest;
+    }
+    const raw = await this.readSnippetCss(snippet);
+    try {
+      await api.createDirectory(OPENONYX_VAULT_DIR);
+      await api.writeFile(dest, raw);
+    } catch (err) {
+      console.error("[SnippetManager] Failed to copy snippet to .openonyx:", err);
+      return null;
+    }
+    await this.scan();
+    this.emit();
+    return dest;
+  }
+
+  async openInEditor(id: string): Promise<void> {
+    const path = await this.copyToOpenOnyx(id);
+    if (!path) return;
     window.dispatchEvent(new CustomEvent("close-settings"));
     const openFile = (window as unknown as { __oo_open_file?: (path: string) => Promise<void> }).__oo_open_file;
-    if (openFile) await openFile(snippet.relativePath);
+    if (openFile) await openFile(path);
   }
 
   private async loadSnippetCSS(snippet: SnippetMeta): Promise<void> {

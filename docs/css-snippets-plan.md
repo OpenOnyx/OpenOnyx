@@ -1,10 +1,29 @@
-# Plan: Obsidian-compatible CSS snippets
+# CSS snippets (#110)
 
 **Issue:** [#110](https://github.com/OpenOnyx/OpenOnyx/issues/110)  
-**Branch:** `feat/css-snippets-110` (from current `main`; completes `origin/css-snippet`)  
-**Status:** implemented on that branch — not yet on `main`
+**Branch:** `feat/css-snippets-110`  
+**Status:** implemented on that branch (ready to review). Not on `main` until the PR lands.
 
-This is the working plan for first-class CSS snippets. It is based on Obsidian’s documented behavior, the current OpenOnyx tree, and the parked `feat/css-snippets` prototype.
+Drop `.css` files into the vault, toggle them in **Settings → CSS Snippets**, and they apply on top of the current theme.
+
+## Shipped behavior
+
+| Piece | What users get |
+| --- | --- |
+| Folders | `.openonyx/snippets/*.css` (default) and `.obsidian/snippets/*.css` (compat). Top-level `.css` only. |
+| UI | Settings → **CSS Snippets**: list, toggle, Refresh, Open folder, Import, New, Edit, Export. OpenOnyx rows also have Rename / Delete. |
+| Persist | `.openonyx/appearance.json` → `enabledCssSnippets`. Seed once from `.obsidian/appearance.json` if the OpenOnyx file is missing. Never write `.obsidian/`. |
+| Collision | Same stem in both folders: the OpenOnyx file wins. Badge: “overrides .obsidian”. |
+| Edit | Opens the file in the note editor as plain text (no Markdown toolbar or Reading view). Edit of an Obsidian snippet **copies** it to `.openonyx/snippets` first. |
+| Live update | In-app writes apply immediately. External editors are picked up by a 2s poll until [#82](https://github.com/OpenOnyx/OpenOnyx/issues/82). |
+| Plugin API | `app.customCss` is the same store as the settings panel. |
+| Honesty | Community snippets that only target Obsidian editor classes (`.cm-s-obsidian`, HyperMD) may do nothing. Common Obsidian CSS variables are aliased onto OpenOnyx tokens. |
+
+What it is **not**: pixel-perfect every community snippet, a CSS language mode, a marketplace, OS-level vault watching, theme packages, or a phone client.
+
+---
+
+The rest of this file is the original implementation plan.
 
 ---
 
@@ -23,7 +42,7 @@ What it does **not** mean:
 
 - Every community snippet looking identical (our DOM and editor are not Obsidian’s)
 - A shipped phone client
-- An in-app CSS editor
+- A dedicated CSS language-mode editor (Edit reuses the note editor as plain text)
 - OS-level vault watching ([#82](https://github.com/OpenOnyx/OpenOnyx/issues/82))
 
 ---
@@ -224,7 +243,7 @@ One short note in contributor docs (this file + a line in `docs/README.md`). Hon
 
 - Phone / tablet
 - Full Obsidian class and variable alias layer
-- In-app snippet editor or marketplace
+- CSS language mode / marketplace (Edit is plain text in the note editor)
 - OS-level vault watch (#82)
 - Theme packages (`.obsidian/themes`) — different feature
 - Writing into `.obsidian/appearance.json`

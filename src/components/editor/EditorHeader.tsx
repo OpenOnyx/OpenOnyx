@@ -34,6 +34,7 @@ import { ViewMode } from "../../types";
 interface EditorHeaderProps {
   filePath: string;
   viewMode: ViewMode;
+  hideNoteChrome?: boolean;
   onViewModeChange: (mode: ViewMode) => void;
   onToggleInsight?: () => void;
   activeEditors?: any[];
@@ -140,6 +141,7 @@ function formatMetaDate(ts?: number | null): string | null {
 export function EditorHeader({
   filePath,
   viewMode,
+  hideNoteChrome = false,
   onViewModeChange,
   onToggleInsight,
   onToggleBacklinks,
@@ -242,13 +244,15 @@ export function EditorHeader({
     <div className={editorChromeClass}>
       <div className={editorHeaderClass}>
         <div className={editorHeaderSideClass}>
-          <button
-            className={`${editorHeaderBtnClass} ${insightBtnClass}`}
-            onClick={onToggleInsight}
-            title="Note Insights"
-          >
-            <Lightbulb size={16} strokeWidth={1.5} />
-          </button>
+          {!hideNoteChrome && (
+            <button
+              className={`${editorHeaderBtnClass} ${insightBtnClass}`}
+              onClick={onToggleInsight}
+              title="Note Insights"
+            >
+              <Lightbulb size={16} strokeWidth={1.5} />
+            </button>
+          )}
         </div>
 
         <div className={editorHeaderCenterClass}>
@@ -260,19 +264,21 @@ export function EditorHeader({
         </div>
 
         <div className={editorHeaderRightClass}>
-          <button
-            className={editorHeaderBtnClass}
-            onClick={() =>
-              onViewModeChange(viewMode === "editor" ? "preview" : "editor")
-            }
-            title={viewMode === "editor" ? "Reading view" : "Editing view"}
-          >
-            {viewMode === "editor" ? (
-              <BookOpen size={16} strokeWidth={1.5} />
-            ) : (
-              <PenLine size={16} strokeWidth={1.5} />
-            )}
-          </button>
+          {!hideNoteChrome && (
+            <button
+              className={editorHeaderBtnClass}
+              onClick={() =>
+                onViewModeChange(viewMode === "editor" ? "preview" : "editor")
+              }
+              title={viewMode === "editor" ? "Reading view" : "Editing view"}
+            >
+              {viewMode === "editor" ? (
+                <BookOpen size={16} strokeWidth={1.5} />
+              ) : (
+                <PenLine size={16} strokeWidth={1.5} />
+              )}
+            </button>
+          )}
         </div>
       </div>
 
@@ -292,19 +298,23 @@ export function EditorHeader({
             style={{ left: menuPosition.x, top: menuPosition.y }}
             onClick={(event) => event.stopPropagation()}
           >
-            {renderItem("Backlinks in document", Link, onToggleBacklinks)}
-            {renderItem(
-              "Reading view",
-              BookOpen,
-              () => onViewModeChange(isReadingView ? "editor" : "preview"),
-              { checked: isReadingView },
+            {!hideNoteChrome && (
+              <>
+                {renderItem("Backlinks in document", Link, onToggleBacklinks)}
+                {renderItem(
+                  "Reading view",
+                  BookOpen,
+                  () => onViewModeChange(isReadingView ? "editor" : "preview"),
+                  { checked: isReadingView },
+                )}
+                <div className={menuSeparatorClass} />
+                {renderItem("Rename...", Pencil, onRename)}
+                {renderItem("Move file to...", FolderInput, onMoveFile)}
+                {renderItem("Bookmark...", Bookmark, onBookmark)}
+                {renderItem("Export to PDF...", FileDown, onExportPdf)}
+                <div className={menuSeparatorClass} />
+              </>
             )}
-            <div className={menuSeparatorClass} />
-            {renderItem("Rename...", Pencil, onRename)}
-            {renderItem("Move file to...", FolderInput, onMoveFile)}
-            {renderItem("Bookmark...", Bookmark, onBookmark)}
-            {renderItem("Export to PDF...", FileDown, onExportPdf)}
-            <div className={menuSeparatorClass} />
             {renderItem("Find...", Search, onFind)}
             {renderItem("Replace...", Replace, onReplace)}
             <div className={menuSeparatorClass} />
@@ -325,8 +335,12 @@ export function EditorHeader({
             {renderItem("Open in default app", ExternalLink, onOpenInDefaultApp)}
             {renderItem("Show in system explorer", FolderOpen, onShowInSystemExplorer)}
             {renderItem("Reveal file in navigation", PanelBottomOpen, onRevealInNavigation)}
-            <div className={menuSeparatorClass} />
-            {renderItem("Delete file", Trash2, onDeleteFile, { danger: true })}
+            {!hideNoteChrome && (
+              <>
+                <div className={menuSeparatorClass} />
+                {renderItem("Delete file", Trash2, onDeleteFile, { danger: true })}
+              </>
+            )}
           </div>
         </div>
       )}
