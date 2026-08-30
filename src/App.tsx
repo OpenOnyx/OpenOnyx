@@ -92,6 +92,7 @@ import {
   removeTabFromTree,
   setActiveTabInLeaf,
   updateTabInTree,
+  applyTabDeltaToTree,
   moveTabInTree,
   splitLeaf,
 } from "./components/layout/SplitPaneContainer";
@@ -111,7 +112,7 @@ import {
 } from "./utils/tabGroups";
 import { getAPI } from "./utils/api";
 import { PluginManager } from "./lib/pluginManager";
-import { getSnippetManager, isSnippetPath, stopCssSnippets } from "./lib/cssSnippets";
+import { getSnippetManager, isOpenOnyxSnippetPath, isSnippetPath, stopCssSnippets } from "./lib/cssSnippets";
 import { OOApp } from "./lib/obsidian-api/app";
 import { TFile } from "./lib/obsidian-api";
 import { PluginPermissionModal } from "./components/plugins/PluginPermissionModal";
@@ -372,6 +373,8 @@ const isHostEditableMarkdownPath = (path: string | null | undefined): path is st
   if (isCanvasFile(path) || isExcalidrawFile(path)) return false;
   return path.toLowerCase().endsWith(".md");
 };
+const isHostSavablePath = (path: string | null | undefined): path is string =>
+  isHostEditableMarkdownPath(path) || (!!path && isOpenOnyxSnippetPath(path));
 const isKanbanBoard = (frontmatter: Record<string, unknown> | undefined) =>
   typeof frontmatter?.['kanban-plugin'] === 'string'
   && frontmatter['kanban-plugin'].replace(/["']/g, '').toLowerCase() === 'board';
@@ -1257,31 +1260,9 @@ export default function App() {
     if (addedTabs.length === 0 && removedIds.length === 0) return;
 
     setPaneTree((prev) => {
-      let tree = prev;
-      const stillToAdd = [...addedTabs];
-
-      // Remove tabs that were closed. Replacing the last tab in a leaf
-      // (New tab → real file) must keep the incoming tabs, not drop them.
-      for (const id of removedIds) {
-        const result = removeTabFromTree(tree, id);
-        if (!result) {
-          tree = createLeaf(stillToAdd, stillToAdd[0]?.id ?? null);
-          stillToAdd.length = 0;
-          setFocusedLeafId(tree.id);
-        } else {
-          tree = result;
-        }
-      }
-
-      // Add new tabs to the focused leaf
-      for (const tab of stillToAdd) {
-        if (!findLeafWithTab(tree, tab.id)) {
-          const targetLeaf = findLeafById(tree, focusedLeafId) || findFirstLeaf(tree);
-          tree = insertTabIntoLeaf(tree, targetLeaf.id, tab);
-        }
-      }
-
-      return tree;
+      const next = applyTabDeltaToTree(prev, addedTabs, removedIds, focusedLeafId);
+      if (next.focusedLeafId !== focusedLeafId) setFocusedLeafId(next.focusedLeafId);
+      return next.tree;
     });
   }, [tabs, focusedLeafId, activeGroupId, groups]);
 
@@ -2396,7 +2377,6 @@ export default function App() {
 
       if (ctrl && !shift && e.key.toLowerCase() === "p" && settings.coreCommandPalette !== false) {
         e.preventDefault();
-        e.stopPropagation();
         setShowCommandPalette(true);
       } else if (ctrl && !shift && e.key.toLowerCase() === "f") {
         e.preventDefault();
@@ -2451,7 +2431,7 @@ export default function App() {
       }
     };
 
-    window.addEventListener("keydown", handleKeyDown, true);
+    window.addEventListener("keydown", handleKeyDown);
     const closeSettings = () => setShowSettings(false);
     window.addEventListener("close-settings", closeSettings);
 
@@ -2488,7 +2468,7 @@ export default function App() {
     window.addEventListener('oo:open-database', handleOpenDatabase as EventListener);
     
     return () => {
-      window.removeEventListener("keydown", handleKeyDown, true);
+      window.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener("close-settings", closeSettings);
       window.removeEventListener('oo:open-database', handleOpenDatabase as EventListener);
     };
@@ -3468,7 +3448,7 @@ export default function App() {
     if (!activeTabId) return;
     const tab = tabs.find((t) => t.id === activeTabId);
     if (!tab) return;
-    if (!isHostEditableMarkdownPath(tab.path)) return;
+    if (!isHostSavablePath(tab.path)) return;
     if (currentContentPathRef.current !== tab.path) {
       console.warn("[Editor] Refusing to save content for mismatched path", {
         targetPath: tab.path,
@@ -3485,8 +3465,9 @@ export default function App() {
         detail: { path: tab.path, content: saveContent },
       }),
     );
-    // Auto-embed in background
-    void indexMarkdownFileNow(tab.path, saveContent);
+    if (isHostEditableMarkdownPath(tab.path)) {
+      void indexMarkdownFileNow(tab.path, saveContent);
+    }
 
     setTabs((prev) =>
       prev.map((t) => (t.id === activeTabId ? { ...t, isModified: false } : t)),
@@ -3496,7 +3477,7 @@ export default function App() {
 
   const handleContentChangeGlobal = useCallback(
     (path: string, content: string, markModified = true) => {
-      if (!isHostEditableMarkdownPath(path)) return;
+      if (!isHostSavablePath(path)) return;
 
       // Keep currentContentRef updated synchronously
       if (activeTabId && tabs.find((t) => t.id === activeTabId)?.path === path) {
@@ -3556,7 +3537,7 @@ export default function App() {
 
       if (
         activeTab &&
-        isHostEditableMarkdownPath(activeTab.path)
+        isHostSavablePath(activeTab.path)
       ) {
         window.dispatchEvent(
           new CustomEvent("openonyx:note-content-changed", {
@@ -3579,15 +3560,16 @@ export default function App() {
       autoSaveTimer.current = setTimeout(async () => {
         autoSaveTimer.current = null;
         const tab = tabs.find((t) => t.id === activeTabId);
-        if (tab && isHostEditableMarkdownPath(tab.path)) {
+        if (tab && isHostSavablePath(tab.path)) {
           await api.writeFile(tab.path, content);
           window.dispatchEvent(
             new CustomEvent("openonyx:note-content-changed", {
               detail: { path: tab.path, content },
             }),
           );
-          // Auto-embed on auto-save (background)
-          void indexMarkdownFileNow(tab.path, content);
+          if (isHostEditableMarkdownPath(tab.path)) {
+            void indexMarkdownFileNow(tab.path, content);
+          }
 
           setTabs((prev) =>
             prev.map((t) =>
@@ -3788,14 +3770,14 @@ export default function App() {
     if (
       tab.isModified &&
       tab.id === activeTabId &&
-      isHostEditableMarkdownPath(tab.path) &&
+      isHostSavablePath(tab.path) &&
       currentContentPathRef.current === tab.path
     ) {
       await api.writeFile(tab.path, currentContent);
     } else if (
       tab.isModified &&
       tab.id === activeTabId &&
-      isHostEditableMarkdownPath(tab.path) &&
+      isHostSavablePath(tab.path) &&
       currentContentPathRef.current !== tab.path
     ) {
       console.warn("[Editor] Skipped close-tab write for mismatched content path", {

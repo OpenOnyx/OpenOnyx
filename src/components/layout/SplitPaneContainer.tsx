@@ -175,6 +175,38 @@ function updateSplitRatio(
   };
 }
 
+/** Apply flat-tab add/remove onto the pane tree without dropping a replacement. */
+function applyTabDeltaToTree(
+  tree: PaneNode,
+  addedTabs: Tab[],
+  removedIds: string[],
+  focusedLeafId: string | null,
+): { tree: PaneNode; focusedLeafId: string } {
+  let next = tree;
+  const stillToAdd = [...addedTabs];
+  let nextFocus = focusedLeafId || findFirstLeaf(tree).id;
+
+  for (const id of removedIds) {
+    const result = removeTabFromTree(next, id);
+    if (!result) {
+      next = createLeaf([...stillToAdd], stillToAdd[0]?.id ?? null);
+      stillToAdd.length = 0;
+      nextFocus = next.id;
+    } else {
+      next = result;
+    }
+  }
+
+  for (const tab of stillToAdd) {
+    if (!findLeafWithTab(next, tab.id)) {
+      const targetLeaf = findLeafById(next, nextFocus) || findFirstLeaf(next);
+      next = insertTabIntoLeaf(next, targetLeaf.id, tab);
+    }
+  }
+
+  return { tree: next, focusedLeafId: nextFocus };
+}
+
 /** Replace a tab's identity in-place so a New tab can become a real file. */
 function updateTabInTree(node: PaneNode, tabId: string, next: Tab): PaneNode {
   if (node.type === "leaf") {
@@ -673,6 +705,7 @@ export {
   findLeafById,
   setActiveTabInLeaf,
   updateTabInTree,
+  applyTabDeltaToTree,
 };
 
 function moveTabInTree(

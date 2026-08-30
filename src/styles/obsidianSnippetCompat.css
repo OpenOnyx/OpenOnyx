@@ -14,7 +14,6 @@
   --text-muted: var(--text-secondary);
   --text-faint: var(--text-muted);
   --text-accent: var(--accent-primary, var(--color-accent));
-  --text-on-accent: var(--text-on-accent, #fff);
   --interactive-accent: var(--accent-primary, var(--color-accent));
   --interactive-accent-hover: var(--color-accent-1, var(--color-accent));
   --h1-color: var(--text-primary);

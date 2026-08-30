@@ -47,12 +47,16 @@ export function isSnippetPath(filePath: string): boolean {
   return isOpenOnyxSnippetPath(normalized) || isObsidianSnippetPath(normalized);
 }
 
+function vaultRelativePath(filePath: string): string {
+  return filePath.replace(/\\/g, "/").replace(/^\.\//, "");
+}
+
 export function isOpenOnyxSnippetPath(filePath: string): boolean {
-  return filePath.replace(/\\/g, "/").includes(".openonyx/snippets/");
+  return vaultRelativePath(filePath).startsWith(".openonyx/snippets/");
 }
 
 export function isObsidianSnippetPath(filePath: string): boolean {
-  return filePath.replace(/\\/g, "/").includes(".obsidian/snippets/");
+  return vaultRelativePath(filePath).startsWith(".obsidian/snippets/");
 }
 
 export function rewriteSnippetCssUrls(snippetPath: string, css: string): string {
@@ -81,6 +85,7 @@ export class SnippetManager {
   private pollTimer: ReturnType<typeof setInterval> | null = null;
   private initialized = false;
   private alive = true;
+  private persistGeneration = 0;
   private listeners = new Set<() => void>();
 
   isAlive(): boolean {
@@ -118,6 +123,7 @@ export class SnippetManager {
       return;
     }
     this.alive = false;
+    this.persistGeneration += 1;
     if (this.pollTimer) {
       clearInterval(this.pollTimer);
       this.pollTimer = null;
@@ -430,6 +436,7 @@ export class SnippetManager {
       return dest;
     }
     const raw = await this.readSnippetCss(snippet);
+    if (raw === null) return null;
     try {
       await api.createDirectory(OPENONYX_VAULT_DIR);
       await api.writeFile(dest, raw);
@@ -454,11 +461,12 @@ export class SnippetManager {
     if (!this.alive) return;
     try {
       let css = this.cssCache.get(snippet.id);
-      if (!css) {
+      if (css === undefined) {
         const raw = await this.readSnippetCss(snippet);
-        if (raw === "") {
+        if (raw === null) {
           snippet.status = "error";
           snippet.error = "File not found";
+          this.unloadSnippetCSS(snippet.id);
           return;
         }
         css = rewriteSnippetCssUrls(snippet.relativePath, raw);
@@ -481,27 +489,29 @@ export class SnippetManager {
     }
   }
 
-  private async readSnippetCss(snippet: SnippetMeta): Promise<string> {
+  private async readSnippetCss(snippet: SnippetMeta): Promise<string | null> {
     const api = getAPI();
     const fileName = safeCssFileName(snippet.fileName);
-    if (!fileName) return "";
+    if (!fileName) return null;
     if (snippet.source === "openonyx") {
       try {
         const fromData = await api.dataRead(`${OPENONYX_DATA_DIR}/${fileName}`);
-        if (fromData) return fromData;
+        if (fromData !== null && fromData !== undefined) return fromData;
       } catch {
         /* fall through */
       }
       try {
-        return (await api.readFile(`${OPENONYX_VAULT_DIR}/${fileName}`)) || "";
+        const fromVault = await api.readFile(`${OPENONYX_VAULT_DIR}/${fileName}`);
+        return fromVault === null || fromVault === undefined ? null : fromVault;
       } catch {
-        return "";
+        return null;
       }
     }
     try {
-      return (await api.readFile(`${OBSIDIAN_DIR}/${fileName}`)) || "";
+      const fromVault = await api.readFile(`${OBSIDIAN_DIR}/${fileName}`);
+      return fromVault === null || fromVault === undefined ? null : fromVault;
     } catch {
-      return "";
+      return null;
     }
   }
 
@@ -566,12 +576,19 @@ export class SnippetManager {
 
   private async persistEnabled(): Promise<void> {
     if (!this.alive) return;
+    const generation = this.persistGeneration;
+    const names = Array.from(this.enabled);
+    const api = getAPI();
     try {
-      const existing = await getAPI().dataRead(APPEARANCE_PATH).catch(() => null);
-      await getAPI().dataWrite(
-        APPEARANCE_PATH,
-        mergeAppearanceEnabled(existing, Array.from(this.enabled)),
-      );
+      const vault =
+        typeof api.getVaultPath === "function" ? await api.getVaultPath() : null;
+      if (!this.alive || generation !== this.persistGeneration) return;
+      const existing = await api.dataRead(APPEARANCE_PATH).catch(() => null);
+      if (!this.alive || generation !== this.persistGeneration) return;
+      const vaultNow =
+        typeof api.getVaultPath === "function" ? await api.getVaultPath() : null;
+      if (vaultNow !== vault) return;
+      await api.dataWrite(APPEARANCE_PATH, mergeAppearanceEnabled(existing, names));
     } catch (err) {
       console.warn("[SnippetManager] Failed to persist appearance.json:", err);
     }

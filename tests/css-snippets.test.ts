@@ -133,12 +133,15 @@ describe("css snippet helpers", () => {
     expect(isSnippetPath(".obsidian/snippets/pretty.css")).toBe(true);
     expect(isSnippetPath("Notes/snippets/pretty.css")).toBe(false);
     expect(isSnippetPath("Notes/pretty.css")).toBe(false);
+    expect(isSnippetPath("notes.obsidian/snippets/readme.md")).toBe(false);
+    expect(isSnippetPath("copy.openonyx/snippets/pretty.css")).toBe(false);
   });
 
   it("does not treat other snippets folders as vault CSS snippets", () => {
     expect(isOpenOnyxSnippetPath(".openonyx/snippets/pretty.css")).toBe(true);
     expect(isObsidianSnippetPath(".obsidian/snippets/pretty.css")).toBe(true);
     expect(isObsidianSnippetPath(".openonyx/snippets/pretty.css")).toBe(false);
+    expect(isOpenOnyxSnippetPath("notes.openonyx/snippets/pretty.css")).toBe(false);
   });
 });
 
@@ -227,6 +230,24 @@ describe("css snippet manager", () => {
     await refreshCssSnippets();
 
     expect(document.querySelector('style[data-oo-snippet="accent"]')?.textContent).toContain("green");
+  });
+
+  it("clears injected CSS when an enabled snippet file is emptied", async () => {
+    const { api, data } = makeApi({
+      openonyxFiles: { "snippets/accent.css": ".title { color: red; }" },
+      appearance: JSON.stringify({ enabledCssSnippets: ["accent"] }),
+    });
+    (window as any).electronAPI = api;
+
+    await startCssSnippets({ pollMs: null });
+    expect(document.querySelector('style[data-oo-snippet="accent"]')?.textContent).toContain("red");
+
+    data.set("snippets/accent.css", "");
+    await refreshCssSnippets();
+
+    const tag = document.querySelector('style[data-oo-snippet="accent"]');
+    expect(tag).not.toBeNull();
+    expect(tag?.textContent ?? "").not.toContain("red");
   });
 
   it("drops a removed snippet and its injected styles", async () => {
@@ -344,6 +365,38 @@ describe("css snippet manager", () => {
     expect(peekSnippetManager()).toBe(second);
     expect(document.querySelectorAll("style[data-oo-snippet]").length).toBe(1);
     expect(document.querySelector('style[data-oo-snippet="wide"]')).not.toBeNull();
+  });
+
+  it("does not persist appearance.json after the manager is destroyed", async () => {
+    const { api, data, dataWrite } = makeApi({
+      obsidianFiles: { "pretty.css": ".pretty { color: red; }" },
+      obsidianAppearance: JSON.stringify({ enabledCssSnippets: ["pretty"] }),
+    });
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let appearanceReads = 0;
+    const origRead = api.dataRead;
+    api.dataRead = vi.fn(async (relativePath: string) => {
+      const value = await origRead(relativePath);
+      if (relativePath === "appearance.json") {
+        appearanceReads += 1;
+        if (appearanceReads >= 2) await gate;
+      }
+      return value;
+    });
+    (window as any).electronAPI = api;
+
+    const first = getSnippetManager();
+    const firstInit = first.initialize({ pollMs: null });
+    await vi.waitFor(() => expect(appearanceReads).toBeGreaterThanOrEqual(2));
+    stopCssSnippets(first);
+    release();
+    await firstInit;
+
+    expect(dataWrite).not.toHaveBeenCalled();
+    expect(data.get("appearance.json")).toBeUndefined();
   });
 
   it("refuses to rename, delete, or write an Obsidian snippet in place", async () => {

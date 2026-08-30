@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  applyTabDeltaToTree,
   createLeaf,
   findLeafWithTab,
   insertTabIntoLeaf,
-  removeTabFromTree,
   updateTabInTree,
 } from "../src/components/layout/SplitPaneContainer";
 import type { Tab } from "../src/types";
@@ -32,12 +32,12 @@ describe("pane tree tab replacement", () => {
     const fileTab = tab("f1", ".openonyx/snippets/qa-pink-headings.css");
     const leaf = createLeaf([newTab], newTab.id);
 
-    const removed = removeTabFromTree(leaf, newTab.id);
-    expect(removed).toBeNull();
-
-    const recovered = createLeaf([fileTab], fileTab.id);
-    expect(recovered.tabs.map((t) => t.path)).toEqual([fileTab.path]);
-    expect(recovered.activeTabId).toBe(fileTab.id);
+    const next = applyTabDeltaToTree(leaf, [fileTab], [newTab.id], leaf.id);
+    expect(next.tree.type).toBe("leaf");
+    if (next.tree.type !== "leaf") return;
+    expect(next.tree.tabs.map((t) => t.path)).toEqual([fileTab.path]);
+    expect(next.tree.activeTabId).toBe(fileTab.id);
+    expect(findLeafWithTab(next.tree, fileTab.id)?.id).toBe(next.tree.id);
   });
 
   it("inserts a file tab into a focused leaf that already has notes", () => {
