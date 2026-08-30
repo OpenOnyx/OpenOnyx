@@ -161,6 +161,8 @@ describe("css snippet manager", () => {
     expect(getCssSnippetNames()).toEqual(["legacy", "shared"]);
     expect(getCssSnippets().find((snippet) => snippet.name === "shared")?.source).toBe("openonyx");
     expect(getCssSnippets().find((snippet) => snippet.name === "legacy")?.source).toBe("obsidian");
+    expect(getSnippetManager().getSnippets().find((snippet) => snippet.id === "shared")?.overridesObsidian).toBe(true);
+    expect(getSnippetManager().getSnippets().find((snippet) => snippet.id === "legacy")?.overridesObsidian).toBeFalsy();
   });
 
   it("seeds enabled snippets from Obsidian appearance.json and persists them to OpenOnyx", async () => {

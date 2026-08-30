@@ -237,7 +237,8 @@ export type SettingsSection =
   | "quick-switcher"
   | "templates"
   | "collaboration"
-  | "about";
+  | "about"
+  | "css-snippets";
 
 export interface SettingsPageProps {
   settings: AppSettings;
@@ -277,6 +278,8 @@ function mapSectionToStudioTab(section?: SettingsSection): StudioTab {
       return "workspace";
     case "appearance":
       return "appearance";
+    case "css-snippets":
+      return "css-snippets";
     case "hotkeys":
       return "hotkeys";
     case "keychain":

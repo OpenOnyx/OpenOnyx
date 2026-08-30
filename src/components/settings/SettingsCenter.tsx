@@ -15,6 +15,7 @@ import { authManager } from "../../lib/auth";
 import { AuthModal } from "../modals/AuthModal";
 import { version as APP_VERSION } from "../../../package.json";
 import { DEFAULT_SETTINGS } from "./SettingsPage";
+import { CssSnippetsPanel } from "./components/CssSnippetsPanel";
 
 export type StudioTab =
   | "home"
@@ -26,7 +27,8 @@ export type StudioTab =
   | "extensions"
   | "system"
   | "hotkeys"
-  | "collaboration";
+  | "collaboration"
+  | "css-snippets";
 
 interface SettingsCenterProps {
   settings: AppSettings;
@@ -50,7 +52,8 @@ const STUDIOS = [
   { id: "home" as const, label: "Settings Home", desc: "Quick tweaks, favorites & search" },
   { id: "workspace" as const, label: "Workspace", desc: "Default folders, views & file rules" },
   { id: "editor" as const, label: "Editor", desc: "Typography, [[Wikilinks]] & line width" },
-  { id: "appearance" as const, label: "Appearance", desc: "Themes, font scale, zoom & CSS snippets" },
+  { id: "appearance" as const, label: "Appearance", desc: "Themes, font scale, zoom & wallpaper" },
+  { id: "css-snippets" as const, label: "CSS Snippets", desc: "Custom stylesheets on top of the theme" },
   { id: "ai" as const, label: "AI", desc: "Providers, models & note indexer" },
   { id: "sync" as const, label: "Sync", desc: "Cloud database & storage connection" },
   { id: "extensions" as const, label: "Extensions", desc: "Community plugins & core suite" },
@@ -115,7 +118,9 @@ export function SettingsCenter({
 
     if (q.includes("font") || q.includes("size") || q.includes("wikilink") || q.includes("line") || q.includes("vim") || q.includes("editor") || q.includes("text")) {
       setActiveTab("editor");
-    } else if (q.includes("theme") || q.includes("color") || q.includes("dark") || q.includes("light") || q.includes("zoom") || q.includes("ribbon") || q.includes("wallpaper") || q.includes("background") || q.includes("snippet") || q.includes("css")) {
+    } else if (q.includes("snippet") || q.includes("css")) {
+      setActiveTab("css-snippets");
+    } else if (q.includes("theme") || q.includes("color") || q.includes("dark") || q.includes("light") || q.includes("zoom") || q.includes("ribbon") || q.includes("wallpaper") || q.includes("background")) {
       setActiveTab("appearance");
     } else if (q.includes("ai") || q.includes("model") || q.includes("openai") || q.includes("openrouter") || q.includes("claude") || q.includes("key")) {
       setActiveTab("ai");
@@ -375,6 +380,8 @@ export function SettingsCenter({
                   {activeTab === "appearance" && (
                     <LiveThemeStudio settings={settings} onUpdateSetting={updateSetting} />
                   )}
+
+                  {activeTab === "css-snippets" && <CssSnippetsPanel />}
 
                   {/* 4. AI */}
                   {activeTab === "ai" && <AIIntelligenceDashboard />}

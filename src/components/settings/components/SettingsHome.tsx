@@ -88,6 +88,7 @@ export function SettingsHome({ settings, onUpdateSetting, onNavigate }: Settings
             { id: "workspace", title: "Workspace", desc: "Default folders, tabs & files" },
             { id: "editor", title: "Editor", desc: "Typography, Wikilinks & line width" },
             { id: "appearance", title: "Appearance", desc: "Themes, font scale & zoom level" },
+            { id: "css-snippets", title: "CSS Snippets", desc: "Custom stylesheets on top of the theme" },
             { id: "ai", title: "AI", desc: "Providers, models & note indexer" },
             { id: "sync", title: "Sync", desc: "Cloud database & storage connection" },
             { id: "extensions", title: "Extensions", desc: "Community plugins & core suite" },

@@ -114,12 +114,14 @@ export function CssSnippetsPanel() {
             onKeyDown={(event) => {
               if (event.key === "Enter") {
                 void run(async (mgr) => {
-                  await mgr.createSnippet(newName);
+                  const id = await mgr.createSnippet(newName);
                   setNewName("");
                   setCreating(false);
+                  if (id) await mgr.openInEditor(id);
                 });
               }
               if (event.key === "Escape") {
+                event.preventDefault();
                 setCreating(false);
                 setNewName("");
               }
@@ -132,9 +134,10 @@ export function CssSnippetsPanel() {
             disabled={!newName.trim() || busy}
             onClick={() =>
               void run(async (mgr) => {
-                await mgr.createSnippet(newName);
+                const id = await mgr.createSnippet(newName);
                 setNewName("");
                 setCreating(false);
+                if (id) await mgr.openInEditor(id);
               })
             }
             className="h-8 rounded-md bg-[var(--text-primary)] px-3 text-xs font-semibold text-[var(--bg-primary)] disabled:opacity-40"
@@ -168,30 +171,51 @@ export function CssSnippetsPanel() {
               />
               <div className="min-w-0 flex-1">
                 {renamingId === snippet.id ? (
-                  <input
-                    value={renameValue}
-                    autoFocus
-                    onChange={(event) => setRenameValue(event.target.value)}
-                    onBlur={() => setRenamingId(null)}
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter") {
-                        void run(async (mgr) => {
-                          await mgr.renameSnippet(snippet.id, renameValue);
-                          setRenamingId(null);
-                        });
-                      }
-                      if (event.key === "Escape") setRenamingId(null);
-                    }}
-                    className="h-7 w-full rounded border border-[var(--border-medium)] bg-[var(--bg-tertiary)] px-2 text-xs"
-                  />
-                ) : (
                   <div className="flex items-center gap-2">
+                    <input
+                      value={renameValue}
+                      autoFocus
+                      onChange={(event) => setRenameValue(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter") {
+                          event.preventDefault();
+                          void run(async (mgr) => {
+                            const ok = await mgr.renameSnippet(snippet.id, renameValue);
+                            if (ok) setRenamingId(null);
+                          });
+                        }
+                        if (event.key === "Escape") {
+                          event.preventDefault();
+                          setRenamingId(null);
+                        }
+                      }}
+                      className="h-7 min-w-0 flex-1 rounded border border-[var(--border-medium)] bg-[var(--bg-tertiary)] px-2 text-xs"
+                    />
+                    <button
+                      type="button"
+                      onMouseDown={(event) => event.preventDefault()}
+                      onClick={() => setRenamingId(null)}
+                      className="text-[11px] text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex flex-wrap items-center gap-2">
                     <span className="truncate text-[13px] font-semibold text-[var(--text-primary)]">
                       {snippet.id}
                     </span>
                     <span className="rounded bg-[var(--bg-tertiary)] px-1.5 py-0.5 text-[9px] font-mono text-[var(--text-muted)]">
                       {snippet.source === "obsidian" ? ".obsidian" : ".openonyx"}
                     </span>
+                    {snippet.overridesObsidian && (
+                      <span
+                        className="rounded bg-[var(--bg-tertiary)] px-1.5 py-0.5 text-[9px] text-[var(--text-muted)]"
+                        title="A file with this name also exists in .obsidian/snippets. The OpenOnyx copy is the one that loads."
+                      >
+                        overrides .obsidian
+                      </span>
+                    )}
                   </div>
                 )}
                 <div className="mt-0.5 flex gap-3 text-[10px] text-[var(--text-muted)]">
@@ -203,6 +227,14 @@ export function CssSnippetsPanel() {
                 checked={snippet.enabled}
                 onChange={() => void run((mgr) => mgr.toggle(snippet.id))}
               />
+              <button
+                type="button"
+                title="Edit in OpenOnyx"
+                onClick={() => void run((mgr) => mgr.openInEditor(snippet.id))}
+                className="text-[11px] text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+              >
+                Edit
+              </button>
               <button
                 type="button"
                 title="Rename"

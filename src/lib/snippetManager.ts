@@ -29,6 +29,7 @@ export interface SnippetMeta {
   size: number;
   status: SnippetStatus;
   error?: string;
+  overridesObsidian?: boolean;
 }
 
 const SNIPPET_STYLE_ATTR = "data-snippet-id";
@@ -159,7 +160,11 @@ export class SnippetManager {
       const safe = safeCssFileName(fileName);
       const id = snippetNameFromFile(fileName);
       if (!safe || !id) return;
-      if (discovered.has(id) && source === "obsidian") return;
+      if (discovered.has(id) && source === "obsidian") {
+        const current = discovered.get(id);
+        if (current) current.overridesObsidian = true;
+        return;
+      }
       const existing = this.snippets.get(id);
       const enabled = this.enabled.has(id);
       discovered.set(id, {
@@ -173,6 +178,7 @@ export class SnippetManager {
         size,
         status: enabled ? (existing?.status === "error" ? "error" : "loaded") : "disabled",
         error: existing?.error,
+        overridesObsidian: existing?.overridesObsidian,
       });
     };
 
@@ -271,7 +277,10 @@ export class SnippetManager {
     const api = getAPI();
     try {
       await api.createDirectory(OPENONYX_VAULT_DIR);
-      await api.createFile(path, `/* ${id} */\n`);
+      await api.createFile(
+        path,
+        `/* ${id}\n * Enable this snippet in Settings → CSS Snippets.\n */\n`,
+      );
       await this.scan();
       this.emit();
       return id;

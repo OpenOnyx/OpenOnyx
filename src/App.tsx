@@ -2390,8 +2390,9 @@ export default function App() {
       const ctrl = e.ctrlKey || e.metaKey;
       const shift = e.shiftKey;
 
-      if (ctrl && e.key === "p" && settings.coreCommandPalette !== false) {
+      if (ctrl && !shift && e.key.toLowerCase() === "p" && settings.coreCommandPalette !== false) {
         e.preventDefault();
+        e.stopPropagation();
         setShowCommandPalette(true);
       } else if (ctrl && !shift && e.key.toLowerCase() === "f") {
         e.preventDefault();
@@ -2446,8 +2447,10 @@ export default function App() {
       }
     };
 
-    window.addEventListener("keydown", handleKeyDown);
-    
+    window.addEventListener("keydown", handleKeyDown, true);
+    const closeSettings = () => setShowSettings(false);
+    window.addEventListener("close-settings", closeSettings);
+
     // Listen for custom events
     const handleOpenDatabase = (e: CustomEvent<{path: string}>) => {
       const tabId = `__database__.${e.detail.path}`;
@@ -2481,7 +2484,8 @@ export default function App() {
     window.addEventListener('oo:open-database', handleOpenDatabase as EventListener);
     
     return () => {
-      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("keydown", handleKeyDown, true);
+      window.removeEventListener("close-settings", closeSettings);
       window.removeEventListener('oo:open-database', handleOpenDatabase as EventListener);
     };
   }, [activeTabId, tabs, paneTree, settings.coreCommandPalette, settings.coreQuickSwitcher, settings.coreCanvas]);

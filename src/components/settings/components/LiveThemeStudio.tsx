@@ -1,7 +1,6 @@
 import React, { useRef, useCallback } from "react";
 import type { AppSettings } from "../SettingsPage";
 import { PreferenceCard, SliderControl, CustomToggle, SegmentedControl } from "./PreferenceCard";
-import { CssSnippetsPanel } from "./CssSnippetsPanel";
 
 interface LiveThemeStudioProps {
   settings: AppSettings;
@@ -427,8 +426,6 @@ export function LiveThemeStudio({ settings, onUpdateSetting }: LiveThemeStudioPr
           />
         </PreferenceCard>
       </div>
-
-      <CssSnippetsPanel />
     </div>
   );
 }
