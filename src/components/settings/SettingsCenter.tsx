@@ -50,7 +50,7 @@ const STUDIOS = [
   { id: "home" as const, label: "Settings Home", desc: "Quick tweaks, favorites & search" },
   { id: "workspace" as const, label: "Workspace", desc: "Default folders, views & file rules" },
   { id: "editor" as const, label: "Editor", desc: "Typography, [[Wikilinks]] & line width" },
-  { id: "appearance" as const, label: "Appearance", desc: "Themes, font scale & zoom" },
+  { id: "appearance" as const, label: "Appearance", desc: "Themes, font scale, zoom & CSS snippets" },
   { id: "ai" as const, label: "AI", desc: "Providers, models & note indexer" },
   { id: "sync" as const, label: "Sync", desc: "Cloud database & storage connection" },
   { id: "extensions" as const, label: "Extensions", desc: "Community plugins & core suite" },
@@ -115,7 +115,7 @@ export function SettingsCenter({
 
     if (q.includes("font") || q.includes("size") || q.includes("wikilink") || q.includes("line") || q.includes("vim") || q.includes("editor") || q.includes("text")) {
       setActiveTab("editor");
-    } else if (q.includes("theme") || q.includes("color") || q.includes("dark") || q.includes("light") || q.includes("zoom") || q.includes("ribbon") || q.includes("wallpaper") || q.includes("background")) {
+    } else if (q.includes("theme") || q.includes("color") || q.includes("dark") || q.includes("light") || q.includes("zoom") || q.includes("ribbon") || q.includes("wallpaper") || q.includes("background") || q.includes("snippet") || q.includes("css")) {
       setActiveTab("appearance");
     } else if (q.includes("ai") || q.includes("model") || q.includes("openai") || q.includes("openrouter") || q.includes("claude") || q.includes("key")) {
       setActiveTab("ai");

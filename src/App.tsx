@@ -110,6 +110,7 @@ import {
 } from "./utils/tabGroups";
 import { getAPI } from "./utils/api";
 import { PluginManager } from "./lib/pluginManager";
+import { startCssSnippets, stopCssSnippets } from "./lib/cssSnippets";
 import { OOApp } from "./lib/obsidian-api/app";
 import { TFile } from "./lib/obsidian-api";
 import { PluginPermissionModal } from "./components/plugins/PluginPermissionModal";
@@ -2167,6 +2168,22 @@ export default function App() {
     }
     clearSpacesCache();
     resetSynthesisCache();
+  }, [vaultPath]);
+
+  // ── CSS snippets (Appearance) ──────────────────────
+  useEffect(() => {
+    if (!vaultPath) {
+      stopCssSnippets();
+      return;
+    }
+    let cancelled = false;
+    void startCssSnippets().then(() => {
+      if (cancelled) stopCssSnippets();
+    });
+    return () => {
+      cancelled = true;
+      stopCssSnippets();
+    };
   }, [vaultPath]);
 
   // ── Initialize Core Systems ────────────────────────

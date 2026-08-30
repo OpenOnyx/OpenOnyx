@@ -7,6 +7,7 @@ import { applyPreferredTrash, OOVault } from './vault';
 import { OOWorkspace } from './workspace';
 import { OOMetadataCache } from './metadata';
 import { normalizePath, parseYaml, Scope, stringifyYaml } from './utils';
+import { cssSnippetsApi } from '../cssSnippets';
 import { EditorState } from '@codemirror/state';
 import { EditorView } from '@codemirror/view';
 import moment from 'moment';
@@ -109,38 +110,7 @@ export class OOApp {
       popScope: (_scope: Scope) => {},
     };
     const thisApp = this;
-    const enabledSnippets = new Set<string>(
-      this.loadLocalStorage('enabled-css-snippets') || [],
-    );
-    this.customCss = {
-      snippets: [] as string[],
-      enabledSnippets,
-      theme: '',
-      themes: {} as Record<string, any>,
-      async requestLoadSnippets() {
-        const listing = await thisApp.vault.adapter.list('.obsidian/snippets').catch(() => ({
-          files: [],
-          folders: [],
-        }));
-        this.snippets = listing.files
-          .filter((path: string) => path.toLowerCase().endsWith('.css'))
-          .map((path: string) => path.split('/').pop()!.replace(/\.css$/i, ''))
-          .sort();
-        return this.snippets;
-      },
-      async setCssEnabledStatus(snippet: string, enabled: boolean) {
-        if (enabled) enabledSnippets.add(snippet);
-        else enabledSnippets.delete(snippet);
-        thisApp.saveLocalStorage('enabled-css-snippets', Array.from(enabledSnippets));
-      },
-      async loadSnippet(snippet: string) {
-        enabledSnippets.add(snippet);
-      },
-      unloadSnippet(snippet: string) {
-        enabledSnippets.delete(snippet);
-      },
-    };
-    void this.customCss.requestLoadSnippets();
+    this.customCss = cssSnippetsApi;
 
     this.fileManager = {
       getNewFileParent: (sourcePath: string, newFilePath?: string) => {

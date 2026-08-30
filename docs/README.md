@@ -5,6 +5,7 @@ User-facing product docs live at [openonyx.dev](https://openonyx.dev) (placehold
 | File | What it is |
 | --- | --- |
 | [roadmap.md](roadmap.md) | Public roadmap linked from the README |
+| [css-snippets-plan.md](css-snippets-plan.md) | Implementation plan for #110 CSS snippets |
 | [spaces.md](spaces.md) | Spaces pipeline, IndexedDB / Supabase schema, sync |
 | [obsidian-plugin-compatibility.md](obsidian-plugin-compatibility.md) | Plugin API coverage and real-bundle tests |
 
