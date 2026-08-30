@@ -225,7 +225,7 @@ function NewFolderIcon({ size = 18 }: { size?: number }) {
 }
 
 const sidebarRootClass =
-  "sidebar onyx-tree relative flex h-full w-full min-w-0 shrink-0 flex-col overflow-hidden bg-[var(--bg-tree,var(--bg-secondary))] pt-0";
+  "sidebar onyx-tree workspace-leaf-content nav-files-container relative flex h-full w-full min-w-0 shrink-0 flex-col overflow-hidden bg-[var(--bg-tree,var(--bg-secondary))] pt-0";
 const sidebarCollapsedClass =
   "collapsed !m-0 hidden !w-0 !min-w-0 !max-w-0 !overflow-hidden !border-x-0 !p-0";
 const sidebarHeaderClass =
@@ -249,11 +249,11 @@ const sidebarSortMenuItemClass =
 const sidebarSortMenuItemActiveClass =
   "bg-[var(--bg-active)] text-[var(--text-primary)]";
 const fileExplorerClass =
-  "file-explorer flex-1 overflow-y-auto overflow-x-hidden px-1.5 pb-6 pt-0.5 transition-[background-color,box-shadow] duration-200";
+  "file-explorer nav-files-container flex-1 overflow-y-auto overflow-x-hidden px-1.5 pb-6 pt-0.5 transition-[background-color,box-shadow] duration-200";
 const fileExplorerDragClass =
   "bg-[rgba(var(--accent-color-rgb,37,99,235),0.05)] shadow-[inset_0_0_0_2px_var(--accent-primary)]";
 const fileTreeItemBaseClass =
-  "file-tree-item group relative mb-px flex min-h-[28px] w-full cursor-pointer items-center gap-1.5 rounded-[var(--nav-item-radius,6px)] border-0 bg-transparent py-0.5 pl-6 pr-2 text-left font-sans text-[13px] leading-[1.3] text-[var(--nav-item-color)] transition-[background-color,color,box-shadow] duration-75 hover:bg-[var(--nav-item-background-hover)] hover:text-[var(--nav-item-color-hover)]";
+  "file-tree-item tree-item-self nav-file-title group relative mb-px flex min-h-[28px] w-full cursor-pointer items-center gap-1.5 rounded-[var(--nav-item-radius,6px)] border-0 bg-transparent py-0.5 pl-6 pr-2 text-left font-sans text-[13px] leading-[1.3] text-[var(--nav-item-color)] transition-[background-color,color,box-shadow] duration-75 hover:bg-[var(--nav-item-background-hover)] hover:text-[var(--nav-item-color-hover)]";
 const fileTreeItemActiveClass =
   "active !bg-[var(--bg-tree-selected,var(--nav-item-background-selected))] !text-[var(--nav-item-color-selected)] shadow-[0_1px_2px_rgba(15,23,42,0.06)] font-medium";
 const fileTreeItemDraggingClass =

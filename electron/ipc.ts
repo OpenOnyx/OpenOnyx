@@ -77,9 +77,13 @@ export function registerIpcHandlers(
     return [];
   });
 
+  let lastOpenDialogPaths: string[] = [];
+  let lastSaveDialogPath: string | null = null;
+
   ipcMain.handle('desktop:showOpenDialog', async (_event, options: Electron.OpenDialogOptions) => {
     const owner = getMainWindow();
     const result = owner ? await dialog.showOpenDialog(owner, options) : await dialog.showOpenDialog(options);
+    lastOpenDialogPaths = (result.filePaths || []).map((filePath) => nodePath.resolve(filePath));
     result.filePaths?.forEach((filePath) => approveVaultPath(filePath));
     return result;
   });
@@ -87,6 +91,7 @@ export function registerIpcHandlers(
   ipcMain.handle('desktop:showSaveDialog', async (_event, options: Electron.SaveDialogOptions) => {
     const owner = getMainWindow();
     const result = owner ? await dialog.showSaveDialog(owner, options) : await dialog.showSaveDialog(options);
+    lastSaveDialogPath = result.filePath ? nodePath.resolve(result.filePath) : null;
     approveVaultPath(result.filePath);
     return result;
   });
@@ -494,5 +499,42 @@ export function registerIpcHandlers(
     } catch {
       return false;
     }
+  });
+
+  ipcMain.handle('snippets:import', async (_event, filePaths: string[]) => {
+    const vaultPath = fsManager.getVaultPath();
+    if (!vaultPath) throw new Error('No vault path set');
+    const destDir = nodePath.join(vaultPath, '.openonyx', 'snippets');
+    await fs.mkdir(destDir, { recursive: true });
+    const imported: string[] = [];
+    for (const filePath of filePaths || []) {
+      const resolved = nodePath.resolve(filePath);
+      if (!lastOpenDialogPaths.includes(resolved)) {
+        throw new Error('Import path must come from the open dialog');
+      }
+      const fileName = nodePath.basename(resolved);
+      if (!fileName.toLowerCase().endsWith('.css')) continue;
+      const destPath = nodePath.join(destDir, fileName);
+      if (!isInsideRoot(destDir, destPath)) throw new Error('Invalid snippet name');
+      await fs.copyFile(resolved, destPath);
+      imported.push(fileName);
+    }
+    return imported;
+  });
+
+  ipcMain.handle('snippets:export', async (_event, srcRelPath: string, destAbsPath: string) => {
+    const srcAbsPath = resolveInsideCurrentVault(srcRelPath);
+    const normalizedSrc = srcAbsPath.replace(/\\/g, '/');
+    if (!normalizedSrc.includes('/.openonyx/snippets/') && !normalizedSrc.includes('/.obsidian/snippets/')) {
+      throw new Error('Export source must be a snippet file');
+    }
+    if (!srcAbsPath.toLowerCase().endsWith('.css')) {
+      throw new Error('Export source must be a .css file');
+    }
+    const dest = nodePath.resolve(destAbsPath);
+    if (!lastSaveDialogPath || dest !== lastSaveDialogPath) {
+      throw new Error('Export destination must come from the save dialog');
+    }
+    await fs.copyFile(srcAbsPath, dest);
   });
 }

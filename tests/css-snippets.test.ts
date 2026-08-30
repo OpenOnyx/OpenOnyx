@@ -3,7 +3,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { OOApp } from "../src/lib/obsidian-api/app";
 import {
-  cssSnippetsApi,
   getCssSnippetNames,
   getCssSnippets,
   getEnabledCssSnippetSet,
@@ -82,6 +81,8 @@ function makeApi(options?: {
       readFile: vi.fn(async (filePath: string) => vaultFiles.get(filePath) ?? null),
       writeFile,
       createDirectory,
+      createFile: vi.fn(async () => {}),
+      fileExists: vi.fn(async () => false),
       openPath,
     },
   };
@@ -276,10 +277,34 @@ describe("css snippet manager", () => {
 
     await startCssSnippets({ pollMs: null });
     const app = new OOApp();
-    expect(app.customCss).toBe(cssSnippetsApi);
 
     await app.customCss.setCssEnabledStatus("wide", true);
     expect(getEnabledCssSnippetSet().has("wide")).toBe(true);
     expect(document.querySelector('style[data-oo-snippet="wide"]')).not.toBeNull();
+  });
+
+  it("creates new snippets under .openonyx/snippets", async () => {
+    const { api } = makeApi();
+    (window as any).electronAPI = api;
+    api.createFile = vi.fn(async () => {});
+    await startCssSnippets({ pollMs: null });
+    const { getSnippetManager } = await import("../src/lib/snippetManager");
+    await getSnippetManager().createSnippet("my-tweaks");
+    expect(api.createDirectory).toHaveBeenCalledWith(".openonyx/snippets");
+    expect(api.createFile).toHaveBeenCalledWith(".openonyx/snippets/my-tweaks.css", expect.any(String));
+  });
+
+  it("migrates legacy snippets-config.json into appearance.json", async () => {
+    const { api, data } = makeApi({
+      openonyxFiles: { "snippets/pretty.css": ".pretty { color: red; }" },
+    });
+    data.set(
+      "snippets-config.json",
+      JSON.stringify({ version: 1, enabledSnippets: { pretty: true }, injectionOrder: ["pretty"] }),
+    );
+    (window as any).electronAPI = api;
+    await startCssSnippets({ pollMs: null });
+    expect(getEnabledCssSnippetSet().has("pretty")).toBe(true);
+    expect(JSON.parse(data.get("appearance.json") || "{}").enabledCssSnippets).toEqual(["pretty"]);
   });
 });

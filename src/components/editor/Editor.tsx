@@ -226,7 +226,7 @@ const editorAnnotationEmptyTextClass =
 const editorAnnotationGenerateClass =
   "flex cursor-pointer items-center gap-1.5 rounded border-0 bg-[var(--accent-color,#3b82f6)] px-3 py-1.5 text-xs font-medium text-white";
 const editorContainerClass =
-  "editor-container relative flex min-h-0 flex-1 flex-row overflow-hidden";
+  "editor-container view-content markdown-source-view cm-s-obsidian mod-cm6 is-live-preview relative flex min-h-0 flex-1 flex-row overflow-hidden";
 const editorLightboxBackdropClass =
   "fixed inset-0 z-[9999] flex items-center justify-center bg-[color-mix(in_srgb,var(--bg-primary)_45%,transparent)] backdrop-blur-[3px]";
 const editorLightboxModalClass =

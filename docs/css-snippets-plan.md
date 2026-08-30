@@ -1,7 +1,7 @@
 # Plan: Obsidian-compatible CSS snippets
 
 **Issue:** [#110](https://github.com/OpenOnyx/OpenOnyx/issues/110)  
-**Branch:** `feat/css-snippets-110` (from current `main`)  
+**Branch:** `feat/css-snippets-110` (from current `main`; completes `origin/css-snippet`)  
 **Status:** implemented on that branch — not yet on `main`
 
 This is the working plan for first-class CSS snippets. It is based on Obsidian’s documented behavior, the current OpenOnyx tree, and the parked `feat/css-snippets` prototype.

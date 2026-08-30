@@ -222,6 +222,11 @@ const electronAPI = {
     health: (): Promise<boolean> =>
       ipcRenderer.invoke('thoughtModel:health'),
   },
+
+  snippetsImport: (filePaths: string[]): Promise<string[]> =>
+    ipcRenderer.invoke('snippets:import', filePaths),
+  snippetsExport: (srcRelPath: string, destAbsPath: string): Promise<void> =>
+    ipcRenderer.invoke('snippets:export', srcRelPath, destAbsPath),
 };
 
 if (process.contextIsolated) {

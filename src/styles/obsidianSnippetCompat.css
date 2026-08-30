@@ -1,0 +1,39 @@
+/* Obsidian snippet aliases — map their names onto OpenOnyx tokens.
+   Do not invert this (never set --bg-primary from --background-primary). */
+
+:where(html, body, .app-container) {
+  --background-primary: var(--bg-primary);
+  --background-primary-alt: var(--bg-secondary);
+  --background-secondary: var(--bg-secondary);
+  --background-secondary-alt: var(--bg-tertiary);
+  --background-modifier-hover: var(--bg-hover);
+  --background-modifier-active-hover: var(--bg-active);
+  --background-modifier-border: var(--border-medium);
+  --background-modifier-form-field: var(--bg-input, var(--bg-secondary));
+  --text-normal: var(--text-primary);
+  --text-muted: var(--text-secondary);
+  --text-faint: var(--text-muted);
+  --text-accent: var(--accent-primary, var(--color-accent));
+  --text-on-accent: var(--text-on-accent, #fff);
+  --interactive-accent: var(--accent-primary, var(--color-accent));
+  --interactive-accent-hover: var(--color-accent-1, var(--color-accent));
+  --h1-color: var(--text-primary);
+  --h2-color: var(--text-primary);
+  --h3-color: var(--text-primary);
+  --h4-color: var(--text-primary);
+  --h5-color: var(--text-primary);
+  --h6-color: var(--text-primary);
+  --font-text-size: var(--editor-font-size, 16px);
+  --nav-item-color: var(--text-secondary);
+  --nav-item-color-hover: var(--text-primary);
+  --nav-item-color-active: var(--text-primary);
+  --nav-item-background-hover: var(--bg-hover);
+  --nav-item-background-active: var(--bg-active);
+  --tab-background-active: var(--bg-primary);
+  --titlebar-background: var(--bg-secondary);
+  --status-bar-background: var(--bg-secondary);
+  --oo-color-bg-primary: var(--bg-primary);
+  --oo-color-bg-secondary: var(--bg-secondary);
+  --oo-color-text-primary: var(--text-primary);
+  --oo-color-accent: var(--accent-primary, var(--color-accent));
+}

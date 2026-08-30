@@ -1508,6 +1508,8 @@ export default function App() {
     // Determine and apply base theme mode (dark/light) for embeds and components
     const isDark = isDarkTheme(theme, settings);
     document.documentElement.setAttribute("data-theme-mode", isDark ? "dark" : "light");
+    document.documentElement.classList.toggle("theme-dark", isDark);
+    document.documentElement.classList.toggle("theme-light", !isDark);
     document.body.classList.toggle("theme-dark", isDark);
     document.body.classList.toggle("theme-light", !isDark);
 
@@ -5071,7 +5073,7 @@ export default function App() {
         {vaultPath && !isFTUXZeroState && (
           <div
             ref={leftSidebarShellRef}
-            className="relative h-full min-w-0 shrink-0 overflow-hidden transition-[width] duration-150 ease-out will-change-[width]"
+            className="relative h-full min-w-0 shrink-0 overflow-hidden transition-[width] duration-150 ease-out will-change-[width] workspace-split mod-left-split"
             style={{ width: showSidebar ? "var(--sidebar-width)" : 0 }}
           >
             <div className="h-full w-full">
@@ -5299,6 +5301,7 @@ export default function App() {
               {/* Split Pane System -- replaces the single editor pane */}
               {shouldShowEditorPane && (
                 <div
+                  className="workspace-split mod-vertical mod-root"
                   style={{
                     flex: hasAuxPane ? `0 0 ${editorPaneWidth}%` : 1,
                     height: "100%",
