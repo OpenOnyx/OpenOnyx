@@ -10,8 +10,7 @@ function formatFileSize(bytes: number): string {
 }
 
 export function CssSnippetsPanel() {
-  const manager = getSnippetManager();
-  const [snippets, setSnippets] = useState<SnippetMeta[]>(() => manager.getSnippets());
+  const [snippets, setSnippets] = useState<SnippetMeta[]>([]);
   const [busy, setBusy] = useState(false);
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState("");
@@ -20,25 +19,34 @@ export function CssSnippetsPanel() {
   const createRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    const sync = () => setSnippets(manager.getSnippets());
-    const unsub = manager.subscribe(sync);
-    void manager.refresh().then(sync);
-    return unsub;
-  }, [manager]);
+    const sync = () => {
+      const mgr = getSnippetManager();
+      setSnippets(mgr.isAlive() ? mgr.getSnippets() : []);
+    };
+    const unsub = getSnippetManager().subscribe(sync);
+    window.addEventListener("snippets-changed", sync);
+    void getSnippetManager().refresh().then(sync);
+    return () => {
+      unsub();
+      window.removeEventListener("snippets-changed", sync);
+    };
+  }, []);
 
   useEffect(() => {
     if (creating) createRef.current?.focus();
   }, [creating]);
 
-  const run = useCallback(async (fn: () => Promise<unknown>) => {
+  const run = useCallback(async (fn: (mgr: ReturnType<typeof getSnippetManager>) => Promise<unknown>) => {
     setBusy(true);
     try {
-      await fn();
-      setSnippets(manager.getSnippets());
+      const mgr = getSnippetManager();
+      if (!mgr.isAlive()) return;
+      await fn(mgr);
+      setSnippets(getSnippetManager().isAlive() ? getSnippetManager().getSnippets() : []);
     } finally {
       setBusy(false);
     }
-  }, [manager]);
+  }, []);
 
   const enabledCount = snippets.filter((snippet) => snippet.enabled).length;
 
@@ -66,7 +74,7 @@ export function CssSnippetsPanel() {
         <button
           type="button"
           disabled={busy}
-          onClick={() => void run(() => manager.refresh())}
+          onClick={() => void run((mgr) => mgr.refresh())}
           className="h-8 rounded-lg border border-[var(--border-medium)] bg-[var(--bg-tertiary)] px-3 text-xs font-semibold text-[var(--text-primary)] hover:bg-[var(--bg-hover)] disabled:opacity-50"
         >
           Refresh
@@ -74,7 +82,7 @@ export function CssSnippetsPanel() {
         <button
           type="button"
           disabled={busy}
-          onClick={() => void run(() => manager.openSnippetsFolder())}
+          onClick={() => void run((mgr) => mgr.openSnippetsFolder())}
           className="h-8 rounded-lg border border-[var(--border-medium)] bg-[var(--bg-tertiary)] px-3 text-xs font-semibold text-[var(--text-primary)] hover:bg-[var(--bg-hover)] disabled:opacity-50"
         >
           Open folder
@@ -82,7 +90,7 @@ export function CssSnippetsPanel() {
         <button
           type="button"
           disabled={busy}
-          onClick={() => void run(() => manager.importSnippets())}
+          onClick={() => void run((mgr) => mgr.importSnippets())}
           className="h-8 rounded-lg border border-[var(--border-medium)] bg-[var(--bg-tertiary)] px-3 text-xs font-semibold text-[var(--text-primary)] hover:bg-[var(--bg-hover)] disabled:opacity-50"
         >
           Import .css
@@ -105,8 +113,8 @@ export function CssSnippetsPanel() {
             onChange={(event) => setNewName(event.target.value)}
             onKeyDown={(event) => {
               if (event.key === "Enter") {
-                void run(async () => {
-                  await manager.createSnippet(newName);
+                void run(async (mgr) => {
+                  await mgr.createSnippet(newName);
                   setNewName("");
                   setCreating(false);
                 });
@@ -123,8 +131,8 @@ export function CssSnippetsPanel() {
             type="button"
             disabled={!newName.trim() || busy}
             onClick={() =>
-              void run(async () => {
-                await manager.createSnippet(newName);
+              void run(async (mgr) => {
+                await mgr.createSnippet(newName);
                 setNewName("");
                 setCreating(false);
               })
@@ -167,8 +175,8 @@ export function CssSnippetsPanel() {
                     onBlur={() => setRenamingId(null)}
                     onKeyDown={(event) => {
                       if (event.key === "Enter") {
-                        void run(async () => {
-                          await manager.renameSnippet(snippet.id, renameValue);
+                        void run(async (mgr) => {
+                          await mgr.renameSnippet(snippet.id, renameValue);
                           setRenamingId(null);
                         });
                       }
@@ -193,7 +201,7 @@ export function CssSnippetsPanel() {
               </div>
               <CustomToggle
                 checked={snippet.enabled}
-                onChange={() => void run(() => manager.toggle(snippet.id))}
+                onChange={() => void run((mgr) => mgr.toggle(snippet.id))}
               />
               <button
                 type="button"
@@ -209,7 +217,7 @@ export function CssSnippetsPanel() {
               <button
                 type="button"
                 title="Export"
-                onClick={() => void run(() => manager.exportSnippet(snippet.id))}
+                onClick={() => void run((mgr) => mgr.exportSnippet(snippet.id))}
                 className="text-[11px] text-[var(--text-muted)] hover:text-[var(--text-primary)]"
               >
                 Export
@@ -219,7 +227,7 @@ export function CssSnippetsPanel() {
                 title="Delete"
                 onClick={() => {
                   if (window.confirm(`Delete snippet “${snippet.id}”?`)) {
-                    void run(() => manager.deleteSnippet(snippet.id));
+                    void run((mgr) => mgr.deleteSnippet(snippet.id));
                   }
                 }}
                 className="text-[11px] text-red-400 hover:text-red-300"

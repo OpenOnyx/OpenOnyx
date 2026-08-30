@@ -45,8 +45,7 @@ export function isSnippetPath(filePath: string): boolean {
   const normalized = filePath.replace(/\\/g, "/");
   return (
     normalized.includes(".openonyx/snippets/") ||
-    normalized.includes(".obsidian/snippets/") ||
-    /(^|\/)snippets\/[^/]+\.css$/i.test(normalized)
+    normalized.includes(".obsidian/snippets/")
   );
 }
 
@@ -75,21 +74,31 @@ export class SnippetManager {
   private enabled = new Set<string>();
   private pollTimer: ReturnType<typeof setInterval> | null = null;
   private initialized = false;
+  private alive = true;
   private listeners = new Set<() => void>();
 
+  isAlive(): boolean {
+    return this.alive;
+  }
+
   async initialize(options?: { pollMs?: number | null }): Promise<void> {
+    if (!this.alive) return;
     if (this.initialized) {
       await this.refresh();
       return;
     }
     this.initialized = true;
     await this.loadEnabledFromDisk();
+    if (!this.alive) return;
     await this.scan();
+    if (!this.alive) return;
     await this.loadAllEnabled();
+    if (!this.alive) return;
     this.bindFileListeners();
     const pollMs = options?.pollMs === undefined ? POLL_INTERVAL_MS : options.pollMs;
     if (pollMs && pollMs > 0) {
       this.pollTimer = setInterval(() => {
+        if (!this.alive) return;
         void this.pollForChanges();
       }, pollMs);
     }
@@ -97,6 +106,12 @@ export class SnippetManager {
   }
 
   destroy(): void {
+    if (!this.alive && !this.initialized) {
+      this.enabled.clear();
+      this.listeners.clear();
+      return;
+    }
+    this.alive = false;
     if (this.pollTimer) {
       clearInterval(this.pollTimer);
       this.pollTimer = null;
@@ -105,8 +120,9 @@ export class SnippetManager {
     this.unloadAll();
     this.snippets.clear();
     this.cssCache.clear();
+    this.enabled.clear();
+    this.listeners.clear();
     this.initialized = false;
-    this.emit();
   }
 
   subscribe(listener: () => void): () => void {
@@ -129,6 +145,7 @@ export class SnippetManager {
   }
 
   async scan(): Promise<SnippetMeta[]> {
+    if (!this.alive) return [];
     const api = getAPI();
     const discovered = new Map<string, SnippetMeta>();
 
@@ -197,6 +214,7 @@ export class SnippetManager {
   }
 
   async enable(id: string): Promise<void> {
+    if (!this.alive) return;
     if (!id || id.includes("/") || id.includes("\\")) return;
     const snippet = this.snippets.get(id);
     if (!snippet) return;
@@ -208,6 +226,7 @@ export class SnippetManager {
   }
 
   async disable(id: string): Promise<void> {
+    if (!this.alive) return;
     const snippet = this.snippets.get(id);
     if (!snippet) return;
     snippet.enabled = false;
@@ -232,6 +251,7 @@ export class SnippetManager {
   }
 
   async refresh(): Promise<void> {
+    if (!this.alive) return;
     await this.scan();
     await this.loadAllEnabled();
     this.emit();
@@ -243,6 +263,7 @@ export class SnippetManager {
   }
 
   async createSnippet(name: string): Promise<string | null> {
+    if (!this.alive) return null;
     const id = snippetNameFromFile(`${name.replace(/[^a-zA-Z0-9\-_ ]/g, "").trim()}.css`);
     if (!id) return null;
     const fileName = `${id}.css`;
@@ -261,13 +282,17 @@ export class SnippetManager {
   }
 
   async renameSnippet(id: string, newName: string): Promise<boolean> {
+    if (!this.alive) return false;
     const snippet = this.snippets.get(id);
     const nextId = snippetNameFromFile(`${newName.replace(/[^a-zA-Z0-9\-_ ]/g, "").trim()}.css`);
     if (!snippet || !nextId) return false;
+    if (nextId === id) return true;
+    if (this.snippets.has(nextId)) return false;
     const dir = snippet.source === "openonyx" ? OPENONYX_VAULT_DIR : OBSIDIAN_DIR;
     const newPath = `${dir}/${nextId}.css`;
     const api = getAPI();
     try {
+      if (typeof api.fileExists === "function" && (await api.fileExists(newPath))) return false;
       await api.renameFile(snippet.relativePath, newPath);
       const wasEnabled = this.enabled.has(id);
       this.enabled.delete(id);
@@ -386,6 +411,7 @@ export class SnippetManager {
   }
 
   private async loadSnippetCSS(snippet: SnippetMeta): Promise<void> {
+    if (!this.alive) return;
     try {
       let css = this.cssCache.get(snippet.id);
       if (!css) {
@@ -398,6 +424,7 @@ export class SnippetManager {
         css = rewriteSnippetCssUrls(snippet.relativePath, raw);
         this.cssCache.set(snippet.id, css);
       }
+      if (!this.alive) return;
       this.unloadSnippetCSS(snippet.id);
       if (typeof document === "undefined") return;
       const style = document.createElement("style");
@@ -498,6 +525,7 @@ export class SnippetManager {
   }
 
   private async persistEnabled(): Promise<void> {
+    if (!this.alive) return;
     try {
       const existing = await getAPI().dataRead(APPEARANCE_PATH).catch(() => null);
       await getAPI().dataWrite(
@@ -510,6 +538,7 @@ export class SnippetManager {
   }
 
   private async pollForChanges(): Promise<void> {
+    if (!this.alive) return;
     const before = this.getSnippetNames().join("|") + this.getSnippets().map((s) => s.modifiedAt).join(",");
     await this.scan();
     await this.loadAllEnabled();
@@ -544,6 +573,7 @@ export class SnippetManager {
   }
 
   private emit(): void {
+    if (!this.alive) return;
     for (const listener of this.listeners) {
       try {
         listener();
@@ -560,8 +590,12 @@ export class SnippetManager {
 let instance: SnippetManager | null = null;
 
 export function getSnippetManager(): SnippetManager {
-  if (!instance) instance = new SnippetManager();
+  if (!instance || !instance.isAlive()) instance = new SnippetManager();
   return instance;
+}
+
+export function peekSnippetManager(): SnippetManager | null {
+  return instance && instance.isAlive() ? instance : null;
 }
 
 export function destroySnippetManager(): void {
@@ -569,24 +603,35 @@ export function destroySnippetManager(): void {
   instance = null;
 }
 
-export async function startCssSnippets(options?: { pollMs?: number | null }): Promise<void> {
-  await getSnippetManager().initialize(options);
+export async function startCssSnippets(options?: { pollMs?: number | null }): Promise<SnippetManager> {
+  const mgr = getSnippetManager();
+  await mgr.initialize(options);
+  return mgr;
 }
 
-export function stopCssSnippets(): void {
+export function stopCssSnippets(target?: SnippetManager): void {
+  if (target) {
+    target.destroy();
+    if (instance === target) instance = null;
+    return;
+  }
   destroySnippetManager();
 }
 
 export function refreshCssSnippets(): Promise<void> {
-  return getSnippetManager().refresh();
+  const mgr = peekSnippetManager();
+  if (!mgr) return Promise.resolve();
+  return mgr.refresh();
 }
 
 export async function setCssSnippetEnabled(name: string, enabled: boolean): Promise<void> {
-  await getSnippetManager().setEnabled(name, enabled);
+  const mgr = peekSnippetManager();
+  if (!mgr) return;
+  await mgr.setEnabled(name, enabled);
 }
 
 export function getCssSnippets() {
-  return getSnippetManager().getSnippets().map((snippet) => ({
+  return (peekSnippetManager()?.getSnippets() ?? []).map((snippet) => ({
     name: snippet.id,
     fileName: snippet.fileName,
     path: snippet.relativePath,
@@ -596,11 +641,11 @@ export function getCssSnippets() {
 }
 
 export function getCssSnippetNames(): string[] {
-  return getSnippetManager().getSnippetNames();
+  return peekSnippetManager()?.getSnippetNames() ?? [];
 }
 
 export function getEnabledCssSnippetSet(): Set<string> {
-  return getSnippetManager().getEnabledSnippets();
+  return peekSnippetManager()?.getEnabledSnippets() ?? new Set();
 }
 
 export function subscribeCssSnippets(listener: () => void): () => void {

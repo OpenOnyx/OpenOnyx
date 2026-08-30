@@ -110,7 +110,7 @@ import {
 } from "./utils/tabGroups";
 import { getAPI } from "./utils/api";
 import { PluginManager } from "./lib/pluginManager";
-import { startCssSnippets, stopCssSnippets } from "./lib/cssSnippets";
+import { getSnippetManager, stopCssSnippets } from "./lib/cssSnippets";
 import { OOApp } from "./lib/obsidian-api/app";
 import { TFile } from "./lib/obsidian-api";
 import { PluginPermissionModal } from "./components/plugins/PluginPermissionModal";
@@ -2178,13 +2178,14 @@ export default function App() {
       stopCssSnippets();
       return;
     }
+    const mgr = getSnippetManager();
     let cancelled = false;
-    void startCssSnippets().then(() => {
-      if (cancelled) stopCssSnippets();
+    void mgr.initialize().then(() => {
+      if (cancelled) stopCssSnippets(mgr);
     });
     return () => {
       cancelled = true;
-      stopCssSnippets();
+      stopCssSnippets(mgr);
     };
   }, [vaultPath]);
 

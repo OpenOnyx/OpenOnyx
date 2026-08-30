@@ -6,7 +6,9 @@ import {
   getCssSnippetNames,
   getCssSnippets,
   getEnabledCssSnippetSet,
+  getSnippetManager,
   isSnippetPath,
+  peekSnippetManager,
   mergeAppearanceEnabled,
   openCssSnippetsFolder,
   parseEnabledCssSnippets,
@@ -82,7 +84,11 @@ function makeApi(options?: {
       writeFile,
       createDirectory,
       createFile: vi.fn(async () => {}),
-      fileExists: vi.fn(async () => false),
+      fileExists: vi.fn(async (filePath: string) => {
+        if (data.has(filePath) || data.has(filePath.replace(/^\.openonyx\//, ""))) return true;
+        return vaultFiles.has(filePath);
+      }),
+      renameFile: vi.fn(async () => {}),
       openPath,
     },
   };
@@ -122,7 +128,7 @@ describe("css snippet helpers", () => {
   it("recognizes snippet paths from both config folders", () => {
     expect(isSnippetPath(".openonyx/snippets/pretty.css")).toBe(true);
     expect(isSnippetPath(".obsidian/snippets/pretty.css")).toBe(true);
-    expect(isSnippetPath("snippets/pretty.css")).toBe(true);
+    expect(isSnippetPath("Notes/snippets/pretty.css")).toBe(false);
     expect(isSnippetPath("Notes/pretty.css")).toBe(false);
   });
 });
@@ -306,5 +312,43 @@ describe("css snippet manager", () => {
     await startCssSnippets({ pollMs: null });
     expect(getEnabledCssSnippetSet().has("pretty")).toBe(true);
     expect(JSON.parse(data.get("appearance.json") || "{}").enabledCssSnippets).toEqual(["pretty"]);
+  });
+
+  it("does not let a cancelled start destroy the live manager", async () => {
+    const { api } = makeApi({
+      openonyxFiles: { "snippets/wide.css": ".wide { color: red; }" },
+      appearance: JSON.stringify({ enabledCssSnippets: ["wide"] }),
+    });
+    (window as any).electronAPI = api;
+
+    const first = getSnippetManager();
+    const firstInit = first.initialize({ pollMs: null });
+    stopCssSnippets(first);
+    const second = getSnippetManager();
+    await second.initialize({ pollMs: null });
+    await firstInit;
+
+    expect(first.isAlive()).toBe(false);
+    expect(second.isAlive()).toBe(true);
+    expect(peekSnippetManager()).toBe(second);
+    expect(document.querySelectorAll("style[data-oo-snippet]").length).toBe(1);
+    expect(document.querySelector('style[data-oo-snippet="wide"]')).not.toBeNull();
+  });
+
+  it("refuses to rename onto an existing snippet", async () => {
+    const { api } = makeApi({
+      openonyxFiles: {
+        "snippets/alpha.css": ".alpha { color: red; }",
+        "snippets/beta.css": ".beta { color: blue; }",
+      },
+    });
+    (window as any).electronAPI = api;
+
+    await startCssSnippets({ pollMs: null });
+    const renamed = await getSnippetManager().renameSnippet("alpha", "beta");
+
+    expect(renamed).toBe(false);
+    expect(getCssSnippetNames()).toEqual(["alpha", "beta"]);
+    expect(api.renameFile).not.toHaveBeenCalled();
   });
 });
