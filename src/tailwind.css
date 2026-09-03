@@ -636,6 +636,510 @@ body.is-dragging svg {
   font-style: italic !important;
 }
 
+/* ── Callout / Admonition System (Docs Website Design) ───────────────── */
+:root {
+  --docs-ink: #ececec;
+  --docs-copy: #c4c4cc;
+  --docs-note: #182536;
+  --docs-note-edge: #58a6ff;
+  --docs-caution: #2a2414;
+  --docs-caution-edge: #d4a017;
+  --callout-ink: #ececec;
+  --callout-note: #182536;
+  --callout-note-edge: #58a6ff;
+  --callout-caution: #2a2414;
+  --callout-caution-edge: #d4a017;
+  --callout-warning: #282012;
+  --callout-warning-edge: #d29922;
+  --callout-tip: #12261a;
+  --callout-tip-edge: #3fb950;
+  --callout-important: #261833;
+  --callout-important-edge: #a371f7;
+  --callout-danger: #321417;
+  --callout-danger-edge: #f85149;
+  --callout-quote: #1c2128;
+  --callout-quote-edge: #768390;
+  --callout-example: #201b30;
+  --callout-example-edge: #8957e5;
+  --callout-abstract: #12282d;
+  --callout-abstract-edge: #39c5bb;
+}
+
+html[data-theme="dark"],
+html[data-theme-mode="dark"] {
+  --docs-ink: #ececec;
+  --docs-copy: #c4c4cc;
+  --docs-note: #182536;
+  --docs-note-edge: #58a6ff;
+  --docs-caution: #2a2414;
+  --docs-caution-edge: #d4a017;
+  --callout-ink: #ececec;
+  --callout-note: #182536;
+  --callout-note-edge: #58a6ff;
+  --callout-caution: #2a2414;
+  --callout-caution-edge: #d4a017;
+  --callout-warning: #282012;
+  --callout-warning-edge: #d29922;
+  --callout-tip: #12261a;
+  --callout-tip-edge: #3fb950;
+  --callout-important: #261833;
+  --callout-important-edge: #a371f7;
+  --callout-danger: #321417;
+  --callout-danger-edge: #f85149;
+  --callout-quote: #1c2128;
+  --callout-quote-edge: #768390;
+  --callout-example: #201b30;
+  --callout-example-edge: #8957e5;
+  --callout-abstract: #12282d;
+  --callout-abstract-edge: #39c5bb;
+}
+
+html[data-theme="light"],
+html[data-theme-mode="light"] {
+  --docs-ink: #1b1f23;
+  --docs-copy: #3b434b;
+  --docs-note: #ddf4ff;
+  --docs-note-edge: #0969da;
+  --docs-caution: #fff8c5;
+  --docs-caution-edge: #9a6700;
+  --callout-ink: #1b1f23;
+  --callout-note: #ddf4ff;
+  --callout-note-edge: #0969da;
+  --callout-caution: #fff8c5;
+  --callout-caution-edge: #9a6700;
+  --callout-warning: #fff8c5;
+  --callout-warning-edge: #9a6700;
+  --callout-tip: #dafbe1;
+  --callout-tip-edge: #1a7f37;
+  --callout-important: #fbefff;
+  --callout-important-edge: #8250df;
+  --callout-danger: #ffebe9;
+  --callout-danger-edge: #cf222e;
+  --callout-quote: #f6f8fa;
+  --callout-quote-edge: #57606a;
+  --callout-example: #f2f0ff;
+  --callout-example-edge: #6e5494;
+  --callout-abstract: #ddf8f8;
+  --callout-abstract-edge: #059669;
+}
+
+/* Reset enclosing blockquote when it contains a callout */
+.markdown-preview blockquote:has(.callout),
+.markdown-rendered blockquote:has(.callout),
+.markdown-preview-view blockquote:has(.callout),
+.readme-content blockquote:has(.callout),
+.markdown-preview blockquote.callout-parent,
+.markdown-rendered blockquote.callout-parent,
+.markdown-preview-view blockquote.callout-parent,
+.readme-content blockquote.callout-parent,
+blockquote.callout-parent {
+  border-left: none !important;
+  background: transparent !important;
+  background-color: transparent !important;
+  padding: 0 !important;
+  margin: 0 0 20px !important;
+  font-style: normal !important;
+}
+
+/* Callout Box (Website Design) */
+.callout,
+.docs-note {
+  border-left: 4px solid var(--callout-edge, var(--docs-note-edge, #58a6ff)) !important;
+  background: var(--callout-bg, var(--docs-note, #182536)) !important;
+  padding: 12px 14px !important;
+  margin: 0 0 20px !important;
+  color: var(--docs-ink, #ececec) !important;
+  font-size: 1em !important;
+  line-height: 1.55 !important;
+  font-style: normal !important;
+  border-radius: 0 !important;
+  box-sizing: border-box !important;
+  text-align: left !important;
+  display: block !important;
+  width: 100% !important;
+}
+
+.cm-line:has(.docs-note),
+.cm-line:has(.callout),
+.cm-line:has(.docs-note).cm-activeLine,
+.cm-line.cm-activeLine:has(.docs-note),
+.cm-line:has(.callout).cm-activeLine,
+.cm-line.cm-activeLine:has(.callout) {
+  padding: 0 !important;
+  margin: 0 !important;
+  background: transparent !important;
+  background-color: transparent !important;
+  box-shadow: none !important;
+  outline: none !important;
+  line-height: normal !important;
+}
+
+.cm-line:has(.docs-note) .docs-note,
+.cm-line:has(.callout) .callout {
+  margin: 4px 0 8px !important;
+}
+
+.cm-line.cm-hidden-line,
+.cm-line[style*="display: none"] {
+  display: none !important;
+  height: 0 !important;
+  min-height: 0 !important;
+  max-height: 0 !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  border: 0 !important;
+  line-height: 0 !important;
+  font-size: 0 !important;
+  overflow: hidden !important;
+}
+
+/* Specific variants */
+.callout-note,
+.callout-info,
+.callout-todo,
+.docs-note {
+  --callout-edge: var(--docs-note-edge, #58a6ff);
+  --callout-bg: var(--docs-note, #182536);
+}
+
+.callout-caution,
+.docs-note.is-caution {
+  --callout-edge: var(--docs-caution-edge, #d4a017) !important;
+  --callout-bg: var(--docs-caution, #2a2414) !important;
+  border-left-color: var(--docs-caution-edge, #d4a017) !important;
+  background-color: var(--docs-caution, #2a2414) !important;
+}
+
+.callout-warning,
+.callout-attention {
+  --callout-edge: var(--callout-warning-edge);
+  --callout-bg: var(--callout-warning);
+}
+
+.callout-tip,
+.callout-hint {
+  --callout-edge: var(--callout-tip-edge);
+  --callout-bg: var(--callout-tip);
+}
+
+.callout-important {
+  --callout-edge: var(--callout-important-edge);
+  --callout-bg: var(--callout-important);
+}
+
+.callout-danger,
+.callout-error,
+.callout-bug,
+.callout-fail,
+.callout-failure,
+.callout-missing {
+  --callout-edge: var(--callout-danger-edge);
+  --callout-bg: var(--callout-danger);
+}
+
+.callout-success,
+.callout-check,
+.callout-done {
+  --callout-edge: var(--callout-tip-edge);
+  --callout-bg: var(--callout-tip);
+}
+
+.callout-question,
+.callout-help,
+.callout-faq {
+  --callout-edge: var(--callout-note-edge);
+  --callout-bg: var(--callout-note);
+}
+
+.callout-quote,
+.callout-cite {
+  --callout-edge: var(--callout-quote-edge);
+  --callout-bg: var(--callout-quote);
+}
+
+.callout-example {
+  --callout-edge: var(--callout-example-edge);
+  --callout-bg: var(--callout-example);
+}
+
+.callout-abstract,
+.callout-summary,
+.callout-tldr {
+  --callout-edge: var(--callout-abstract-edge);
+  --callout-bg: var(--callout-abstract);
+}
+
+/* Callout Title matching website docs-note strong */
+.callout .callout-title,
+.docs-note strong {
+  display: block !important;
+  margin: 0 0 4px 0 !important;
+  padding: 0 !important;
+  background: transparent !important;
+  background-color: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  outline: none !important;
+  font-size: 0.88em !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.02em !important;
+  text-transform: uppercase !important;
+  color: var(--callout-ink, var(--docs-ink, #ececec)) !important;
+  line-height: 1.4 !important;
+  font-style: normal !important;
+}
+
+.callout .callout-icon {
+  display: none !important;
+}
+
+.callout[data-foldable="true"] .callout-title {
+  cursor: pointer !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  user-select: none !important;
+  gap: 8px !important;
+}
+
+.callout .callout-fold {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  width: 18px !important;
+  height: 18px !important;
+  margin-left: 8px !important;
+  border-radius: 4px !important;
+  opacity: 0.75 !important;
+  transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.15s ease, background-color 0.15s ease !important;
+  user-select: none !important;
+  flex-shrink: 0 !important;
+  color: currentColor !important;
+}
+
+.callout .callout-fold svg {
+  width: 12px !important;
+  height: 12px !important;
+  display: block !important;
+  stroke: currentColor !important;
+}
+
+.callout[data-foldable="true"] .callout-title:hover .callout-fold,
+.callout .callout-fold:hover {
+  opacity: 1 !important;
+  background-color: rgba(127, 127, 127, 0.15) !important;
+}
+
+.callout[data-collapsed="true"] .callout-content {
+  display: none !important;
+}
+
+.callout[data-collapsed="true"] .callout-fold {
+  transform: rotate(-90deg) !important;
+}
+
+/* Callout Content matching website docs-note p */
+.callout .callout-content {
+  font-size: 1em !important;
+  line-height: 1.55 !important;
+  color: var(--callout-ink, var(--docs-ink, #ececec)) !important;
+  font-style: normal !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  background: transparent !important;
+  border: none !important;
+}
+
+.callout .callout-content p,
+.docs-note p {
+  margin: 0 !important;
+  padding: 0 !important;
+  background: transparent !important;
+  border: none !important;
+  color: var(--callout-ink, var(--docs-ink, #ececec)) !important;
+  font-size: 1em !important;
+  line-height: 1.55 !important;
+  font-style: normal !important;
+}
+
+.callout .callout-content p + p,
+.docs-note p + p {
+  margin-top: 8px !important;
+}
+
+.callout .callout-content ul,
+.callout .callout-content ol {
+  margin: 6px 0 6px 20px;
+  padding-left: 0;
+}
+
+.callout .callout-content li {
+  margin: 3px 0;
+  color: inherit;
+}
+
+.callout .callout-content code {
+  font-size: 0.88em;
+  padding: 0.08em 0.36em;
+  border-radius: 4px;
+  background: rgba(127, 127, 127, 0.18) !important;
+  color: inherit !important;
+}
+
+.callout .callout-content a,
+.docs-note a {
+  color: var(--docs-link, #79b8ff) !important;
+  text-decoration: none !important;
+}
+
+.callout .callout-content a:hover,
+.docs-note a:hover {
+  text-decoration: underline !important;
+}
+
+/* ── Live Preview Callout Styles ──────────────────────────────────────── */
+.cm-live-callout-line {
+  border-left: 4px solid var(--callout-edge, var(--docs-note-edge, #58a6ff)) !important;
+  background: var(--callout-bg, var(--docs-note, #182536)) !important;
+  background-color: var(--callout-bg, var(--docs-note, #182536)) !important;
+  color: var(--callout-ink, var(--docs-ink, #ececec)) !important;
+  padding-left: 14px !important;
+  padding-right: 14px !important;
+  font-style: normal !important;
+  line-height: 1.55 !important;
+  font-size: 1em !important;
+  box-sizing: border-box !important;
+  border-radius: 0 !important;
+  margin: 0 !important;
+  box-shadow: none !important;
+}
+
+/* Force override of activeLine inside callout lines: NO DARK BOX, NO BORDER */
+.cm-live-callout-line.cm-activeLine,
+.cm-focused .cm-live-callout-line.cm-activeLine,
+.cm-line.cm-live-callout-line.cm-activeLine {
+  background: var(--callout-bg, var(--docs-note, #182536)) !important;
+  background-color: var(--callout-bg, var(--docs-note, #182536)) !important;
+  box-shadow: none !important;
+  outline: none !important;
+}
+
+.cm-live-callout-line * {
+  font-style: normal;
+}
+
+.cm-live-callout-first {
+  padding-top: 12px !important;
+  padding-bottom: 2px !important;
+  margin-top: 6px !important;
+}
+
+.cm-live-callout-mid {
+  padding-top: 2px !important;
+  padding-bottom: 2px !important;
+}
+
+.cm-live-callout-last {
+  padding-top: 2px !important;
+  padding-bottom: 12px !important;
+  margin-bottom: 10px !important;
+}
+
+.cm-live-callout-first.cm-live-callout-last {
+  padding-top: 12px !important;
+  padding-bottom: 12px !important;
+  margin-top: 6px !important;
+  margin-bottom: 10px !important;
+}
+
+.cm-live-callout-title {
+  display: block !important;
+  margin: 0 0 4px 0 !important;
+  padding: 0 !important;
+  background: transparent !important;
+  background-color: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  font-size: 0.88em !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.02em !important;
+  text-transform: uppercase !important;
+  color: var(--callout-ink, var(--docs-ink, #ececec)) !important;
+  line-height: 1.4 !important;
+  font-style: normal !important;
+}
+
+.cm-live-callout-note,
+.cm-live-callout-info,
+.cm-live-callout-todo {
+  --callout-edge: var(--callout-note-edge);
+  --callout-bg: var(--callout-note);
+}
+
+.cm-live-callout-caution {
+  --callout-edge: var(--callout-caution-edge);
+  --callout-bg: var(--callout-caution);
+}
+
+.cm-live-callout-warning,
+.cm-live-callout-attention {
+  --callout-edge: var(--callout-warning-edge);
+  --callout-bg: var(--callout-warning);
+}
+
+.cm-live-callout-tip,
+.cm-live-callout-hint {
+  --callout-edge: var(--callout-tip-edge);
+  --callout-bg: var(--callout-tip);
+}
+
+.cm-live-callout-important {
+  --callout-edge: var(--callout-important-edge);
+  --callout-bg: var(--callout-important);
+}
+
+.cm-live-callout-danger,
+.cm-live-callout-error,
+.cm-live-callout-bug,
+.cm-live-callout-fail,
+.cm-live-callout-failure,
+.cm-live-callout-missing {
+  --callout-edge: var(--callout-danger-edge);
+  --callout-bg: var(--callout-danger);
+}
+
+.cm-live-callout-success,
+.cm-live-callout-check,
+.cm-live-callout-done {
+  --callout-edge: var(--callout-tip-edge);
+  --callout-bg: var(--callout-tip);
+}
+
+.cm-live-callout-question,
+.cm-live-callout-help,
+.cm-live-callout-faq {
+  --callout-edge: var(--callout-note-edge);
+  --callout-bg: var(--callout-note);
+}
+
+.cm-live-callout-quote,
+.cm-live-callout-cite {
+  --callout-edge: var(--callout-quote-edge);
+  --callout-bg: var(--callout-quote);
+}
+
+.cm-live-callout-example {
+  --callout-edge: var(--callout-example-edge);
+  --callout-bg: var(--callout-example);
+}
+
+.cm-live-callout-abstract,
+.cm-live-callout-summary,
+.cm-live-callout-tldr {
+  --callout-edge: var(--callout-abstract-edge);
+  --callout-bg: var(--callout-abstract);
+}
+
+
 .markdown-preview table,
 .markdown-rendered table,
 .markdown-preview-view table,
@@ -717,6 +1221,12 @@ body.is-dragging svg {
 .readme-content {
   overflow-wrap: anywhere !important;
   word-break: break-word !important;
+}
+
+.markdown-preview,
+.markdown-rendered,
+.markdown-preview-view {
+  font-size: var(--preview-font-size, var(--editor-font-size, 16px));
 }
 
 .cm-content a,

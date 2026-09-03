@@ -205,9 +205,11 @@ export function LeafPaneEditor({
             const diskContent = await api.readFile(activeTab.path);
             if (diskContent && diskContent.length > 0 && result.text.length === 0) {
               result.doc.transact(() => {
-                result.text.insert(0, diskContent);
+                if (result.text.length === 0) {
+                  result.text.insert(0, diskContent);
+                }
               }, 'init');
-              docText = diskContent;
+              docText = result.text.toString();
             }
           } catch (e) {
             console.warn('[YJS] Could not read disk content for hydration:', e);
@@ -390,8 +392,8 @@ export function LeafPaneEditor({
         latestContentRef.current = c;
         latestContentPathRef.current = activeTab.path;
 
-        // Immediately update CodeMirror view if editor is ready
-        if (editorViewRef.current && editorViewRef.current.state.doc.toString() !== c) {
+        // Immediately update CodeMirror view if editor is ready (legacy non-CRDT mode only)
+        if (!useCRDT && editorViewRef.current && editorViewRef.current.state.doc.toString() !== c) {
           editorViewRef.current.dispatch({
             changes: { from: 0, to: editorViewRef.current.state.doc.length, insert: c },
             annotations: [Transaction.remote.of(true)],
@@ -1315,43 +1317,45 @@ export function LeafPaneEditor({
             Realtime paused after repeated sync conflicts. This note is view-only until refresh.
           </div>
         )}
-        <Editor
-          tabs={leaf.tabs}
-          activeTabId={activeTab.id}
-          content={editorContent}
-          viewMode={viewMode}
-          isFocused={isFocused}
-          availableNotes={allNoteNames}
-          onAdjustFontSize={onAdjustFontSize}
-          onTabSelect={(id) => onTabSelect(leaf.id, id)}
-          onTabClose={onTabClose}
-          onContentChange={handleContentChange}
-          onViewModeChange={handleViewModeChange}
-          onLinkClick={onLinkClick}
-          onImagePaste={onImagePaste}
-          onGetNoteContent={getNoteContent}
-          suggestions={editorSuggestions}
-          nextStepSuggestions={editorNextStepSuggestions}
-          onAcceptSuggestion={onAcceptSuggestion}
-          onRejectSuggestion={onRejectSuggestion}
-          onOpenNote={onOpenNote}
-          annotation={inlineAnnotation}
-          showInsight={showInlineInsight}
-          onToggleInsight={onToggleInsight}
-          theme={theme}
-          settings={settings}
-          onCollabOperations={isCollabSpace ? handleCollabOperations : undefined}
-          onCursorChange={isCollabSpace && !useCRDT ? handleCursorChange : undefined}
-          remoteCursors={isCollabSpace && !useCRDT ? remoteCursors : undefined}
-          localClientId={isCollabSpace && !useCRDT ? collaborationEngine.currentClientId : undefined}
-          onEditorViewReady={handleEditorViewReady}
-          getViewState={getViewState}
-          onViewStateChange={onViewStateChange}
-          readOnly={collabFailSafe}
-          onGenerateInsight={onGenerateInsight}
-          isGeneratingInsight={isGeneratingInsight}
-          yCollabExtension={yCollabExtension}
-        />
+        {(!useCRDT || yCollabExtension) && (
+          <Editor
+            tabs={leaf.tabs}
+            activeTabId={activeTab.id}
+            content={editorContent}
+            viewMode={viewMode}
+            isFocused={isFocused}
+            availableNotes={allNoteNames}
+            onAdjustFontSize={onAdjustFontSize}
+            onTabSelect={(id) => onTabSelect(leaf.id, id)}
+            onTabClose={onTabClose}
+            onContentChange={handleContentChange}
+            onViewModeChange={handleViewModeChange}
+            onLinkClick={onLinkClick}
+            onImagePaste={onImagePaste}
+            onGetNoteContent={getNoteContent}
+            suggestions={editorSuggestions}
+            nextStepSuggestions={editorNextStepSuggestions}
+            onAcceptSuggestion={onAcceptSuggestion}
+            onRejectSuggestion={onRejectSuggestion}
+            onOpenNote={onOpenNote}
+            annotation={inlineAnnotation}
+            showInsight={showInlineInsight}
+            onToggleInsight={onToggleInsight}
+            theme={theme}
+            settings={settings}
+            onCollabOperations={isCollabSpace ? handleCollabOperations : undefined}
+            onCursorChange={isCollabSpace && !useCRDT ? handleCursorChange : undefined}
+            remoteCursors={isCollabSpace && !useCRDT ? remoteCursors : undefined}
+            localClientId={isCollabSpace && !useCRDT ? collaborationEngine.currentClientId : undefined}
+            onEditorViewReady={handleEditorViewReady}
+            getViewState={getViewState}
+            onViewStateChange={onViewStateChange}
+            readOnly={collabFailSafe}
+            onGenerateInsight={onGenerateInsight}
+            isGeneratingInsight={isGeneratingInsight}
+            yCollabExtension={yCollabExtension}
+          />
+        )}
         {isLoading && (
           <div
             aria-hidden="true"

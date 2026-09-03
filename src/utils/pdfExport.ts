@@ -2,6 +2,7 @@ import { marked } from "marked";
 import markedKatex from "marked-katex-extension";
 import DOMPurify from "dompurify";
 import { resolveVaultImageSrc } from "./resolveImageSrc";
+import { parseMarkdownCallouts } from "./calloutParser";
 
 marked.use(markedKatex({ throwOnError: false }));
 
@@ -146,6 +147,8 @@ function preprocessMarkdown(markdown: string, vaultPath?: string, vaultFiles?: V
     },
   );
 
+  processed = parseMarkdownCallouts(processed);
+
   return processed;
 }
 
@@ -170,7 +173,8 @@ export function buildMarkdownPdfHtml({
   vaultFiles?: VaultFileLike[];
 }): string {
   const processed = preprocessMarkdown(markdown, vaultPath, vaultFiles);
-  const rendered = marked.parse(processed, { gfm: true, breaks: true }) as string;
+  let rendered = marked.parse(processed, { gfm: true, breaks: true }) as string;
+  rendered = rendered.replace(/<blockquote[^>]*>\s*(<div class="[^"]*docs-note[\s\S]*?<\/div>\s*<\/div>)\s*<\/blockquote>/g, "$1");
   const safeHtml = DOMPurify.sanitize(rendered, {
     ADD_TAGS: ["input", "math", "semantics", "mrow", "mi", "mo", "mn", "msup", "mspace", "msqrt", "mfrac", "annotation"],
     ADD_ATTR: ["checked", "disabled", "type", "style", "viewBox", "fill", "stroke", "stroke-width", "stroke-linecap", "stroke-linejoin"],
@@ -218,6 +222,46 @@ export function buildMarkdownPdfHtml({
       color: #555;
       border-left: 3px solid #d6d6d6;
     }
+    blockquote.callout-parent {
+      border-left: none;
+      background: transparent;
+      padding: 0;
+      margin: 1em 0;
+    }
+    .callout, .docs-note {
+      border-left: 4px solid #0969da;
+      background: #ddf4ff;
+      padding: 10px 12px;
+      margin: 1em 0;
+      color: #1b1f23;
+      font-size: 10pt;
+      line-height: 1.5;
+    }
+    .callout.callout-caution, .docs-note.is-caution {
+      border-left-color: #9a6700;
+      background: #fff8c5;
+    }
+    .callout.callout-warning {
+      border-left-color: #9a6700;
+      background: #fff8c5;
+    }
+    .callout.callout-tip {
+      border-left-color: #1a7f37;
+      background: #dafbe1;
+    }
+    .callout.callout-danger {
+      border-left-color: #cf222e;
+      background: #ffebe9;
+    }
+    .callout .callout-title, .docs-note strong {
+      display: block;
+      margin-bottom: 3px;
+      font-size: 9pt;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.02em;
+    }
+    .callout-content p { margin: 0; }
     code {
       font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
       font-size: 0.9em;

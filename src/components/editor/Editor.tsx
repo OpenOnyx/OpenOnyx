@@ -38,6 +38,7 @@ import { syntaxHighlighting, HighlightStyle } from "@codemirror/language";
 import { tags as t } from "@lezer/highlight";
 import { Tab, ViewMode } from "../../types";
 import { MarkdownPreview } from "./MarkdownPreview";
+import { marked } from "marked";
 import { SearchReplace } from "./SearchReplace";
 import { getDisplayDomain } from "../../utils/urlHelper";
 import {
@@ -1214,6 +1215,120 @@ class CheckboxWidget extends WidgetType {
   }
 }
 
+class MarkdownCalloutWidget extends WidgetType {
+  constructor(
+    private readonly calloutType: string,
+    private readonly title: string,
+    private readonly body: string,
+    private readonly startLine: number,
+    private readonly endLine: number,
+    private readonly isFoldable: boolean = false,
+    private readonly isCollapsed: boolean = false,
+  ) {
+    super();
+  }
+
+  eq(other: MarkdownCalloutWidget): boolean {
+    return (
+      this.calloutType === other.calloutType &&
+      this.title === other.title &&
+      this.body === other.body &&
+      this.startLine === other.startLine &&
+      this.endLine === other.endLine &&
+      this.isFoldable === other.isFoldable &&
+      this.isCollapsed === other.isCollapsed
+    );
+  }
+
+  toDOM(view: EditorView): HTMLElement {
+    const isCaution = this.calloutType === "caution" || this.calloutType === "warning";
+    const div = document.createElement("div");
+    div.className = `docs-note ${isCaution ? "is-caution" : ""} callout callout-${this.calloutType}`;
+    div.setAttribute("data-callout", this.calloutType);
+    if (this.isFoldable) {
+      div.setAttribute("data-foldable", "true");
+      div.setAttribute("data-collapsed", this.isCollapsed ? "true" : "false");
+    }
+
+    const strong = document.createElement("strong");
+    strong.className = "callout-title";
+
+    const titleSpan = document.createElement("span");
+    titleSpan.className = "callout-title-text";
+    titleSpan.textContent = this.title;
+    strong.appendChild(titleSpan);
+
+    if (this.isFoldable) {
+      const foldSpan = document.createElement("span");
+      foldSpan.className = "callout-fold";
+      foldSpan.setAttribute("aria-hidden", "true");
+      foldSpan.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>`;
+      strong.appendChild(foldSpan);
+
+      foldSpan.addEventListener("mousedown", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const collapsed = div.getAttribute("data-collapsed") === "true";
+        div.setAttribute("data-collapsed", collapsed ? "false" : "true");
+      });
+    }
+
+    div.appendChild(strong);
+
+    if (this.body.trim()) {
+      const contentDiv = document.createElement("div");
+      contentDiv.className = "callout-content";
+      try {
+        contentDiv.innerHTML = marked.parse(this.body, { async: false, breaks: true }) as string;
+      } catch {
+        contentDiv.textContent = this.body;
+      }
+      div.appendChild(contentDiv);
+    }
+
+    div.addEventListener("mousedown", (e) => {
+      if ((e.target as HTMLElement).closest("a")) return;
+      if ((e.target as HTMLElement).closest(".callout-fold")) return;
+      e.preventDefault();
+
+      const pos = view.posAtCoords({ x: e.clientX, y: e.clientY });
+      const lineStart = view.state.doc.line(this.startLine);
+      const lineEnd = view.state.doc.line(this.endLine);
+
+      let targetPos = pos;
+      if (targetPos === null || targetPos < lineStart.from || targetPos > lineEnd.to) {
+        const isTitle = (e.target as HTMLElement).closest(".callout-title");
+        const targetLineNum = isTitle ? this.startLine : Math.min(this.startLine + 1, this.endLine);
+        const targetLine = view.state.doc.line(targetLineNum);
+        targetPos = targetLine.from + targetLine.text.length;
+      }
+
+      view.dispatch({
+        selection: { anchor: targetPos },
+      });
+      view.focus();
+    });
+
+    div.addEventListener("click", (e) => {
+      const link = (e.target as HTMLElement).closest("a");
+      if (link) {
+        const href = link.getAttribute("href");
+        if (href) {
+          e.preventDefault();
+          window.open(href, "_blank");
+        }
+      }
+    });
+
+    return div;
+  }
+
+  ignoreEvent(e: Event): boolean {
+    if (e.target && (e.target as HTMLElement).closest("a")) return true;
+    return false;
+  }
+}
+
 class MarkdownTableWidget extends WidgetType {
   constructor(private readonly rows: string[], private readonly startLine: number) {
     super();
@@ -1954,6 +2069,7 @@ function addInactiveBlockPreviewDecorations(
     const offset = tagMatch ? tagMatch[0].length : listMatch[1].length;
     const markerFrom = lineFrom + offset;
     const markerTo = markerFrom + listMatch[2].length;
+
     const checkbox = listMatch[3];
     if (checkbox) {
       const checkboxFrom = markerTo + 1;
@@ -1996,6 +2112,7 @@ function addInactiveBlockPreviewDecorations(
     const tagMatch = quoteMatch[0].match(/^(?:\s*)(?:<[a-zA-Z]+[^>]*>)/);
     const offset = tagMatch ? tagMatch[0].length : quoteMatch[1].length;
     hideMarkdownSyntax(decorations, lineFrom + offset, lineFrom + offset + quoteMatch[2].length);
+
     decorations.push(
       Decoration.line({
         attributes: { class: "cm-live-blockquote-line" },
@@ -2082,6 +2199,120 @@ function markdownLivePreviewPlugin() {
               continue;
             }
 
+            // Callout block detection
+            const calloutMatch = line.text.match(/^[ \t]*(?:<[a-zA-Z]+[^>]*>)?>+[ \t]*\[!(\w+)\]([+-]?)(?:[ \t]+(.*?))?[ \t]*$/i);
+            if (calloutMatch) {
+              const calloutStart = i;
+              const calloutType = calloutMatch[1].toLowerCase();
+              const foldChar = calloutMatch[2];
+              const isFoldable = foldChar === "+" || foldChar === "-";
+              const isCollapsed = foldChar === "-";
+              const customTitle = calloutMatch[3]?.trim();
+              const displayTitle = customTitle || calloutType.toUpperCase();
+
+              // Collect callout lines
+              let calloutEnd = i;
+              while (calloutEnd + 1 <= doc.lines && /^[ \t]*(?:<[a-zA-Z]+[^>]*>)?>+/.test(doc.line(calloutEnd + 1).text)) {
+                // If the next line is a new callout header, stop this callout block
+                if (/^[ \t]*(?:<[a-zA-Z]+[^>]*>)?>+[ \t]*\[!\w+\]/i.test(doc.line(calloutEnd + 1).text)) {
+                  break;
+                }
+                calloutEnd++;
+              }
+
+              let isCalloutFocused = false;
+              for (let c = calloutStart; c <= calloutEnd; c++) {
+                if (activeLinesSet.has(c)) {
+                  isCalloutFocused = true;
+                  break;
+                }
+              }
+
+              if (!isCalloutFocused) {
+                const bodyLines: string[] = [];
+                for (let c = calloutStart + 1; c <= calloutEnd; c++) {
+                  const lText = doc.line(c).text;
+                  const stripped = lText.replace(/^[ \t]*(?:<[a-zA-Z]+[^>]*>)?>+[ \t]?/, "");
+                  bodyLines.push(stripped);
+                }
+                const bodyText = bodyLines.join("\n");
+
+                // Replace calloutStart line content with the rendered MarkdownCalloutWidget
+                decorations.push(
+                  Decoration.replace({
+                    widget: new MarkdownCalloutWidget(calloutType, displayTitle, bodyText, calloutStart, calloutEnd, isFoldable, isCollapsed),
+                  }).range(line.from, line.to),
+                );
+
+                // Hide subsequent callout lines within their own line boundaries without replacing line breaks
+                for (let j = calloutStart + 1; j <= calloutEnd; j++) {
+                  const subLine = doc.line(j);
+                  if (subLine.from < subLine.to) {
+                    decorations.push(
+                      Decoration.replace({
+                        widget: new EmptyInlineWidget(),
+                      }).range(subLine.from, subLine.to),
+                    );
+                  }
+                  decorations.push(
+                    Decoration.line({
+                      attributes: {
+                        class: "cm-hidden-line",
+                        style: "display: none !important; height: 0 !important; min-height: 0 !important; padding: 0 !important; margin: 0 !important; line-height: 0 !important; overflow: hidden !important;",
+                      },
+                    }).range(subLine.from),
+                  );
+                }
+
+                i = calloutEnd;
+                continue;
+              } else {
+                // Focused mode: user clicked into the callout to edit
+                for (let c = calloutStart; c <= calloutEnd; c++) {
+                  const cLine = doc.line(c);
+                  const isCurrentActive = activeLinesSet.has(c);
+                  const isFirst = c === calloutStart;
+                  const isLast = c === calloutEnd;
+
+                  const positionClass = isFirst && isLast
+                    ? "cm-live-callout-first cm-live-callout-last"
+                    : isFirst
+                    ? "cm-live-callout-first"
+                    : isLast
+                    ? "cm-live-callout-last"
+                    : "cm-live-callout-mid";
+
+                  decorations.push(
+                    Decoration.line({
+                      attributes: {
+                        class: `cm-live-callout-line ${positionClass} cm-live-callout-${calloutType}`,
+                      },
+                    }).range(cLine.from),
+                  );
+
+                  if (isFirst) {
+                    if (!isCurrentActive) {
+                      decorations.push(
+                        Decoration.replace({
+                          widget: new InlineTextWidget(displayTitle, "cm-live-callout-title"),
+                        }).range(cLine.from, cLine.to),
+                      );
+                    }
+                  } else {
+                    if (!isCurrentActive) {
+                      const prefixMatch = cLine.text.match(/^[ \t]*(?:<[a-zA-Z]+[^>]*>)?>+[ \t]?/);
+                      if (prefixMatch) {
+                        hideMarkdownSyntax(decorations, cLine.from, cLine.from + prefixMatch[0].length);
+                      }
+                    }
+                  }
+                }
+
+                i = calloutEnd;
+                continue;
+              }
+            }
+
             if (isTableRow(line.text) && i < doc.lines && isTableSeparator(doc.line(i + 1).text)) {
               const tableStart = i;
               const tableRows: string[] = [line.text, doc.line(i + 1).text];
@@ -2144,7 +2375,11 @@ function markdownLivePreviewPlugin() {
             }
 
             if (!isActive) {
-              addInactiveBlockPreviewDecorations(decorations, line.from, line.text);
+              addInactiveBlockPreviewDecorations(
+                decorations,
+                line.from,
+                line.text,
+              );
               addInactiveInlinePreviewDecorations(decorations, line.from, line.text);
               addInactiveInlineHTMLDecorations(decorations, line.from, line.text);
             }
@@ -5130,11 +5365,9 @@ export function Editor({
     if (!viewRef.current) return;
 
     // When Yjs CRDT collaboration is active, ytext is the authoritative source of truth.
-    // Do not dispatch full-document replacements on content prop updates unless CM doc is empty.
+    // Do not dispatch full-document replacements on content prop updates.
     if (yCollabExtensionRef.current) {
-      if (viewRef.current.state.doc.length > 0 || !content || content.length === 0) {
-        return;
-      }
+      return;
     }
 
     // If the user edited locally very recently, the content prop is stale.

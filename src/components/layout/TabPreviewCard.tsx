@@ -13,6 +13,7 @@ import React, { useEffect, useState, useRef, useMemo } from "react";
 import ReactDOM from "react-dom";
 import { marked } from "marked";
 import { getAPI } from "../../utils/api";
+import { parseMarkdownCallouts } from "../../utils/calloutParser";
 
 /* ── Constants ─────────────────────────────────────── */
 const CARD_WIDTH = 240;
@@ -52,6 +53,9 @@ function markdownToPreviewHTML(raw: string): string {
     "$1$3$2"
   );
 
+  // Process callouts
+  processed = parseMarkdownCallouts(processed);
+
   // Convert ==highlight== to <mark>highlight</mark> (multiline and boundary-aware)
   processed = processed.replace(
     /(^|\s|(?<=<[a-zA-Z]+[^>]*>))(==)([^\s=](?:[^\n=]*?[^\s=])?)(==)(?=\s|[.,;:!?\x27\x22]|$)/g,
@@ -59,7 +63,9 @@ function markdownToPreviewHTML(raw: string): string {
   );
 
   try {
-    return marked.parse(processed, { async: false, breaks: true }) as string;
+    let html = marked.parse(processed, { async: false, breaks: true }) as string;
+    html = html.replace(/<blockquote[^>]*>\s*(<div class="[^"]*docs-note[\s\S]*?<\/div>\s*<\/div>)\s*<\/blockquote>/g, "$1");
+    return html;
   } catch (e) {
     return escapeHtml(processed);
   }

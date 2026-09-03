@@ -562,54 +562,71 @@ export function MarkdownPreview({
   const hoverTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Process callouts (Obsidian-style admonitions)
-  const processCallouts = (text: string): string => {
-    // Match > [!type] or > [!type]+ or > [!type]- with optional title
-    const calloutRegex = /^(>\s*)\[!(\w+)\]([+-]?)(?:[ \t]+(.*))?$/gm;
+  // Process callouts (Obsidian-style admonitions with docs website design)
+  const processCallouts = (md: string): string => {
+    const lines = md.split(/\r?\n/);
+    const result: string[] = [];
+    let i = 0;
 
-    return text.replace(
-      calloutRegex,
-      (match, prefix, type, foldState, title) => {
-        const calloutType = type.toLowerCase();
-        const config = CALLOUT_TYPES[calloutType] || CALLOUT_TYPES.note;
-        const displayTitle =
-          title || calloutType.charAt(0).toUpperCase() + calloutType.slice(1);
-        const isFoldable = foldState === "+" || foldState === "-";
-        const isCollapsed = foldState === "-";
+    while (i < lines.length) {
+      const line = lines[i];
+      const headerMatch = line.match(/^[ \t]*>+[ \t]*\[!(\w+)\]([+-]?)(?:[ \t]+(.*?))?[ \t]*$/i);
 
-        return `${prefix}<div class="callout callout-${calloutType}" data-callout="${calloutType}" data-foldable="${isFoldable}" data-collapsed="${isCollapsed}" style="--callout-color: ${config.color}">
-> <div class="callout-title"><span class="callout-icon">${config.icon}</span><span class="callout-title-text">${displayTitle}</span>${isFoldable ? '<span class="callout-fold">▼</span>' : ""}</div>
-> <div class="callout-content">`;
-      },
-    );
+      if (headerMatch) {
+        const calloutType = headerMatch[1].toLowerCase();
+        const foldChar = headerMatch[2];
+        const customTitle = headerMatch[3]?.trim();
+        const displayTitle = customTitle || calloutType.toUpperCase();
+        const isFoldable = foldChar === "+" || foldChar === "-";
+        const isCollapsed = foldChar === "-";
+        const isCaution = calloutType === "caution" || calloutType === "warning";
+
+        const bodyLines: string[] = [];
+        i++;
+        while (i < lines.length) {
+          const nextLine = lines[i];
+          const quoteLineMatch = nextLine.match(/^[ \t]*>+[ \t]?(.*)$/);
+          if (quoteLineMatch) {
+            if (/^[ \t]*>+[ \t]*\[!\w+\]/i.test(nextLine)) {
+              break;
+            }
+            bodyLines.push(quoteLineMatch[1]);
+            i++;
+          } else {
+            break;
+          }
+        }
+
+        const bodyMarkdown = bodyLines.join("\n").trim();
+        let bodyHtml = "";
+        if (bodyMarkdown) {
+          try {
+            bodyHtml = marked.parse(bodyMarkdown, { async: false, breaks: true }) as string;
+          } catch {
+            bodyHtml = `<p>${bodyMarkdown}</p>`;
+          }
+        }
+
+        const foldSvg = '<span class="callout-fold" aria-hidden="true"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg></span>';
+        const foldHtml = isFoldable ? foldSvg : "";
+        const calloutHtml = `<div class="docs-note ${isCaution ? "is-caution" : ""} callout callout-${calloutType}" data-callout="${calloutType}" data-foldable="${isFoldable}" data-collapsed="${isCollapsed}">\n` +
+          `  <strong class="callout-title"><span class="callout-title-text">${displayTitle}</span>${foldHtml}</strong>\n` +
+          `  <div class="callout-content">\n${bodyHtml}  </div>\n` +
+          `</div>`;
+
+        result.push(calloutHtml);
+      } else {
+        result.push(line);
+        i++;
+      }
+    }
+
+    return result.join("\n");
   };
 
   // Close callout blocks
   const closeCallouts = (html: string): string => {
-    // Clean up empty paragraph tags inside callouts
-    let cleaned = html.replace(
-      /<div class="callout-content">\s*<\/p>/g,
-      '<div class="callout-content">',
-    );
-
-    // Safely close callouts only for blockquotes that actually opened them
-    const parts = cleaned.split(/(<\/blockquote>)/);
-    let openCalloutsCount = 0;
-    
-    return parts.map((part) => {
-      if (part === "</blockquote>") {
-        if (openCalloutsCount > 0) {
-          openCalloutsCount--;
-          return "</div></div></blockquote>";
-        }
-        return part;
-      }
-      
-      const matches = part.match(/<div class="callout callout-/g);
-      if (matches) {
-        openCalloutsCount += matches.length;
-      }
-      return part;
-    }).join("");
+    return html.replace(/<blockquote[^>]*>\s*(<div class="[^"]*docs-note[\s\S]*?<\/div>\s*<\/div>)\s*<\/blockquote>/g, "$1");
   };
 
   // Generate premium HTML wrapper card for URL previews
@@ -935,11 +952,9 @@ export function MarkdownPreview({
       }
 
       // Handle callout fold toggle
-      if (
-        target.classList.contains("callout-fold") ||
-        target.classList.contains("callout-title")
-      ) {
-        const callout = target.closest(".callout");
+      const foldTrigger = target.closest(".callout-title") || target.closest(".callout-fold");
+      if (foldTrigger) {
+        const callout = foldTrigger.closest(".callout");
         if (callout && callout.getAttribute("data-foldable") === "true") {
           const isCollapsed = callout.getAttribute("data-collapsed") === "true";
           callout.setAttribute(
