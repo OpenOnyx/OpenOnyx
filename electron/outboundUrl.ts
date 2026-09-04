@@ -51,11 +51,68 @@ export function assertPublicHttpUrl(value: unknown): string {
   return url.href;
 }
 
+const REDIRECT_STATUS_CODES = new Set([301, 302, 303, 307, 308]);
+const MAX_REDIRECTS = 10;
+
 /**
- * Fetch a renderer-supplied URL without following redirects.
- * Node's default `redirect: "follow"` would skip the host check on 3xx targets
- * (localhost, RFC1918, metadata).
+ * Fetch a renderer-supplied URL safely.
+ * Follows redirects while ensuring each redirect target is validated against
+ * the public outbound URL policy (preventing SSRF hops to localhost, RFC1918, metadata, etc.).
  */
 export async function fetchPublicHttp(url: unknown, init: RequestInit = {}): Promise<Response> {
-  return fetch(assertPublicHttpUrl(url), { ...init, redirect: "error" });
+  const redirectMode = init.redirect ?? "follow";
+
+  if (redirectMode === "error") {
+    return fetch(assertPublicHttpUrl(url), { ...init, redirect: "error" });
+  }
+
+  let currentUrl = assertPublicHttpUrl(url);
+  let currentMethod = (init.method || "GET").toUpperCase();
+  let currentHeaders = new Headers(init.headers);
+  let currentBody = init.body;
+  let redirectCount = 0;
+
+  while (true) {
+    const fetchInit: RequestInit = {
+      ...init,
+      method: currentMethod,
+      headers: currentHeaders,
+      body: currentBody,
+      redirect: "manual",
+    };
+
+    const res = await fetch(currentUrl, fetchInit);
+
+    if (redirectMode === "manual" || !REDIRECT_STATUS_CODES.has(res.status)) {
+      return res;
+    }
+
+    redirectCount++;
+    if (redirectCount > MAX_REDIRECTS) {
+      throw new Error("Maximum redirect limit reached.");
+    }
+
+    const location = res.headers.get("location");
+    if (!location) {
+      return res;
+    }
+
+    const nextUrl = assertPublicHttpUrl(new URL(location, currentUrl).href);
+
+    const currentOrigin = new URL(currentUrl).origin;
+    const nextOrigin = new URL(nextUrl).origin;
+    if (currentOrigin !== nextOrigin) {
+      currentHeaders.delete("authorization");
+      currentHeaders.delete("cookie");
+    }
+
+    if (res.status === 303 || ((res.status === 301 || res.status === 302) && currentMethod === "POST")) {
+      currentMethod = "GET";
+      currentBody = undefined;
+      currentHeaders.delete("content-type");
+      currentHeaders.delete("content-length");
+    }
+
+    currentUrl = nextUrl;
+  }
 }

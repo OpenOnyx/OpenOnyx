@@ -274,7 +274,9 @@ export function registerIpcHandlers(
       }
       return await res.text();
     } catch (e: any) {
-      console.error('[data:fetch] Error:', e.message);
+      const causeMsg = e?.cause?.message || e?.cause;
+      const fullMsg = causeMsg ? `${e.message} (${causeMsg})` : e.message;
+      console.error('[data:fetch] Error:', fullMsg);
       throw e;
     }
   });
@@ -383,7 +385,9 @@ export function registerIpcHandlers(
         arrayBuffer: buffer.buffer // send back the raw ArrayBuffer
       };
     } catch (err: any) {
-      console.error('[network:request] Failed:', err.message);
+      const causeMsg = err?.cause?.message || err?.cause;
+      const fullMsg = causeMsg ? `${err.message} (${causeMsg})` : err.message;
+      console.error('[network:request] Failed:', fullMsg);
       throw err;
     }
   });

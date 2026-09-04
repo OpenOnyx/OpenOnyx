@@ -1344,7 +1344,26 @@ class MarkdownTableWidget extends WidgetType {
     wrapper.title = "Edit table";
     
     wrapper.addEventListener("mousedown", (e) => {
-      e.stopPropagation();
+      if ((e.target as HTMLElement).closest(".cm-live-table-controls")) {
+        e.stopPropagation();
+        return;
+      }
+      const target = e.target as HTMLElement;
+      const tr = target.closest("tr");
+      let lineOffset = 0;
+      if (tr && tr.parentElement) {
+        const rows = Array.from(table.querySelectorAll("tr"));
+        const rowIndex = rows.indexOf(tr);
+        if (rowIndex >= 0) {
+          lineOffset = rowIndex;
+        }
+      }
+      const targetLineNum = Math.min(this.startLine + lineOffset, this.startLine + this.rows.length - 1);
+      const targetLine = view.state.doc.line(targetLineNum);
+      view.dispatch({
+        selection: { anchor: targetLine.from + Math.min(targetLine.text.length, 2) },
+      });
+      view.focus();
     });
 
     const table = document.createElement("table");
@@ -1371,7 +1390,7 @@ class MarkdownTableWidget extends WidgetType {
 
     const parsedRows = this.rows.map(parseTableCells);
     const separatorIndex = parsedRows.findIndex((cells) =>
-      cells.every((cell) => /^:?-{3,}:?$/.test(cell.trim())),
+      cells.every((cell) => /^:?-+:?$/.test(cell.trim())),
     );
     const rawHeaderRows = separatorIndex > 0 ? parsedRows.slice(0, separatorIndex) : [];
     const columnCount = Math.max(1, rawHeaderRows[0]?.length || parsedRows[0]?.length || 1);
@@ -1382,7 +1401,7 @@ class MarkdownTableWidget extends WidgetType {
     };
     const headerRows = rawHeaderRows.map((row) => normalizeCells(row));
     const bodyRows = (separatorIndex >= 0 ? parsedRows.slice(separatorIndex + 1) : parsedRows)
-      .filter((row) => !row.every((cell) => /^:?-{3,}:?$/.test(cell.trim())))
+      .filter((row) => !row.every((cell) => /^:?-+:?$/.test(cell.trim())))
       .map((row) => normalizeCells(row));
 
     if (headerRows.length > 0) {
@@ -1633,6 +1652,27 @@ function setupEditableCell(
   cell.style.outline = "none";
   const stopProp = (e: Event) => e.stopPropagation();
 
+  cell.addEventListener("focus", () => {
+    const tr = cell.parentElement;
+    const table = tr?.closest("table");
+    let lineOffset = 0;
+    if (tr && table) {
+      const rows = Array.from(table.querySelectorAll("tr"));
+      const rowIndex = rows.indexOf(tr as HTMLTableRowElement);
+      if (rowIndex >= 0) {
+        lineOffset = rowIndex;
+      }
+    }
+    const pos = view.posAtDOM(wrapper);
+    if (pos >= 0) {
+      const startLine = view.state.doc.lineAt(pos).number;
+      const targetLine = view.state.doc.line(Math.min(startLine + lineOffset, view.state.doc.lines));
+      view.dispatch({
+        selection: { anchor: targetLine.from + Math.min(targetLine.text.length, 2) },
+      });
+    }
+  });
+
   cell.addEventListener("keydown", (e) => {
     if (e.key === "Tab") {
       e.preventDefault();
@@ -1755,7 +1795,7 @@ function isTableRow(text: string): boolean {
 
 function isTableSeparator(text: string): boolean {
   if (!isTableRow(text)) return false;
-  return parseTableCells(text).every((cell) => /^:?-{3,}:?$/.test(cell.trim()));
+  return parseTableCells(text).every((cell) => /^:?-+:?$/.test(cell.trim()));
 }
 
 function formatTableRow(cells: string[]): string {
@@ -2320,6 +2360,30 @@ function markdownLivePreviewPlugin() {
               while (tableEnd + 1 <= doc.lines && isTableRow(doc.line(tableEnd + 1).text)) {
                 tableEnd++;
                 tableRows.push(doc.line(tableEnd).text);
+              }
+
+              let isTableFocused = false;
+              for (let c = tableStart; c <= tableEnd; c++) {
+                if (activeLinesSet.has(c)) {
+                  isTableFocused = true;
+                  break;
+                }
+              }
+
+              if (isTableFocused) {
+                for (let j = tableStart; j <= tableEnd; j++) {
+                  const subLine = doc.line(j);
+                  const isSep = isTableSeparator(subLine.text);
+                  decorations.push(
+                    Decoration.line({
+                      attributes: {
+                        class: `HyperMD-table-row ${isSep ? 'cm-live-table-source-separator' : 'cm-live-table-source-row'}`,
+                      },
+                    }).range(subLine.from),
+                  );
+                }
+                i = tableEnd;
+                continue;
               }
 
               // Replace tableStart line content with the rendered MarkdownTableWidget
@@ -3827,20 +3891,18 @@ export function Editor({
       ],
     });
 
-    const activeLeaf = obsidianApp?.workspace?.activeLeaf;
-    // Some custom file views inherit MarkdownView for its file lifecycle but
-    // own their editor and expose file as a getter (for example Kanban).
-    // Only bind the host CodeMirror editor to the actual Markdown view.
-    if (activeLeaf?.view instanceof (MarkdownView as any) && activeLeaf.view.getViewType?.() === 'markdown') {
-      activeLeaf.view.editor = obsidianEditor;
-      activeLeaf.view.sourceMode = { cmEditor: obsidianEditor };
-      setWritableViewProperty(activeLeaf.view, 'file', currentFile);
-    }
     if (obsidianApp?.workspace) {
       obsidianApp.workspace.activeEditor = {
         editor: obsidianEditor,
         file: currentFile,
       };
+      const mainLeaf = obsidianApp.workspace.getMainLeaf?.() || obsidianApp.workspace.activeLeaf;
+      if (mainLeaf?.view) {
+        mainLeaf.view.editor = obsidianEditor;
+        mainLeaf.view.sourceMode = { cmEditor: obsidianEditor, editor: obsidianEditor, sourceMode: true };
+        setWritableViewProperty(mainLeaf.view, 'file', currentFile);
+        mainLeaf.view.file = currentFile;
+      }
     }
   }, []);
 
@@ -5179,6 +5241,14 @@ export function Editor({
     const obsidianEditor = new ObsidianEditor(view);
     obsidianEditorRef.current = obsidianEditor;
     syncObsidianEditorContext();
+    const handleEditorFocusIn = () => {
+      const workspace = (window as any).__oo_app?.workspace;
+      const mainLeaf = workspace?.getMainLeaf?.();
+      if (mainLeaf && workspace?.activeLeaf !== mainLeaf) {
+        workspace.setActiveLeaf(mainLeaf);
+      }
+    };
+    editorRef.current?.addEventListener('focusin', handleEditorFocusIn);
     if (initialScroll > 0) {
       setTimeout(() => {
         if (view.scrollDOM) {

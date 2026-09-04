@@ -8,6 +8,7 @@
 import React, { useEffect, useRef, useState, useContext } from 'react';
 import { getPluginScopeClass } from '../../lib/pluginStyles';
 import { DragCtx } from '../../context/DragContext';
+import { setIcon } from '../../lib/obsidian-api/utils';
 
 interface PluginViewInfo {
   viewType: string;
@@ -23,6 +24,28 @@ interface PluginViewPanelProps {
   isMainView?: boolean;
   fill?: boolean;
   width?: number;
+}
+
+function TabIcon({ iconId }: { iconId?: string }) {
+  const ref = useRef<HTMLSpanElement>(null);
+  useEffect(() => {
+    if (ref.current && iconId) {
+      ref.current.innerHTML = "";
+      setIcon(ref.current, iconId);
+      const svg = ref.current.querySelector("svg");
+      if (svg) {
+        svg.setAttribute("width", "14");
+        svg.setAttribute("height", "14");
+        svg.style.width = "14px";
+        svg.style.height = "14px";
+        svg.style.color = "currentColor";
+        svg.style.display = "inline-block";
+      }
+    }
+  }, [iconId]);
+
+  if (!iconId) return null;
+  return <span ref={ref} className="inline-flex items-center justify-center shrink-0 pointer-events-none" />;
 }
 
 const pluginTabsClass = "flex min-h-9 shrink-0 items-stretch overflow-hidden border-b border-(--divider-color) bg-(--bg-primary)";
@@ -142,6 +165,7 @@ export function PluginViewPanel({ views, onClose, isMainView, fill, width = 300 
               }}
               onDragEnd={() => setDragCtx(null)}
             >
+              <TabIcon iconId={view.icon} />
               <span className={pluginTabTextClass}>{view.displayText}</span>
               <span
                 className={pluginTabCloseClass}
@@ -164,7 +188,8 @@ export function PluginViewPanel({ views, onClose, isMainView, fill, width = 300 
           flex: 1,
           minHeight: 0,
           minWidth: 0,
-          overflow: 'hidden',
+          overflowY: 'auto',
+          overflowX: 'hidden',
           position: 'relative',
           pointerEvents: 'auto',
         }}

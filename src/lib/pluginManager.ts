@@ -56,6 +56,8 @@ const cmLanguageCompat = {
   tokenClassNodeProp: cmLanguageExports["tokenClassNodeProp"] ?? new NodeProp<string>({ deserialize: (value) => value }),
 };
 
+import { nodeCompatModules, electronRemote } from './nodeCompat';
+
 const frontendPluginModules: Record<string, any> = {
   '@codemirror/state': cmState,
   '@codemirror/view': cmView,
@@ -64,6 +66,7 @@ const frontendPluginModules: Record<string, any> = {
   '@codemirror/search': cmSearch,
   '@lezer/highlight': lezerHighlight,
   '@lezer/lr': lezerLr,
+  ...nodeCompatModules,
 };
 
 const APP_VERSION = '1.13.1';
@@ -243,14 +246,19 @@ export class PluginManager {
     };
 
     win.__oo_register_statusbar = (pluginId: string, el: HTMLElement) => {
-      // Deduplicate by pluginId
-      this._statusBarItems = this._statusBarItems.filter(i => i.pluginId !== pluginId);
-      this._statusBarItems.push({ pluginId, el });
-      this._callbacks.onStatusBarChanged([...this._statusBarItems]);
+      // Deduplicate by element identity
+      if (!this._statusBarItems.some(i => i.el === el)) {
+        this._statusBarItems.push({ pluginId, el });
+        this._callbacks.onStatusBarChanged([...this._statusBarItems]);
+      }
     };
 
-    win.__oo_unregister_statusbar = (pluginId: string) => {
-      this._statusBarItems = this._statusBarItems.filter(i => i.pluginId !== pluginId);
+    win.__oo_unregister_statusbar = (pluginId: string, el?: HTMLElement) => {
+      if (el) {
+        this._statusBarItems = this._statusBarItems.filter(i => i.el !== el);
+      } else {
+        this._statusBarItems = this._statusBarItems.filter(i => i.pluginId !== pluginId);
+      }
       this._callbacks.onStatusBarChanged([...this._statusBarItems]);
     };
 
@@ -621,6 +629,7 @@ export class PluginManager {
         exports: moduleExports,
         app: this._app,
         moment: (window as any).moment,
+        Buffer: nodeCompatModules['buffer']?.Buffer || (window as any).Buffer,
       };
 
       // Wrap the plugin code
@@ -633,6 +642,14 @@ export class PluginManager {
   // Ensure critical globals are available inside the blob
   window.app = window.app || __ctx.app;
   window.moment = window.moment || __ctx.moment;
+  window.Buffer = window.Buffer || __ctx.Buffer;
+  var Buffer = window.Buffer;
+  window.process = window.process || {};
+  window.process.versions = window.process.versions || {};
+  if (!window.process.versions.electron) window.process.versions.electron = '32.0.0';
+  if (!window.process.versions.node) window.process.versions.node = '22.0.0';
+  if (!window.process.platform) window.process.platform = 'linux';
+  var process = window.process;
   // Blob scripts do not consistently resolve window properties as bare
   // identifiers. Obsidian exposes these names to plugins as globals.
   var activeWindow = window.activeWindow || window;

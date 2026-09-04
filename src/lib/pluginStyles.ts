@@ -183,6 +183,71 @@ export function injectPluginBaseCss(): void {
   --radius-s: 4px;
   --radius-m: 8px;
   --radius-l: 12px;
+  --nav-item-size: 13px;
+  --nav-item-color: var(--text-muted, #888);
+  --nav-item-color-hover: var(--text-normal, #dcddde);
+  --nav-item-color-active: var(--text-normal, #ffffff);
+  --nav-item-background-hover: var(--bg-hover, rgba(255, 255, 255, 0.08));
+  --nav-item-background-active: var(--bg-active, rgba(255, 255, 255, 0.12));
+  --nav-item-weight: 500;
+  --nav-item-weight-hover: 500;
+  --font-medium: 500;
+  --font-semibold: 600;
+  --font-bold: 700;
+  --background-modifier-hover: var(--bg-hover, rgba(255, 255, 255, 0.08));
+  --background-modifier-active-hover: var(--bg-active, rgba(255, 255, 255, 0.12));
+}
+
+/* ── Obsidian Sidebar & Navigation Components ────── */
+.nav-header {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 4px 8px;
+}
+
+.nav-buttons-container {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+
+.nav-action-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  border-radius: var(--radius-s, 4px);
+  padding: 4px;
+  color: var(--nav-item-color, var(--text-muted, #888));
+  transition: background-color 0.1s, color 0.1s;
+}
+
+.nav-action-button:hover {
+  background-color: var(--nav-item-background-hover, rgba(255,255,255,0.08));
+  color: var(--nav-item-color-hover, var(--text-normal, #dcddde));
+}
+
+.nav-action-button svg,
+.advanced-tables-button svg {
+  width: 18px;
+  height: 18px;
+  display: block;
+}
+
+.advanced-tables-buttons {
+  padding: 8px;
+}
+
+.advanced-tables-row-label {
+  display: inline-block;
+  min-width: 52px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--text-muted, #888);
 }
 
 /* Kanban's embedded CodeMirror editor does not inherit the host editor
@@ -203,6 +268,27 @@ export function injectPluginBaseCss(): void {
 .oo-plugin-ribbon-btn .svg-icon {
   width: 20px !important;
   height: 20px !important;
+}
+
+/* Status bar items */
+.status-bar-item,
+.oo-plugin-status-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: default;
+  height: 100%;
+}
+
+.status-bar-item svg,
+.oo-plugin-status-item svg,
+.status-bar-item .svg-icon,
+.oo-plugin-status-item .svg-icon {
+  width: 14px;
+  height: 14px;
+  stroke-width: 1.75;
+  color: currentColor;
+  display: inline-block;
 }
 
 /* ── Plugin Notice Container ─────────────────────── */

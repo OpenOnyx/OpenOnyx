@@ -29,10 +29,11 @@ export class WorkspaceLeaf extends Events {
     this.view = null as any;
     this.activeTime = Date.now();
     this.containerEl = document.createElement('div');
-    this.containerEl.className = 'workspace-leaf-content oo-plugin-leaf';
+    this.containerEl.className = 'workspace-leaf workspace-leaf-content oo-plugin-leaf';
     this.containerEl.setAttribute('data-type', 'empty');
-    // Obsidian sets .win on containerEl so plugins can distinguish windows
+    // Obsidian sets .win and .doc on containerEl so plugins can distinguish windows
     (this.containerEl as any).win = window;
+    (this.containerEl as any).doc = document;
     this.tabHeaderEl = document.createElement('div');
     this.tabHeaderEl.className = 'workspace-tab-header';
     this.tabHeaderInnerIconEl = document.createElement('div');
@@ -48,7 +49,17 @@ export class WorkspaceLeaf extends Events {
     return workspace?.rootSplit || this.parent || this;
   }
 
-  getContainer(): any { return this.getRoot(); }
+  getContainer(): any {
+    const workspace = (window as any).__oo_app?.workspace;
+    const root = workspace?.rootSplit;
+    return {
+      doc: document,
+      win: window,
+      containerEl: root?.containerEl || document.body,
+      getRoot: () => root || this,
+      ...(root || {}),
+    };
+  }
 
   async openFile(file: TFile, openState?: any): Promise<void> {
     const workspace = (window as any).__oo_app?.workspace;
@@ -327,7 +338,7 @@ function _MarkdownView(this: any, leaf: WorkspaceLeaf) {
   const app = (window as any).__oo_app;
   
   // Provide a safe inline mock for editor to avoid circular dependencies
-  this.editor = {
+  this._fallbackEditor = {
     cm: null,
     getDoc: function() { return this; },
     getValue: function() { return ''; },
@@ -349,11 +360,9 @@ function _MarkdownView(this: any, leaf: WorkspaceLeaf) {
     getScrollInfo: function() { return { top: 0, left: 0, clientHeight: 0, clientWidth: 0, height: 0, width: 0 }; },
     scrollTo: function() {},
   };
-  this.editor.cm = this.editor;  
-  
-  // Expose sourceMode and previewMode as expected by some older plugins
-  this.sourceMode = { cmEditor: this.editor };
-  this.previewMode = {};
+  this._fallbackEditor.cm = this._fallbackEditor;
+  this._editor = null;
+  this._file = null;
 
   this._containerEl = document.createElement('div');
   this._containerEl.className = 'markdown-view';
@@ -369,36 +378,121 @@ function _MarkdownView(this: any, leaf: WorkspaceLeaf) {
     render: () => {},
   };
   this._containerEl.appendChild(propertyListEl);
-
-  Object.defineProperty(this, 'containerEl', {
-    get: function() { 
-      return document.querySelector('.leaf-editor-host') as HTMLElement || this._containerEl; 
-    },
-    set: function(el) { 
-      this._containerEl = el; 
-    },
-    configurable: true
-  });
 }
 _MarkdownView.prototype = Object.create(TextFileView.prototype);
 _MarkdownView.prototype.constructor = _MarkdownView;
 _MarkdownView.prototype.getViewType = function() { return 'markdown'; };
 _MarkdownView.prototype.getIcon = function() { return 'file-text'; };
 _MarkdownView.prototype.getMode = function() { return 'source'; };
-_MarkdownView.prototype.getViewData = function() { return this.data; };
-_MarkdownView.prototype.setViewData = function(data: string, clear: boolean) { this.data = data; };
-_MarkdownView.prototype.clear = function() { this.data = ''; };
+_MarkdownView.prototype.getViewData = function() {
+  return this.editor?.getValue?.() || this.data || '';
+};
+_MarkdownView.prototype.setViewData = function(data: string, clear: boolean) {
+  this.data = data;
+  if (this.editor?.setValue) {
+    this.editor.setValue(data);
+  }
+};
+_MarkdownView.prototype.clear = function() {
+  this.data = '';
+  if (this.editor?.setValue) {
+    this.editor.setValue('');
+  }
+};
+
+Object.defineProperty(_MarkdownView.prototype, 'editor', {
+  get: function() {
+    if (this._editor && this._editor.cm) return this._editor;
+    const app = (window as any).__oo_app;
+    if (app?.workspace?.activeEditor?.editor) {
+      return app.workspace.activeEditor.editor;
+    }
+    return this._editor || this._fallbackEditor;
+  },
+  set: function(ed) {
+    this._editor = ed;
+  },
+  configurable: true,
+});
+
+Object.defineProperty(_MarkdownView.prototype, 'file', {
+  get: function() {
+    if (this._file) return this._file;
+    const app = (window as any).__oo_app;
+    if (app?.workspace?.activeEditor?.file) {
+      return app.workspace.activeEditor.file;
+    }
+    const activePath = (window as any).__oo_active_file;
+    if (activePath) {
+      return app?.vault?.getFileByPath?.(activePath) || null;
+    }
+    return null;
+  },
+  set: function(f) {
+    this._file = f;
+  },
+  configurable: true,
+});
+
+Object.defineProperty(_MarkdownView.prototype, 'sourceMode', {
+  get: function() {
+    const self = this;
+    return {
+      get cmEditor() { return self.editor; },
+      get editor() { return self.editor; },
+      sourceMode: true,
+      type: 'source',
+      get: () => self.editor?.getValue?.() || '',
+      set: (data: string) => self.editor?.setValue?.(data),
+      getScroll: () => 0,
+      applyScroll: () => {},
+    };
+  },
+  set: function(sm) {
+    if (sm?.cmEditor) this._editor = sm.cmEditor;
+  },
+  configurable: true,
+});
+
+Object.defineProperty(_MarkdownView.prototype, 'currentMode', {
+  get: function() {
+    return this.sourceMode;
+  },
+  configurable: true,
+});
+
+Object.defineProperty(_MarkdownView.prototype, 'previewMode', {
+  get: function() {
+    return {
+      get: () => this.data || this.editor?.getValue?.() || '',
+      set: (data: string) => { this.data = data; },
+      getScroll: () => 0,
+      applyScroll: () => {},
+      rerender: () => {},
+    };
+  },
+  configurable: true,
+});
+
+Object.defineProperty(_MarkdownView.prototype, 'containerEl', {
+  get: function() { 
+    return document.querySelector('.leaf-editor-host') as HTMLElement || this._containerEl; 
+  },
+  set: function(el) { 
+    this._containerEl = el; 
+  },
+  configurable: true
+});
 
 export const MarkdownView = _MarkdownView as any;
 
 // ── OOWorkspace ─────────────────────────────────────
 export class OOWorkspace extends Events {
   private _activeLeaf: WorkspaceLeaf | null = null;
+  private _activeMainLeaf: WorkspaceLeaf | null = null;
   get activeLeaf(): WorkspaceLeaf {
     if (!this._activeLeaf) {
-      this._activeLeaf = new WorkspaceLeaf('default-active');
-      this._activeLeaf.view = new MarkdownView(this._activeLeaf);
-      this._leaves.set(this._activeLeaf.id, this._activeLeaf);
+      this._activeLeaf = this.getMainLeaf();
     }
     return this._activeLeaf;
   }
@@ -406,9 +500,31 @@ export class OOWorkspace extends Events {
     if (this._activeLeaf !== leaf) {
       this._activeLeaf = leaf;
       if (leaf) {
+        if (leaf.side === 'main') {
+          this._activeMainLeaf = leaf;
+        }
         this.trigger('active-leaf-change', leaf);
       }
     }
+  }
+
+  getMainLeaf(): WorkspaceLeaf {
+    if (this._activeMainLeaf && this._leaves.has(this._activeMainLeaf.id)) {
+      return this._activeMainLeaf;
+    }
+    const existing = Array.from(this._leaves.values()).find(
+      (l) => l.side === 'main' && l.view?.getViewType?.() === 'markdown',
+    );
+    if (existing) {
+      this._activeMainLeaf = existing;
+      return existing;
+    }
+    const defaultLeaf = new WorkspaceLeaf('default-main');
+    defaultLeaf.side = 'main';
+    defaultLeaf.view = new MarkdownView(defaultLeaf);
+    this._leaves.set(defaultLeaf.id, defaultLeaf);
+    this._activeMainLeaf = defaultLeaf;
+    return defaultLeaf;
   }
 
   activeEditor: any = null;
@@ -590,27 +706,40 @@ export class OOWorkspace extends Events {
   }
 
   getActiveViewOfType<T>(type: any): T | null {
-    const view = this.activeLeaf?.view;
-    if (!view) return null;
-    // Standard instanceof check (works for ES6 class hierarchies)
-    if (view instanceof type) return view as T;
-    // Fallback for ES5 function constructors — compare viewType strings.
-    // Plugins like Excalidraw create views with function constructors where
-    // instanceof fails across the Blob URL execution boundary.
-    try {
-      const expectedType = type.prototype?.getViewType?.call?.({ icon: '', navigation: true });
-      if (expectedType && view.getViewType?.() === expectedType) return view as T;
-    } catch { /* getViewType may need proper `this` — ignore */ }
-    // Last resort: check prototype chain constructor name match
-    try {
-      if (type.name && view.constructor?.name === type.name) return view as T;
-    } catch { /* ignore */ }
+    const isMatch = (view: any): boolean => {
+      if (!view) return false;
+      if (view instanceof type) return true;
+      if (type?.name && (view.constructor?.name === type.name || view.constructor?.name === `_${type.name}`)) return true;
+      try {
+        const expectedType = type.prototype?.getViewType?.call?.({ icon: '', navigation: true });
+        if (expectedType && view.getViewType?.() === expectedType) return true;
+      } catch { /* getViewType may need proper `this` — ignore */ }
+      try {
+        if (type.name && view.constructor?.name === type.name) return true;
+      } catch { /* ignore */ }
+      return false;
+    };
+
+    // 1. Try activeLeaf.view
+    if (isMatch(this.activeLeaf?.view)) return this.activeLeaf.view as T;
+
+    // 2. Try getMostRecentLeaf().view (the active main split markdown view)
+    const mostRecent = this.getMostRecentLeaf();
+    if (isMatch(mostRecent?.view)) return mostRecent?.view as T;
+
+    // 3. Fallback: search all leaves
+    for (const leaf of this._leaves.values()) {
+      if (isMatch(leaf.view)) return leaf.view as T;
+    }
     return null;
   }
 
   getActiveFileView(): FileView | null {
     const view = this.activeLeaf?.view;
-    return view instanceof FileView ? view as unknown as FileView : null;
+    if (view instanceof FileView) return view as unknown as FileView;
+    const recentView = this.getMostRecentLeaf()?.view;
+    if (recentView instanceof FileView) return recentView as unknown as FileView;
+    return null;
   }
 
   getActiveFile(): TFile | null {
@@ -664,6 +793,9 @@ export class OOWorkspace extends Events {
   setActiveLeaf(leaf: WorkspaceLeaf, params?: any): void {
     if (leaf) {
       leaf.activeTime = Date.now();
+      if (leaf.side === 'main') {
+        this._activeMainLeaf = leaf;
+      }
     }
     this.activeLeaf = leaf;
     this._revealSideLeaf(leaf);
@@ -676,7 +808,12 @@ export class OOWorkspace extends Events {
   getGroupLeaves(group: string): WorkspaceLeaf[] {
     return Array.from(this._leaves.values()).filter((leaf) => leaf.group === group);
   }
-  getMostRecentLeaf(): WorkspaceLeaf | null { return this.activeLeaf; }
+  getMostRecentLeaf(root?: any): WorkspaceLeaf | null {
+    if (this._activeLeaf && this._activeLeaf.side === 'main') {
+      return this._activeLeaf;
+    }
+    return this.getMainLeaf();
+  }
   getActiveLeafOfViewType(viewType: string): WorkspaceLeaf | null {
     return this.activeLeaf?.view?.getViewType?.() === viewType
       ? this.activeLeaf
@@ -826,6 +963,11 @@ export class OOWorkspace extends Events {
         const mountEl = leaf.side !== 'main' && viewAny.contentEl instanceof HTMLElement
           ? viewAny.contentEl
           : leaf.view.containerEl;
+        if (mountEl instanceof HTMLElement) {
+          const dataType = leaf.containerEl.getAttribute('data-type') || viewType;
+          mountEl.setAttribute('data-type', dataType);
+          mountEl.classList.add('workspace-leaf-content', 'oo-plugin-leaf');
+        }
         views.push({
           viewType,
           leaf,
@@ -871,8 +1013,19 @@ export class OOWorkspace extends Events {
     void duplicate.setViewState(leaf.getViewState());
     return duplicate;
   }
-  async moveLeafToPopout(leaf: WorkspaceLeaf, data?: any): Promise<WorkspaceLeaf> { return leaf; }
-  async openPopoutLeaf(data?: any): Promise<WorkspaceLeaf> { return this.getLeaf(true); }
+  moveLeafToPopout(leaf: WorkspaceLeaf, data?: any): WorkspaceLeaf {
+    leaf.containerEl.classList.add('workspace-leaf', 'mod-active');
+    return leaf;
+  }
+  openPopoutLeaf(data?: any): WorkspaceLeaf {
+    const leaf = this.getLeaf(true);
+    leaf.containerEl.classList.add('workspace-leaf', 'mod-active');
+    const appContainer = document.querySelector('.app-container') || document.body;
+    if (!leaf.containerEl.parentElement) {
+      appContainer.appendChild(leaf.containerEl);
+    }
+    return leaf;
+  }
   getLastOpenFiles(): string[] { return []; }
   updateOptions(): void { /* compat */ }
   handleLinkContextMenu(menu: any, linktext: string, sourcePath: string): boolean { return false; }

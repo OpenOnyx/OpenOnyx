@@ -200,6 +200,9 @@ _Plugin.prototype.addStatusBarItem = function (): HTMLElement {
 
   this._statusBarItems.push(el);
   (window as any).__oo_register_statusbar?.(this.manifest.id, el);
+  this.register(() => {
+    (window as any).__oo_unregister_statusbar?.(this.manifest.id, el);
+  });
   return el;
 };
 

@@ -70,6 +70,8 @@ interface RibbonProps {
   showSettingsButton?: boolean;
   hasWallpaper?: boolean;
   activeLeftPluginView?: { pluginId?: string; viewType?: string } | null;
+  leftPluginViews?: Array<{ viewType: string; displayText: string; icon: string; pluginId?: string }>;
+  onSelectLeftPluginView?: (viewType: string) => void;
 }
 
 export function Ribbon({
@@ -87,6 +89,8 @@ export function Ribbon({
   showSettingsButton = false,
   hasWallpaper = false,
   activeLeftPluginView = null,
+  leftPluginViews = [],
+  onSelectLeftPluginView,
 }: RibbonProps) {
   const ribbonRootRef = useRef<HTMLDivElement | null>(null);
   const ribbonItemsRef = useRef<HTMLDivElement | null>(null);
@@ -97,12 +101,13 @@ export function Ribbon({
     setIcon(el, action.icon);
     const svg = el.querySelector("svg");
     if (svg) {
-      svg.setAttribute("width", "20");
-      svg.setAttribute("height", "20");
-      svg.style.width = "20px";
-      svg.style.height = "20px";
-      svg.style.strokeWidth = "1.5";
+      svg.setAttribute("width", "18");
+      svg.setAttribute("height", "18");
+      svg.style.width = "18px";
+      svg.style.height = "18px";
+      svg.style.strokeWidth = "1.6";
       svg.style.color = "currentColor";
+      svg.style.display = "block";
     }
     const item = (window as any).__oo_app?.workspace?.leftRibbon?.items?.find(
       (entry: any) => entry.id === (action as any).id,
@@ -222,21 +227,64 @@ export function Ribbon({
         )}
 
 
-        {pluginRibbonActions
-          .filter((action) => activeLeftPluginView && activeLeftPluginView.pluginId === action.pluginId)
-          .map((action, i) => (
-            <button
-              key={`plugin-ribbon-${action.pluginId}-${i}`}
-              className={`${ribbonBtnClass} oo-plugin-ribbon-btn`}
-              onClick={(e) => action.callback(e.nativeEvent)}
-              data-tooltip={action.title}
-            >
-              <span
-                className={pluginRibbonIconClass}
-                ref={(el) => renderPluginIcon(el, action)}
-              />
-            </button>
-          ))}
+        {pluginRibbonActions.map((action, i) => (
+          <button
+            key={`plugin-ribbon-${action.pluginId}-${i}`}
+            className={`${ribbonBtnClass} oo-plugin-ribbon-btn`}
+            onClick={(e) => {
+              if (action.el) {
+                action.el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
+              } else {
+                action.callback(e.nativeEvent);
+              }
+            }}
+            onContextMenu={(e) => {
+              if (action.el) {
+                action.el.dispatchEvent(new MouseEvent('contextmenu', {
+                  bubbles: true,
+                  cancelable: true,
+                  view: window,
+                  clientX: e.clientX,
+                  clientY: e.clientY,
+                }));
+              }
+            }}
+            data-tooltip={action.title}
+            aria-label={action.title}
+          >
+            <span
+              className={pluginRibbonIconClass}
+              ref={(el) => renderPluginIcon(el, action)}
+            />
+          </button>
+        ))}
+
+        {leftPluginViews
+          .filter((view) => !pluginRibbonActions.some((a) => a.pluginId === view.pluginId))
+          .map((view) => {
+            const isActive = activeLeftPluginView?.viewType === view.viewType;
+            return (
+              <button
+                key={`plugin-view-${view.viewType}`}
+                className={`${ribbonBtnClass} oo-plugin-ribbon-btn ${isActive ? ribbonBtnActiveClass : ""}`}
+                onClick={() => onSelectLeftPluginView?.(view.viewType)}
+                data-tooltip={view.displayText}
+                aria-label={view.displayText}
+              >
+                <span
+                  className={pluginRibbonIconClass}
+                  ref={(el) =>
+                    renderPluginIcon(el, {
+                      pluginId: view.pluginId,
+                      icon: view.icon,
+                      title: view.displayText,
+                      callback: () => {},
+                    } as any)
+                  }
+                />
+              </button>
+            );
+          })}
       </div>
 
       <div className={ribbonGroupClass}>

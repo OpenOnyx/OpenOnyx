@@ -5070,6 +5070,16 @@ export default function App() {
             showSettingsButton
             hasWallpaper={Boolean(settings.backgroundImage)}
             activeLeftPluginView={activeLeftPluginView}
+            leftPluginViews={leftPluginViews}
+            onSelectLeftPluginView={(viewType) => {
+              const view = leftPluginViews.find((v) => v.viewType === viewType);
+              if (view?.leaf) {
+                void ooAppRef.current?.workspace?.revealLeaf?.(view.leaf);
+                setShowSidebar(true);
+                setShowSearch(false);
+                setShowBookmarks(false);
+              }
+            }}
           />
         )}
         {vaultPath && !isFTUXZeroState && (

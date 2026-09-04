@@ -442,17 +442,21 @@ function PluginIcon({ iconId, className }: { iconId: string; className?: string 
       setIcon(containerRef.current, iconId);
       const svg = containerRef.current.querySelector("svg");
       if (svg) {
-        svg.setAttribute("width", "20");
-        svg.setAttribute("height", "20");
+        svg.setAttribute("width", "18");
+        svg.setAttribute("height", "18");
         svg.setAttribute("stroke-width", "1.5");
+        svg.style.width = "18px";
+        svg.style.height = "18px";
+        svg.style.color = "currentColor";
+        svg.style.display = "block";
         if (className) {
-          svg.setAttribute("class", className);
+          svg.classList.add(...className.split(" ").filter(Boolean));
         }
       }
     }
   }, [iconId, className]);
 
-  return <span ref={containerRef} className="flex items-center justify-center" />;
+  return <span ref={containerRef} className="flex items-center justify-center pointer-events-none" />;
 }
 
 function triggerPluginAction(action: PluginViewActionInfo) {
@@ -826,6 +830,21 @@ export function TitleBar({
           >
             <PanelRight size={20} strokeWidth={1.5} />
           </button>
+        )}
+
+        {!showRightSidebar && rightPluginViews.length > 0 && setActiveRightTab && (
+          <div className="flex items-center gap-0.5 flex-nowrap mr-2">
+            {rightPluginViews.map((view) => (
+              <button
+                key={view.viewType}
+                className={`${titlebarActionBtnClass} text-(--text-muted) hover:text-(--text-secondary)`}
+                onClick={() => setActiveRightTab(view.viewType)}
+                data-tooltip={view.displayText}
+              >
+                <PluginIcon iconId={view.icon} />
+              </button>
+            ))}
+          </div>
         )}
 
         <div

@@ -276,6 +276,143 @@ export class OOMetadataCache extends Events {
     }
     if (tags.length) metadata.tags = tags;
 
+    // Parse sections
+    const sections: NonNullable<CachedMetadata['sections']> = [];
+    let lineIdx = 0;
+    if (lines[0]?.trim() === '---') {
+      const endIdx = lines.indexOf('---', 1);
+      if (endIdx > 0) {
+        sections.push({
+          type: 'yaml',
+          position: {
+            start: { line: 0, col: 0, offset: 0 },
+            end: { line: endIdx, col: lines[endIdx].length, offset: 0 },
+          },
+        });
+        lineIdx = endIdx + 1;
+      }
+    }
+
+    while (lineIdx < lines.length) {
+      const currentLine = lines[lineIdx];
+      const trimmed = currentLine.trim();
+      if (!trimmed) {
+        lineIdx++;
+        continue;
+      }
+
+      // Heading
+      if (/^(#{1,6})\s+/.test(trimmed)) {
+        sections.push({
+          type: 'heading',
+          position: {
+            start: { line: lineIdx, col: 0, offset: 0 },
+            end: { line: lineIdx, col: currentLine.length, offset: 0 },
+          },
+        });
+        lineIdx++;
+        continue;
+      }
+
+      // Code block
+      if (/^```/.test(trimmed)) {
+        const start = lineIdx;
+        lineIdx++;
+        while (lineIdx < lines.length && !/^```/.test(lines[lineIdx].trim())) {
+          lineIdx++;
+        }
+        const end = Math.min(lineIdx, lines.length - 1);
+        sections.push({
+          type: 'code',
+          position: {
+            start: { line: start, col: 0, offset: 0 },
+            end: { line: end, col: lines[end].length, offset: 0 },
+          },
+        });
+        lineIdx = end + 1;
+        continue;
+      }
+
+      // Table
+      if (trimmed.startsWith('|') && trimmed.endsWith('|')) {
+        const start = lineIdx;
+        while (lineIdx + 1 < lines.length && lines[lineIdx + 1].trim().startsWith('|') && lines[lineIdx + 1].trim().endsWith('|')) {
+          lineIdx++;
+        }
+        const end = lineIdx;
+        sections.push({
+          type: 'table',
+          position: {
+            start: { line: start, col: 0, offset: 0 },
+            end: { line: end, col: lines[end].length, offset: 0 },
+          },
+        });
+        lineIdx = end + 1;
+        continue;
+      }
+
+      // List item
+      if (/^([-*+]|\d+\.)\s+/.test(trimmed)) {
+        const start = lineIdx;
+        while (lineIdx + 1 < lines.length && (/^([-*+]|\d+\.)\s+/.test(lines[lineIdx + 1].trim()) || /^\s{2,}/.test(lines[lineIdx + 1]))) {
+          lineIdx++;
+        }
+        const end = lineIdx;
+        sections.push({
+          type: 'list',
+          position: {
+            start: { line: start, col: 0, offset: 0 },
+            end: { line: end, col: lines[end].length, offset: 0 },
+          },
+        });
+        lineIdx = end + 1;
+        continue;
+      }
+
+      // Callout or blockquote
+      if (trimmed.startsWith('>')) {
+        const start = lineIdx;
+        while (lineIdx + 1 < lines.length && lines[lineIdx + 1].trim().startsWith('>')) {
+          lineIdx++;
+        }
+        const end = lineIdx;
+        sections.push({
+          type: /^>+\s*\[!\w+\]/i.test(trimmed) ? 'callout' : 'blockquote',
+          position: {
+            start: { line: start, col: 0, offset: 0 },
+            end: { line: end, col: lines[end].length, offset: 0 },
+          },
+        });
+        lineIdx = end + 1;
+        continue;
+      }
+
+      // Regular paragraph
+      const start = lineIdx;
+      while (
+        lineIdx + 1 < lines.length &&
+        lines[lineIdx + 1].trim() &&
+        !/^(#{1,6})\s+/.test(lines[lineIdx + 1].trim()) &&
+        !lines[lineIdx + 1].trim().startsWith('```') &&
+        !(lines[lineIdx + 1].trim().startsWith('|') && lines[lineIdx + 1].trim().endsWith('|')) &&
+        !/^([-*+]|\d+\.)\s+/.test(lines[lineIdx + 1].trim()) &&
+        !lines[lineIdx + 1].trim().startsWith('>')
+      ) {
+        lineIdx++;
+      }
+      const end = lineIdx;
+      sections.push({
+        type: 'paragraph',
+        position: {
+          start: { line: start, col: 0, offset: 0 },
+          end: { line: end, col: lines[end].length, offset: 0 },
+        },
+      });
+      lineIdx = end + 1;
+    }
+
+    if (sections.length) metadata.sections = sections;
+
     return metadata;
   }
 }
