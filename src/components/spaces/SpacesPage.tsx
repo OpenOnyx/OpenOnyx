@@ -515,10 +515,13 @@ function detectActionType(text: string, query?: string): string | null {
   // 1. Try to detect from stream content first (highest accuracy)
   if (text) {
     const lower = text.toLowerCase();
-    if (lower.includes('"action": "create_note"') || lower.includes('"action":"create_note"') || lower.includes("'action': 'create_note'") || lower.includes("'action':'create_note'")) {
+    if (lower.includes('"intent": "multi_action"') || lower.includes('"intent":"multi_action"') || lower.includes('"action": "multi_action"') || lower.includes('"action":"multi_action"')) {
       return "create_note";
     }
-    if (lower.includes('"action": "update_note"') || lower.includes('"action":"update_note"') || lower.includes("'action': 'update_note'") || lower.includes("'action':'update_note'")) {
+    if (lower.includes('"action": "create_note"') || lower.includes('"action":"create_note"') || lower.includes("'action': 'create_note'") || lower.includes("'action':'create_note'") || lower.includes('"intent": "create_note"') || lower.includes('"intent":"create_note"')) {
+      return "create_note";
+    }
+    if (lower.includes('"action": "update_note"') || lower.includes('"action":"update_note"') || lower.includes("'action': 'update_note'") || lower.includes("'action':'update_note'") || lower.includes('"intent": "update_note"') || lower.includes('"intent":"update_note"')) {
       return "update_note";
     }
     if (lower.includes('"action": "suggest_structure"') || lower.includes('"action":"suggest_structure"') || lower.includes("'action': 'suggest_structure'") || lower.includes("'action':'suggest_structure'")) {
@@ -530,8 +533,8 @@ function detectActionType(text: string, query?: string): string | null {
     if (lower.includes('"action": "insight_report"') || lower.includes('"action":"insight_report"') || lower.includes("'action': 'insight_report'") || lower.includes("'action':'insight_report'")) {
       return "insight_report";
     }
-    if (lower.includes("```") || lower.includes('"action"') || lower.includes("'action'")) {
-      return "update_note";
+    if (lower.includes("```") || lower.includes('"action"') || lower.includes("'action'") || lower.includes('"actions"')) {
+      return "create_note";
     }
   }
 
@@ -547,7 +550,7 @@ function detectActionType(text: string, query?: string): string | null {
     if (qLower.includes("link")) {
       return "suggest_links";
     }
-    if (qLower.includes("summary") || qLower.includes("summarize") || qLower.includes("create")) {
+    if (qLower.includes("summary") || qLower.includes("summarize") || qLower.includes("create") || qLower.includes("generate") || qLower.includes("batch") || qLower.includes("notes") || qLower.includes("journal") || qLower.includes("story") || qLower.includes("diary")) {
       return "create_note";
     }
     if (qLower.includes("rewrite") || qLower.includes("simplify") || qLower.includes("expand") || qLower.includes("edit") || qLower.includes("update") || qLower.includes("[[")) {

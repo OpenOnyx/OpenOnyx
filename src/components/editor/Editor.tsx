@@ -1403,32 +1403,17 @@ class MarkdownTableWidget extends WidgetType {
     return this.rows.join("\n") === other.rows.join("\n") && this.startLine === other.startLine;
   }
 
+  ignoreEvent(): boolean {
+    return true;
+  }
+
   toDOM(view: EditorView): HTMLElement {
     const wrapper = document.createElement("div");
     wrapper.className = "cm-live-table-wrapper";
     wrapper.title = "Edit table";
     
     wrapper.addEventListener("mousedown", (e) => {
-      if ((e.target as HTMLElement).closest(".cm-live-table-controls")) {
-        e.stopPropagation();
-        return;
-      }
-      const target = e.target as HTMLElement;
-      const tr = target.closest("tr");
-      let lineOffset = 0;
-      if (tr && tr.parentElement) {
-        const rows = Array.from(table.querySelectorAll("tr"));
-        const rowIndex = rows.indexOf(tr);
-        if (rowIndex >= 0) {
-          lineOffset = rowIndex;
-        }
-      }
-      const targetLineNum = Math.min(this.startLine + lineOffset, this.startLine + this.rows.length - 1);
-      const targetLine = view.state.doc.line(targetLineNum);
-      view.dispatch({
-        selection: { anchor: targetLine.from + Math.min(targetLine.text.length, 2) },
-      });
-      view.focus();
+      e.stopPropagation();
     });
 
     const table = document.createElement("table");
@@ -1717,27 +1702,6 @@ function setupEditableCell(
   cell.style.outline = "none";
   const stopProp = (e: Event) => e.stopPropagation();
 
-  cell.addEventListener("focus", () => {
-    const tr = cell.parentElement;
-    const table = tr?.closest("table");
-    let lineOffset = 0;
-    if (tr && table) {
-      const rows = Array.from(table.querySelectorAll("tr"));
-      const rowIndex = rows.indexOf(tr as HTMLTableRowElement);
-      if (rowIndex >= 0) {
-        lineOffset = rowIndex;
-      }
-    }
-    const pos = view.posAtDOM(wrapper);
-    if (pos >= 0) {
-      const startLine = view.state.doc.lineAt(pos).number;
-      const targetLine = view.state.doc.line(Math.min(startLine + lineOffset, view.state.doc.lines));
-      view.dispatch({
-        selection: { anchor: targetLine.from + Math.min(targetLine.text.length, 2) },
-      });
-    }
-  });
-
   cell.addEventListener("keydown", (e) => {
     if (e.key === "Tab") {
       e.preventDefault();
@@ -1845,6 +1809,7 @@ function setupEditableCell(
   cell.addEventListener("mousedown", stopProp);
   cell.addEventListener("mouseup", stopProp);
   cell.addEventListener("click", stopProp);
+  cell.addEventListener("paste", stopProp);
 
   cell.addEventListener("input", () => {
     saveTable();
@@ -2438,30 +2403,6 @@ function markdownLivePreviewPlugin() {
               while (tableEnd + 1 <= doc.lines && isTableRow(doc.line(tableEnd + 1).text)) {
                 tableEnd++;
                 tableRows.push(doc.line(tableEnd).text);
-              }
-
-              let isTableFocused = false;
-              for (let c = tableStart; c <= tableEnd; c++) {
-                if (activeLinesSet.has(c)) {
-                  isTableFocused = true;
-                  break;
-                }
-              }
-
-              if (isTableFocused) {
-                for (let j = tableStart; j <= tableEnd; j++) {
-                  const subLine = doc.line(j);
-                  const isSep = isTableSeparator(subLine.text);
-                  decorations.push(
-                    Decoration.line({
-                      attributes: {
-                        class: `HyperMD-table-row ${isSep ? 'cm-live-table-source-separator' : 'cm-live-table-source-row'}`,
-                      },
-                    }).range(subLine.from),
-                  );
-                }
-                i = tableEnd;
-                continue;
               }
 
               // Replace tableStart line content with the rendered MarkdownTableWidget
