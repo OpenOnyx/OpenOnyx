@@ -49,7 +49,7 @@ interface StatusBarProps {
   onRevealFolder?: (path: string) => void;
 }
 
-export function StatusBar({
+function StatusBarComponent({
   activeTab,
   content,
   viewMode,
@@ -61,8 +61,8 @@ export function StatusBar({
   syncStatus = null,
   onRevealFolder,
 }: StatusBarProps) {
-  const wordCount = content ? countWords(content) : 0;
-  const charCount = content ? countCharacters(content) : 0;
+  const wordCount = React.useMemo(() => (content ? countWords(content) : 0), [content]);
+  const charCount = React.useMemo(() => (content ? countCharacters(content) : 0), [content]);
   const isRealFileTab = Boolean(activeTab && !activeTab.path.startsWith("__"));
 
   const pathParts =
@@ -218,3 +218,5 @@ export function StatusBar({
     </div>
   );
 }
+
+export const StatusBar = React.memo(StatusBarComponent);

@@ -74,7 +74,7 @@ interface RibbonProps {
   onSelectLeftPluginView?: (viewType: string) => void;
 }
 
-export function Ribbon({
+function RibbonComponent({
   onGraph,
   onToggleExplorer,
   onHome,
@@ -302,3 +302,5 @@ export function Ribbon({
     </div>
   );
 }
+
+export const Ribbon = React.memo(RibbonComponent);

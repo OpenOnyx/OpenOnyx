@@ -14,7 +14,7 @@ import { PluginMarketplace } from "../plugins/PluginMarketplace";
 import { authManager } from "../../lib/auth";
 import { AuthModal } from "../modals/AuthModal";
 import { version as APP_VERSION } from "../../../package.json";
-import { DEFAULT_SETTINGS } from "./SettingsPage";
+import { DEFAULT_SETTINGS } from "../../types/settings";
 
 export type StudioTab =
   | "home"

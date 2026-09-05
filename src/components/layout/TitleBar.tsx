@@ -463,7 +463,7 @@ function triggerPluginAction(action: PluginViewActionInfo) {
   action.el.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, view: window }));
 }
 
-export function TitleBar({
+function TitleBarComponent({
   theme,
   onToggleSidebar,
   showSidebar = true,
@@ -1272,3 +1272,5 @@ export function TitleBar({
     </div>
   );
 }
+
+export const TitleBar = React.memo(TitleBarComponent);

@@ -599,6 +599,13 @@ export class GraphRenderer {
   private drawEdges(ctx: CanvasRenderingContext2D): void {
     const highlightNode = this.hoveredNodeId || this.selectedNodeId;
 
+    // Viewport bounds in world coordinates with margin
+    const padding = 50 / this.scale;
+    const viewMinX = -this.offsetX / this.scale - padding;
+    const viewMaxX = (this.width - this.offsetX) / this.scale + padding;
+    const viewMinY = -this.offsetY / this.scale - padding;
+    const viewMaxY = (this.height - this.offsetY) / this.scale + padding;
+
     // Obsidian constants
     const fQ = 0.2;
     const zoomAlphaFactor = Math.max(0, Math.min(1, 2 * (this.scale - 0.3)));
@@ -613,6 +620,16 @@ export class GraphRenderer {
         const sourceNode = this.nodes.get(edge.source);
         const targetNode = this.nodes.get(edge.target);
         if (!sourceNode || !targetNode) continue;
+
+        // Viewport culling: skip if both endpoints are outside the viewport in the same direction
+        if (
+          (sourceNode.x < viewMinX && targetNode.x < viewMinX) ||
+          (sourceNode.x > viewMaxX && targetNode.x > viewMaxX) ||
+          (sourceNode.y < viewMinY && targetNode.y < viewMinY) ||
+          (sourceNode.y > viewMaxY && targetNode.y > viewMaxY)
+        ) {
+          continue;
+        }
 
         const isSelectedEdge = this.selectedEdge && (
           (edge.source === this.selectedEdge.source && edge.target === this.selectedEdge.target) ||
@@ -689,12 +706,24 @@ export class GraphRenderer {
       ? this.adjacencyMap.get(highlightNode)
       : null;
 
+    // Viewport bounds in world coordinates with margin
+    const padding = 50 / this.scale;
+    const viewMinX = -this.offsetX / this.scale - padding;
+    const viewMaxX = (this.width - this.offsetX) / this.scale + padding;
+    const viewMinY = -this.offsetY / this.scale - padding;
+    const viewMaxY = (this.height - this.offsetY) / this.scale + padding;
+
     // Obsidian constants
     const fQ = 0.2;
 
     for (const node of this.nodes.values()) {
       const isSelected = node.id === this.selectedNodeId;
       const isHovered = node.id === this.hoveredNodeId;
+      if (!isSelected && !isHovered) {
+        if (node.x < viewMinX || node.x > viewMaxX || node.y < viewMinY || node.y > viewMaxY) {
+          continue;
+        }
+      }
       const isHighlightNode = isSelected || isHovered;
       const isConnected = connectedToHighlight?.has(node.id) ?? false;
 

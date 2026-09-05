@@ -364,7 +364,7 @@ function clampMenuPosition(
   };
 }
 
-export function Sidebar({
+function SidebarComponent({
   visible,
   fileTree,
   showAllFileTypes = false,
@@ -818,8 +818,8 @@ export function Sidebar({
             )}
           </button>
 
-          {entry.isDirectory && entry.children && (
-            <div className={cx(treeChildrenWrapperClass, isExpanded && "open grid-rows-[1fr]")}>
+          {entry.isDirectory && entry.children && isExpanded && (
+            <div className={cx(treeChildrenWrapperClass, "open grid-rows-[1fr]")}>
               <div className={treeChildrenClass}>
                 {entry.children.length > 0 ? (
                   renderFileTree(sortEntries(entry.children, sortMode), depth + 1)
@@ -1780,3 +1780,5 @@ export function Sidebar({
     </>
   );
 }
+
+export const Sidebar = React.memo(SidebarComponent);

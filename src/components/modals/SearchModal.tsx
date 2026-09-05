@@ -138,11 +138,21 @@ export function SearchModal({
   // Current display items
   const displayItems = useMemo(() => {
     if (mode === "search") {
-      return results.map((r) => ({
-        name: getNoteName(r.name),
-        path: r.path,
-        match: r.matches[0]?.value,
-      }));
+      if (results.length > 0) {
+        return results.map((r) => ({
+          name: getNoteName(r.name),
+          path: r.path,
+          match: r.matches[0]?.value,
+        }));
+      }
+      if (query.trim()) {
+        return filteredNotes.map((n) => ({
+          name: n.name,
+          path: n.path,
+          match: undefined,
+        }));
+      }
+      return [];
     } else {
       // Switcher mode: show filtered notes or recent+starred
       if (query.trim()) {

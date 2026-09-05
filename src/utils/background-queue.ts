@@ -72,15 +72,33 @@ export function setQueueStatusCallback(cb: ((status: QueueStatus) => void) | nul
   _onStatusChange = cb;
 }
 
-function reportStatus(message?: string): void {
-  const progress = _totalCount > 0 ? Math.round((_processedCount / _totalCount) * 100) : 0;
-  _onStatusChange?.({
-    isRunning: _isProcessing,
-    processed: _processedCount,
-    total: _totalCount,
-    message: message || getDefaultMessage(),
-    progress,
-  });
+let _lastReportTime = 0;
+let _reportTimeout: ReturnType<typeof setTimeout> | null = null;
+
+function reportStatus(message?: string, immediate = false): void {
+  const now = Date.now();
+  const isFinalOrImportant = immediate || !_isProcessing || message !== undefined || _processedCount >= _totalCount;
+
+  if (isFinalOrImportant || now - _lastReportTime >= 250) {
+    if (_reportTimeout) {
+      clearTimeout(_reportTimeout);
+      _reportTimeout = null;
+    }
+    _lastReportTime = now;
+    const progress = _totalCount > 0 ? Math.round((_processedCount / _totalCount) * 100) : 0;
+    _onStatusChange?.({
+      isRunning: _isProcessing,
+      processed: _processedCount,
+      total: _totalCount,
+      message: message || getDefaultMessage(),
+      progress,
+    });
+  } else if (!_reportTimeout) {
+    _reportTimeout = setTimeout(() => {
+      _reportTimeout = null;
+      reportStatus(message);
+    }, 250 - (now - _lastReportTime));
+  }
 }
 
 function getDefaultMessage(): string {

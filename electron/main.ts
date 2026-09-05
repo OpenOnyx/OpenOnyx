@@ -220,6 +220,9 @@ function configureChromiumRuntime(): void {
   // where Electron/Chromium ships with smooth scrolling disabled by default).
   app.commandLine.appendSwitch('enable-smooth-scrolling');
   app.commandLine.appendSwitch('enable-features', 'ScrollUnification');
+  app.commandLine.appendSwitch('enable-gpu-rasterization');
+  app.commandLine.appendSwitch('enable-zero-copy');
+  app.commandLine.appendSwitch('canvas-oop-rasterization');
 
   if (!isDevMode) return;
   if (process.env.OPENONYX_VERBOSE_CHROMIUM_LOGS === '1') return;

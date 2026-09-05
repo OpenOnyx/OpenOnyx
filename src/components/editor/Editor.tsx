@@ -34,7 +34,7 @@ import {
 import { markdown } from "@codemirror/lang-markdown";
 import { closeBrackets } from "@codemirror/autocomplete";
 import { search, highlightSelectionMatches } from "@codemirror/search";
-import { syntaxHighlighting, HighlightStyle } from "@codemirror/language";
+import { syntaxHighlighting, HighlightStyle, syntaxTree } from "@codemirror/language";
 import { tags as t } from "@lezer/highlight";
 import { Tab, ViewMode } from "../../types";
 import { MarkdownPreview } from "./MarkdownPreview";
@@ -2204,9 +2204,22 @@ function markdownLivePreviewPlugin() {
           const endLineNum = doc.lineAt(to).number;
 
           let inCodeBlock = false;
-          for (let check = 1; check < startLineNum; check++) {
-            if (codeFenceRegex.test(doc.line(check).text)) {
-              inCodeBlock = !inCodeBlock;
+          const initialPos = doc.line(startLineNum).from;
+          try {
+            const treeNode = syntaxTree(state).resolveInner(initialPos, 1);
+            let curr: any = treeNode;
+            while (curr) {
+              if (curr.name === "FencedCode" || curr.name === "CodeBlock") {
+                inCodeBlock = true;
+                break;
+              }
+              curr = curr.parent;
+            }
+          } catch {
+            for (let check = Math.max(1, startLineNum - 100); check < startLineNum; check++) {
+              if (codeFenceRegex.test(doc.line(check).text)) {
+                inCodeBlock = !inCodeBlock;
+              }
             }
           }
 
@@ -3802,8 +3815,6 @@ export function Editor({
   const [isSuggestionIdle, setIsSuggestionIdle] = useState(false);
   const [isSectionPauseReady, setIsSectionPauseReady] = useState(false);
   const [hasSectionEnterTrigger, setHasSectionEnterTrigger] = useState(false);
-  const [, setSectionRetryPending] = useState(false);
-  const [allowForcedSectionMinimum, setAllowForcedSectionMinimum] = useState(false);
   const [hasFlowTrigger, setHasFlowTrigger] = useState(false);
   const [isNearNoteEnd, setIsNearNoteEnd] = useState(false);
 
@@ -4309,8 +4320,6 @@ export function Editor({
     setHasFlowTrigger(false);
     setIsSectionPauseReady(false);
     setHasSectionEnterTrigger(false);
-    setSectionRetryPending(false);
-    setAllowForcedSectionMinimum(false);
     if (flowTriggerDelayTimerRef.current) {
       window.clearTimeout(flowTriggerDelayTimerRef.current);
       flowTriggerDelayTimerRef.current = null;
@@ -4826,14 +4835,6 @@ export function Editor({
 
               markActiveTyping();
               markSectionPauseReady();
-              setSectionRetryPending((pending) => {
-                if (pending) {
-                  setAllowForcedSectionMinimum(true);
-                  return false;
-                }
-                setAllowForcedSectionMinimum(false);
-                return pending;
-              });
               const pressedEnter = didPressEnter(update);
               if (didCompleteSentenceOrParagraph(update)) {
                 markFlowTrigger();
@@ -5248,7 +5249,8 @@ export function Editor({
         workspace.setActiveLeaf(mainLeaf);
       }
     };
-    editorRef.current?.addEventListener('focusin', handleEditorFocusIn);
+    const editorEl = editorRef.current;
+    editorEl?.addEventListener('focusin', handleEditorFocusIn);
     if (initialScroll > 0) {
       setTimeout(() => {
         if (view.scrollDOM) {
@@ -5269,6 +5271,7 @@ export function Editor({
     }
 
     return () => {
+      editorEl?.removeEventListener('focusin', handleEditorFocusIn);
       const obsidianApp = (window as any).__oo_app;
       if (obsidianApp?.workspace?.activeEditor?.editor === obsidianEditor) {
         obsidianApp.workspace.activeEditor = null;
