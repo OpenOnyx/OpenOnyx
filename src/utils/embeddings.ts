@@ -28,10 +28,16 @@ export function configureTransformersEnv(env: any) {
   if (env.backends?.onnx?.wasm) {
     const wasm = env.backends.onnx.wasm as {
       proxy?: boolean;
+      numThreads?: number;
       wasmPaths?: string;
     };
     wasm.proxy = false;
-    wasm.wasmPaths = `https://cdn.jsdelivr.net/npm/@xenova/transformers@${env.version}/dist/`;
+    wasm.numThreads = 1;
+    if (typeof window !== "undefined" && typeof process !== "undefined" && process.env.NODE_ENV !== "test") {
+      wasm.wasmPaths = "/wasm/";
+    } else {
+      wasm.wasmPaths = `https://cdn.jsdelivr.net/npm/@xenova/transformers@${env.version}/dist/`;
+    }
   }
 }
 
@@ -728,6 +734,29 @@ export function removeEmbeddingsByPrefix(
   }
 
   return paths.length;
+}
+
+/**
+ * Prune embeddings for notes that no longer exist in the vault.
+ */
+export function pruneMissingEmbeddings(
+  store: EmbeddingStore,
+  validPaths: Set<string> | string[],
+): number {
+  const validSet = validPaths instanceof Set ? validPaths : new Set(validPaths);
+  const toRemove: string[] = [];
+
+  for (const path of store.entries.keys()) {
+    if (!validSet.has(path)) {
+      toRemove.push(path);
+    }
+  }
+
+  for (const path of toRemove) {
+    removeEmbedding(store, path);
+  }
+
+  return toRemove.length;
 }
 
 // ── Similarity search ────────────────────────────────────────────────────────

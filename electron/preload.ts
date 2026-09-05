@@ -118,7 +118,7 @@ const electronAPI = {
   onMenuEvent: (channel: string, callback: (...args: any[]) => void) => {
     const validChannels = [
       'menu:open-vault', 'menu:new-note', 'menu:save',
-      'menu:toggle-graph', 'menu:command-palette', 'menu:toggle-sidebar',
+      'menu:toggle-graph', 'menu:open-ai-graph', 'menu:command-palette', 'menu:toggle-sidebar',
     ];
     if (validChannels.includes(channel)) {
       ipcRenderer.on(channel, (_event, ...args) => callback(...args));

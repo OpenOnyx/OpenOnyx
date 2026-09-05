@@ -1365,6 +1365,222 @@ img.emoji {
 /* Plugin views intentionally rely on injected Obsidian compatibility CSS plus
    each plugin's raw styles.css, so this file does not restyle plugin DOM. */
 
+/* ── Graph View Layout and Controls ─────────────────── */
+.graph-view-container {
+  display: flex !important;
+  flex-direction: column !important;
+  height: 100% !important;
+  width: 100% !important;
+  background: var(--bg-primary) !important;
+  position: relative !important;
+  -webkit-user-select: none !important;
+  user-select: none !important;
+  overflow: hidden !important;
+}
+
+.graph-view-container.fullscreen {
+  position: fixed !important;
+  inset: 0 !important;
+  z-index: 100 !important;
+}
+
+.graph-mode-shell {
+  position: relative !important;
+  width: 100% !important;
+  height: 100% !important;
+  overflow: hidden !important;
+}
+
+.graph-mode-switch {
+  position: absolute !important;
+  top: 10px !important;
+  left: 12px !important;
+  z-index: 90 !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 4px !important;
+  padding: 4px !important;
+  border-radius: 999px !important;
+  border: 1px solid var(--border-medium) !important;
+  background: color-mix(in srgb, var(--bg-elevated) 86%, transparent) !important;
+  backdrop-filter: blur(10px) !important;
+}
+
+.graph-mode-btn {
+  border: none !important;
+  background: transparent !important;
+  color: var(--text-secondary) !important;
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  border-radius: 999px !important;
+  padding: 4px 10px !important;
+  cursor: pointer !important;
+  transition: all 0.15s ease !important;
+}
+
+.graph-mode-btn:hover {
+  color: var(--text-primary) !important;
+  background: color-mix(in srgb, var(--bg-hover) 74%, transparent) !important;
+}
+
+.graph-mode-btn.active {
+  color: var(--text-on-accent) !important;
+  background: var(--accent-primary) !important;
+}
+
+.graph-main {
+  flex: 1 1 0% !important;
+  display: flex !important;
+  position: relative !important;
+  overflow: hidden !important;
+  width: 100% !important;
+  height: 100% !important;
+}
+
+.graph-canvas-container {
+  flex: 1 1 0% !important;
+  position: relative !important;
+  width: 100% !important;
+  height: 100% !important;
+  overflow: hidden !important;
+}
+
+.graph-canvas-container canvas {
+  width: 100% !important;
+  height: 100% !important;
+  display: block !important;
+}
+
+.graph-tools-rail {
+  position: absolute !important;
+  top: 12px !important;
+  right: 12px !important;
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: flex-end !important;
+  gap: 8px !important;
+  z-index: 32 !important;
+  pointer-events: none !important;
+}
+
+.graph-tools-group {
+  display: flex !important;
+  flex-direction: column !important;
+  background: color-mix(in srgb, var(--bg-elevated) 82%, transparent) !important;
+  backdrop-filter: blur(12px) !important;
+  border: 1px solid var(--border-medium) !important;
+  border-radius: 10px !important;
+  overflow: hidden !important;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12) !important;
+  pointer-events: auto !important;
+}
+
+.graph-tools-group .graph-btn {
+  width: 36px !important;
+  height: 36px !important;
+  border-radius: 0 !important;
+}
+
+.graph-tools-group .graph-btn + .graph-btn {
+  border-top: 1px solid color-mix(in srgb, var(--border-medium) 52%, transparent) !important;
+}
+
+.graph-tools-sim-indicator {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 6px !important;
+  min-width: 40px !important;
+  padding: 5px 8px !important;
+  border-radius: 999px !important;
+  border: 1px solid var(--border-medium) !important;
+  background: color-mix(in srgb, var(--bg-elevated) 88%, transparent) !important;
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  color: var(--text-secondary) !important;
+  pointer-events: none !important;
+}
+
+.graph-btn {
+  width: 28px !important;
+  height: 28px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  background: transparent !important;
+  border: none !important;
+  border-radius: var(--radius-sm) !important;
+  color: var(--text-secondary) !important;
+  cursor: pointer !important;
+  transition: all 0.15s ease !important;
+}
+
+.graph-btn:hover {
+  background: var(--bg-hover) !important;
+  color: var(--text-primary) !important;
+}
+
+.graph-btn.active {
+  background: var(--accent-primary) !important;
+  color: var(--text-on-accent) !important;
+}
+
+.graph-btn-primary {
+  flex: 1 !important;
+  min-height: 32px !important;
+  padding: var(--space-2) !important;
+  background: var(--accent-primary) !important;
+  border: none !important;
+  border-radius: 9px !important;
+  color: var(--text-on-accent) !important;
+  font-size: var(--text-xs) !important;
+  font-weight: 600 !important;
+  cursor: pointer !important;
+  transition: all 0.15s ease !important;
+}
+
+.graph-btn-primary:hover {
+  background: var(--interactive-accent-hover, var(--accent-primary)) !important;
+  color: var(--text-on-accent) !important;
+}
+
+.graph-btn-secondary {
+  flex: 1 !important;
+  min-height: 32px !important;
+  padding: var(--space-2) !important;
+  background: transparent !important;
+  border: 1px solid var(--border-medium) !important;
+  border-radius: 9px !important;
+  color: var(--text-secondary) !important;
+  font-size: var(--text-xs) !important;
+  cursor: pointer !important;
+  transition: all 0.15s ease !important;
+}
+
+.graph-btn-secondary:hover {
+  background: var(--bg-hover) !important;
+  border-color: var(--accent-primary) !important;
+  color: var(--text-primary) !important;
+}
+
+.graph-node-counter {
+  position: absolute !important;
+  left: 12px !important;
+  bottom: 12px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  padding: 5px 10px !important;
+  border-radius: 999px !important;
+  border: 1px solid var(--border-medium) !important;
+  background: color-mix(in srgb, var(--bg-elevated) 84%, transparent) !important;
+  backdrop-filter: blur(10px) !important;
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  color: var(--text-secondary) !important;
+  z-index: 20 !important;
+}
+
 /* ── Graph Settings Panel Styling ───────────────────── */
 .graph-settings-panel {
   position: absolute;
@@ -2251,6 +2467,20 @@ html[data-theme="light"] .app.has-wallpaper .sort-menu {
 .custom-layout-group .custom-paths-group path {
   transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
 }
+
+/* CodeMirror live preview image widget responsive containment */
+.cm-image-widget,
+.cm-image-widget-stage {
+  max-width: 100% !important;
+  box-sizing: border-box !important;
+}
+
+.cm-image-widget-image {
+  max-width: 100% !important;
+  height: auto !important;
+  box-sizing: border-box !important;
+}
+
 
 
 

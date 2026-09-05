@@ -103,14 +103,15 @@ export function useAppCommands({
       },
       {
         id: "graph",
-        label: "Open Graph Tab",
+        label: "Open Graph View (Manual)",
         shortcut: "Ctrl+G",
-        action: () => openGraphAsTab(),
+        action: () => openGraphAsTab("manual"),
         category: "View",
       },
       {
         id: "graph-ai",
-        label: "Open AI Graph Tab",
+        label: "Open AI Knowledge Graph",
+        shortcut: "Ctrl+Shift+G",
         action: () => {
           openGraphAsTab("ai");
         },

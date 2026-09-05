@@ -123,6 +123,7 @@ export class GraphRenderer {
   private pointerDownPos = { x: 0, y: 0 };
   private animationFrame: number | null = null;
   private needsRender = false;
+  private hasCentered = false;
   private cachedRect: DOMRect | null = null;
   private cachedNodeRadii = new Map<string, number>();
 
@@ -911,7 +912,11 @@ export class GraphRenderer {
       similarity: e.similarity,
       hiddenConnection: e.hiddenConnection,
     }));
-    this.render();
+    if (!this.hasCentered && this.nodes.size > 0 && this.width > 150 && this.height > 150) {
+      this.centerView(true);
+    } else {
+      this.render();
+    }
   }
 
   updatePositionsFromArray(ids: string[], positions: Float32Array): void {
@@ -922,7 +927,11 @@ export class GraphRenderer {
         node.y = positions[i * 2 + 1];
       }
     }
-    this.render();
+    if (!this.hasCentered && this.nodes.size > 0 && this.width > 150 && this.height > 150) {
+      this.centerView(true);
+    } else {
+      this.render();
+    }
   }
 
   setNodeStyle(style: Partial<NodeStyle>): void {
@@ -950,33 +959,75 @@ export class GraphRenderer {
     this.render();
   }
 
-  centerView(): void {
+  resetCenterFlag(): void {
+    this.hasCentered = false;
+  }
+
+  centerView(immediate = false): void {
     if (this.nodes.size === 0) return;
+
+    // Refresh canvas bounding rect if available to ensure fresh client dimensions
+    try {
+      const rect = this.canvas.getBoundingClientRect();
+      if (rect.width > 50 && rect.height > 50) {
+        this.width = rect.width;
+        this.height = rect.height;
+      }
+    } catch {
+      // Ignore getBoundingClientRect errors in headless / detached environments
+    }
 
     let minX = Infinity,
       maxX = -Infinity;
     let minY = Infinity,
       maxY = -Infinity;
 
+    let validNodeCount = 0;
     for (const node of this.nodes.values()) {
+      if (!Number.isFinite(node.x) || !Number.isFinite(node.y)) continue;
       minX = Math.min(minX, node.x);
       maxX = Math.max(maxX, node.x);
       minY = Math.min(minY, node.y);
       maxY = Math.max(maxY, node.y);
+      validNodeCount++;
     }
 
-    const graphWidth = maxX - minX;
-    const graphHeight = maxY - minY;
+    if (validNodeCount === 0 || !Number.isFinite(minX) || !Number.isFinite(maxX)) return;
+
+    const rawGraphWidth = maxX - minX;
+    const rawGraphHeight = maxY - minY;
     const centerX = (minX + maxX) / 2;
     const centerY = (minY + maxY) / 2;
 
-    const padding = 100;
-    const scaleX = (this.width - padding) / Math.max(graphWidth, 1);
-    const scaleY = (this.height - padding) / Math.max(graphHeight, 1);
-    this.targetScale = Math.min(scaleX, scaleY, 1.5);
+    const safeWidth = Math.max(this.width, 200);
+    const safeHeight = Math.max(this.height, 200);
 
-    this.targetOffsetX = this.width / 2 - centerX * this.targetScale;
-    this.targetOffsetY = this.height / 2 - centerY * this.targetScale;
+    // Padding to ensure outer node circles and text labels are not clipped
+    const nodeMargin = 64;
+    const effectiveGraphWidth = Math.max(rawGraphWidth + nodeMargin * 2, 80);
+    const effectiveGraphHeight = Math.max(rawGraphHeight + nodeMargin * 2, 80);
+
+    const paddingX = Math.min(120, Math.max(40, safeWidth * 0.08));
+    const paddingY = Math.min(120, Math.max(40, safeHeight * 0.08));
+
+    const scaleX = (safeWidth - paddingX * 2) / effectiveGraphWidth;
+    const scaleY = (safeHeight - paddingY * 2) / effectiveGraphHeight;
+    const fitScale = Math.min(scaleX, scaleY);
+    this.targetScale = Math.max(1 / 128, Math.min(fitScale, 1.2));
+
+    this.targetOffsetX = safeWidth / 2 - centerX * this.targetScale;
+    this.targetOffsetY = safeHeight / 2 - centerY * this.targetScale;
+
+    if (immediate) {
+      this.scale = this.targetScale;
+      this.offsetX = this.targetOffsetX;
+      this.offsetY = this.targetOffsetY;
+    }
+
+    this.needsRender = true;
+    this.render();
+
+    this.hasCentered = true;
 
     this.onViewportChange?.(
       this.targetOffsetX,
@@ -1006,6 +1057,10 @@ export class GraphRenderer {
     const safeWidth = Math.max(width, minDimension);
     const safeHeight = Math.max(height, minDimension);
 
+    const oldWidth = this.width;
+    const oldHeight = this.height;
+
+    const wasUnmeasured = this.width <= 100 || this.height <= 100;
     this.width = safeWidth;
     this.height = safeHeight;
 
@@ -1018,7 +1073,22 @@ export class GraphRenderer {
     this.canvas.style.width = `${safeWidth}px`;
     this.canvas.style.height = `${safeHeight}px`;
 
-    this.render();
+    // Keep viewport center aligned when dimensions change
+    if (!wasUnmeasured && (safeWidth !== oldWidth || safeHeight !== oldHeight)) {
+      const dx = (safeWidth - oldWidth) / 2;
+      const dy = (safeHeight - oldHeight) / 2;
+      this.offsetX += dx;
+      this.offsetY += dy;
+      this.targetOffsetX += dx;
+      this.targetOffsetY += dy;
+    }
+
+    if ((wasUnmeasured || !this.hasCentered) && this.nodes.size > 0 && safeWidth > 150 && safeHeight > 150) {
+      this.centerView(true);
+    } else {
+      this.needsRender = true;
+      this.render();
+    }
   }
 
   getAllPositions(): Map<string, { x: number; y: number }> {

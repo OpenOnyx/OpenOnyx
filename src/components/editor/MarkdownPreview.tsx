@@ -42,7 +42,18 @@ marked.use({
       const resolvedSrc = resolveVaultImageSrc(href);
       const safeSrc = String(resolvedSrc).replace(/"/g, "&quot;");
       const safeAlt = String(text).replace(/"/g, "&quot;");
-      return `<img src="${safeSrc}" alt="${safeAlt}" ${title ? `title="${String(title).replace(/"/g, "&quot;")}"` : ""} />`;
+      const { width, crop, offsetX, offsetY } = parseImageRenderMeta(title, text);
+      const styleParts: string[] = ["max-width:100%", "height:auto", "box-sizing:border-box"];
+      if (width && width > 0) {
+        styleParts.push(`max-width:${Math.round(width)}px`);
+        styleParts.push("width:100%");
+      }
+      if (crop === "cover") {
+        styleParts.push("aspect-ratio:4 / 3");
+        styleParts.push("object-fit:cover");
+        styleParts.push(`object-position:calc(50% + ${Math.round(offsetX)}px) calc(50% + ${Math.round(offsetY)}px)`);
+      }
+      return `<img src="${safeSrc}" alt="${safeAlt}" ${title ? `title="${String(title).replace(/"/g, "&quot;")}"` : ""} style="${styleParts.join(";")}" />`;
     }
   }
 });
@@ -419,7 +430,7 @@ function installHeadingFoldControls(container: HTMLElement): void {
   }
 }
 
-function parseImageRenderMeta(title?: string): {
+function parseImageRenderMeta(title?: string | null, alt?: string | null): {
   width?: number;
   crop: "contain" | "cover";
   offsetX: number;
@@ -430,9 +441,20 @@ function parseImageRenderMeta(title?: string): {
   const cropMatch = raw.match(/(?:^|[\s,])crop=(cover|contain)/i);
   const offsetXMatch = raw.match(/(?:^|[\s,])ox=(-?\d{1,4})/i);
   const offsetYMatch = raw.match(/(?:^|[\s,])oy=(-?\d{1,4})/i);
-  const width = widthMatch
-    ? Math.max(120, Math.min(1400, Number(widthMatch[1])))
+  let width = widthMatch
+    ? Math.max(80, Math.min(1600, Number(widthMatch[1])))
     : undefined;
+  if (!width && alt) {
+    const altPipeMatch = alt.match(/\|(\d{2,4})(?:x\d+)?$/);
+    if (altPipeMatch) {
+      width = Math.max(80, Math.min(1600, Number(altPipeMatch[1])));
+    } else {
+      const altDimMatch = alt.trim().match(/^(\d{2,4})(?:x\d+)?$/);
+      if (altDimMatch) {
+        width = Math.max(80, Math.min(1600, Number(altDimMatch[1])));
+      }
+    }
+  }
   const crop = (cropMatch?.[1] as "contain" | "cover") || "contain";
   const offsetX = offsetXMatch
     ? Math.max(-1200, Math.min(1200, Number(offsetXMatch[1])))
@@ -769,6 +791,26 @@ export function MarkdownPreview({
     processed = processed.replace(
       /!\[\[([^\]|#]+)(?:#([^\]|]+))?(?:\|([^\]]+))?\]\]/g,
       (match, noteName, heading, displayText) => {
+        const cleanName = (noteName || "").trim();
+        const isImage = /\.(png|jpe?g|gif|webp|svg|bmp|ico)$/i.test(cleanName);
+        if (isImage) {
+          let width: number | undefined;
+          if (displayText) {
+            const dimMatch = displayText.trim().match(/^(\d+)(?:x\d+)?$/);
+            if (dimMatch) {
+              width = Math.max(80, Math.min(1600, parseInt(dimMatch[1], 10)));
+            }
+          }
+          const styleParts: string[] = ["max-width:100%", "height:auto", "box-sizing:border-box"];
+          if (width && width > 0) {
+            styleParts.push(`max-width:${Math.round(width)}px`);
+            styleParts.push("width:100%");
+          }
+          const resolvedSrc = resolveVaultImageSrc(cleanName);
+          const safeSrc = resolvedSrc.replace(/"/g, "&quot;");
+          const safeAlt = (displayText || cleanName).replace(/"/g, "&quot;");
+          return `<img src="${safeSrc}" alt="${safeAlt}" style="${styleParts.join(";")}" />`;
+        }
         const embedContent = onEmbed ? onEmbed(noteName) : null;
         if (embedContent) {
           return `<div class="embed-container" data-embed="${noteName}">
@@ -809,9 +851,9 @@ export function MarkdownPreview({
     processed = processed.replace(
       /!\[([^\]]*)\]\(([^)\s]+)(?:\s+"([^"]*)")?\)/g,
       (match, alt, src, title) => {
-        const { width, crop, offsetX, offsetY } = parseImageRenderMeta(title);
-        const styleParts: string[] = [];
-        if (width) {
+        const { width, crop, offsetX, offsetY } = parseImageRenderMeta(title, alt);
+        const styleParts: string[] = ["max-width:100%", "height:auto", "box-sizing:border-box"];
+        if (width && width > 0) {
           styleParts.push(`max-width:${Math.round(width)}px`);
           styleParts.push("width:100%");
         }
@@ -823,7 +865,7 @@ export function MarkdownPreview({
         const safeAlt = String(alt).replace(/"/g, "&quot;");
         const resolvedSrc = resolveVaultImageSrc(String(src));
         const safeSrc = resolvedSrc.replace(/"/g, "&quot;");
-        return `<img src="${safeSrc}" alt="${safeAlt}"${styleParts.length ? ` style="${styleParts.join(";")}"` : ""} />`;
+        return `<img src="${safeSrc}" alt="${safeAlt}" style="${styleParts.join(";")}" />`;
       },
     );
 

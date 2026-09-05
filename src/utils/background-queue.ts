@@ -17,6 +17,7 @@ import {
   loadStoreAsync,
   embedNote,
   refreshEmbeddingMetadataIfUnchanged,
+  pruneMissingEmbeddings,
   type EmbeddingStore,
 } from "./embeddings";
 import { getAnnotation } from "./ai-core";
@@ -340,6 +341,11 @@ export async function initializeVault(
   // already have cached embeddings. Without this, the in-memory Map is
   // empty and every note looks "new", causing full re-analysis.
   const store = await loadStoreAsync();
+
+  // Prune any stored embeddings for notes that have been deleted from the vault
+  const validNotePaths = new Set(allNotes.map((n) => n.path));
+  pruneMissingEmbeddings(store, validNotePaths);
+
   let enqueued = 0;
   let alreadyIndexed = 0;
   const recentSet = new Set(recentPaths);

@@ -59,6 +59,7 @@ interface RibbonProps {
   onToggleExplorer?: () => void;
   onHome?: () => void;
   onGraph: () => void;
+  onAIGraph?: () => void;
   onSettings: () => void;
   onDailyNote?: () => void;
   onThoughtModel?: () => void;
@@ -76,6 +77,7 @@ interface RibbonProps {
 
 function RibbonComponent({
   onGraph,
+  onAIGraph,
   onToggleExplorer,
   onHome,
   onSettings,
@@ -181,7 +183,13 @@ function RibbonComponent({
         <button
           className={ribbonBtnClass}
           onClick={onGraph}
-          data-tooltip="Graph View (Ctrl+G)"
+          onContextMenu={(e) => {
+            if (onAIGraph) {
+              e.preventDefault();
+              onAIGraph();
+            }
+          }}
+          data-tooltip="Graph View (Ctrl+G, Right-click: AI Graph)"
         >
           <Network size={18} strokeWidth={1.6} />
         </button>

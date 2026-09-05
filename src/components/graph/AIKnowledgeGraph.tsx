@@ -16,6 +16,7 @@ import {
   loadStoreAsync,
   loadSuggestionHistory,
   loadTransitionMap,
+  pruneMissingEmbeddings,
 } from "../../utils/embeddings";
 import { getAPI } from "../../utils/api";
 import { askAI, isAIConfigured } from "../../utils/ai-core";
@@ -32,8 +33,8 @@ export function resetAIGraphCache(): void {
   cachedGraph = null;
 }
 
-const AI_GRAPH_SIMILARITY_THRESHOLD = 0.45;
-const AI_GRAPH_CLUSTER_THRESHOLD = 0.58;
+const AI_GRAPH_SIMILARITY_THRESHOLD = 0.28;
+const AI_GRAPH_CLUSTER_THRESHOLD = 0.38;
 const AI_GRAPH_MAX_EDGES_PER_NODE = 4;
 const AI_GRAPH_DEFAULT_MAX_NODES = 180;
 const AI_GRAPH_MIN_NODES = 100;
@@ -539,6 +540,7 @@ export function AIKnowledgeGraph({
   onToggleFullScreen,
   theme = "dark",
   vaultPath,
+  fileTree,
   onCreateGroupFromPaths,
   onOpenPathsAsGroup,
 }: AIKnowledgeGraphProps) {
@@ -548,6 +550,8 @@ export function AIKnowledgeGraph({
   const workerRef = useRef<Worker | null>(null);
   const similarityCacheRef = useRef<Map<string, SimilarityPair[]>>(new Map());
   const hasRenderedGraphRef = useRef(false);
+  const initialCenteredRef = useRef(false);
+  const hasMeasuredValidRectRef = useRef(false);
 
   const isDark =
     theme === "dark" ||
@@ -564,11 +568,18 @@ export function AIKnowledgeGraph({
     const handleManualSettingsChange = () => {
       setManualSettingsTick((tick) => tick + 1);
     };
+    const handleEmbeddingsUpdated = () => {
+      resetAIGraphCache();
+      similarityCacheRef.current.clear();
+      setReloadTick((t) => t + 1);
+    };
     window.addEventListener("manual-graph-settings-changed", handleManualSettingsChange);
     window.addEventListener("oo:theme-settings-changed", handleManualSettingsChange);
+    window.addEventListener("oo:embeddings-updated", handleEmbeddingsUpdated);
     return () => {
       window.removeEventListener("manual-graph-settings-changed", handleManualSettingsChange);
       window.removeEventListener("oo:theme-settings-changed", handleManualSettingsChange);
+      window.removeEventListener("oo:embeddings-updated", handleEmbeddingsUpdated);
     };
   }, []);
 
@@ -797,9 +808,33 @@ export function AIKnowledgeGraph({
 
       try {
         const store = await loadStoreAsync();
+
+        // Extract valid paths from fileTree if available, or check existence
+        let validPathsSet: Set<string> | null = null;
+        if (Array.isArray(fileTree) && fileTree.length > 0) {
+          validPathsSet = new Set<string>();
+          const walkTree = (items: any[]) => {
+            for (const item of items) {
+              if (item?.path && !item?.isDirectory) {
+                validPathsSet!.add(item.path);
+              }
+              if (Array.isArray(item?.children)) {
+                walkTree(item.children);
+              }
+            }
+          };
+          walkTree(fileTree);
+        }
+
+        // Prune missing embeddings from memory and disk if validPathsSet is known
+        if (validPathsSet && validPathsSet.size > 0) {
+          pruneMissingEmbeddings(store, validPathsSet);
+        }
+
         const allEntries = [...store.entries.values()]
           .filter((entry) => entry.path.toLowerCase().endsWith(".md"))
           .filter((entry) => entry.vector.length > 0)
+          .filter((entry) => !validPathsSet || validPathsSet.has(entry.path))
           .sort((a, b) => b.updatedAt - a.updatedAt)
           .slice(0, semanticConfig.maxNodes);
 
@@ -1085,6 +1120,7 @@ export function AIKnowledgeGraph({
     semanticConfig.maxEdgesPerNode,
     semanticConfig.maxNodes,
     reloadTick,
+    fileTree,
   ]);
 
   const adjacencyByNode = useMemo(() => {
@@ -1252,6 +1288,10 @@ export function AIKnowledgeGraph({
         renderer.updatePositionsFromArray(ids, new Float32Array(positions));
         // Write to ref only — no React setState, no re-render at 60fps.
         alphaRef.current = workerAlpha;
+        if (!initialCenteredRef.current && ids.length > 0) {
+          initialCenteredRef.current = true;
+          renderer.centerView(true);
+        }
       } else if (type === "end") {
         setSimulating(false);
         alphaRef.current = 0;
@@ -1350,6 +1390,10 @@ export function AIKnowledgeGraph({
         const updatedRect = container.getBoundingClientRect();
         if (updatedRect.width > 10 && updatedRect.height > 10) {
           renderer.resize(updatedRect.width, updatedRect.height);
+          if (!hasMeasuredValidRectRef.current) {
+            hasMeasuredValidRectRef.current = true;
+            renderer.centerView(true);
+          }
         }
       }, 16);
     };
@@ -1450,11 +1494,13 @@ export function AIKnowledgeGraph({
 
     if (shouldResetLayout || (!hasLivePositions && !hasSavedPositions) || hasUnplacedNodes) {
       setSimulating(true);
+      renderer.centerView(true);
       worker.postMessage({ type: "start" });
     } else if (hasSavedPositions && !hasLivePositions) {
+      renderer.centerView(true);
       setTimeout(() => {
         renderer.centerView();
-      }, 100);
+      }, 50);
     }
   }, [
     filteredData.signature,
@@ -2734,8 +2780,8 @@ Summarize the theme and key intersections. No emojis.`;
                 label="Similarity"
                 value={Math.round(settings.threshold * 100)}
                 onChange={(v) => setSettings((current) => ({ ...current, threshold: v / 100 }))}
-                min={35}
-                max={75}
+                min={15}
+                max={80}
               />
               <Slider
                 label="Cluster"
@@ -2743,7 +2789,7 @@ Summarize the theme and key intersections. No emojis.`;
                 onChange={(v) =>
                   setSettings((current) => ({ ...current, clusterThreshold: v / 100 }))
                 }
-                min={45}
+                min={25}
                 max={85}
               />
               <div className="graph-settings-actions" style={{ marginTop: 6 }}>
@@ -2964,7 +3010,7 @@ Summarize the theme and key intersections. No emojis.`;
           )}
 
           <div className="graph-tools-group">
-            <button type="button" className="graph-btn" onClick={centerView} title="Center view">
+            <button type="button" className="graph-btn" onClick={centerView} title="Zoom to fit (Center view)">
               <Target size={14} />
             </button>
             <button type="button" className="graph-btn" onClick={recalculateLayout} title="Recalculate layout">

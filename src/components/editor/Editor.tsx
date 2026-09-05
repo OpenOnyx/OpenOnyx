@@ -664,11 +664,21 @@ function parseMarkdownImage(
     if (src.startsWith("<") && src.endsWith(">")) {
       src = src.slice(1, -1).trim();
     }
-    const { width, crop, offsetX, offsetY } = parseImageMeta(title);
-    return { from, to, alt: alt || "", src, width, crop, offsetX, offsetY };
+    let { width, crop, offsetX, offsetY } = parseImageMeta(title);
+    let cleanAlt = alt || "";
+    if (!width && cleanAlt) {
+      const altPipeMatch = cleanAlt.match(/\|(\d{2,4})(?:x\d+)?$/);
+      if (altPipeMatch) {
+        width = Math.max(120, Math.min(1400, Number(altPipeMatch[1])));
+        cleanAlt = cleanAlt.slice(0, altPipeMatch.index).trim();
+      } else if (/^\d{2,4}$/.test(cleanAlt.trim())) {
+        width = Math.max(120, Math.min(1400, Number(cleanAlt.trim())));
+      }
+    }
+    return { from, to, alt: cleanAlt, src, width, crop, offsetX, offsetY };
   }
 
-  // Wiki embed image: ![[filename.png]] or ![[filename.png|400]]
+  // Wiki embed image: ![[filename.png]] or ![[filename.png|400]] or ![[filename.png|400x300]]
   const wikiMatch = markdown.match(/^!\[\[([^\n\]|]+)(?:\|([^\n\]]+))?\]\]$/);
   if (wikiMatch) {
     const [, rawSrc, rawOpt] = wikiMatch;
@@ -680,8 +690,9 @@ function parseMarkdownImage(
       const parts = rawOpt.split("|");
       for (const part of parts) {
         const trimmed = part.trim();
-        if (/^\d{2,4}$/.test(trimmed)) {
-          width = Number(trimmed);
+        const numMatch = trimmed.match(/^(\d{2,4})(?:x\d+)?$/);
+        if (numMatch) {
+          width = Number(numMatch[1]);
         } else {
           alt = trimmed;
         }
@@ -726,9 +737,16 @@ function applyWidgetImageStyles(
   img: HTMLImageElement,
   image: MarkdownImageMatch,
 ): void {
-  const width = image.width ?? 420;
-  img.style.width = `${width}px`;
-  img.style.maxWidth = "100%";
+  const width = image.width;
+  if (width) {
+    img.style.maxWidth = `min(100%, ${Math.round(width)}px)`;
+    img.style.width = "100%";
+  } else {
+    img.style.maxWidth = "100%";
+    img.style.width = "auto";
+  }
+  img.style.height = "auto";
+  img.style.boxSizing = "border-box";
   if (image.crop === "cover") {
     img.style.objectFit = "cover";
     img.style.aspectRatio = "4 / 3";
@@ -765,13 +783,23 @@ class MarkdownImageWidget extends WidgetType {
     );
   }
 
+  destroy(dom: HTMLElement): void {
+    const ro = (dom as any).__resizeObserver as ResizeObserver | undefined;
+    if (ro) {
+      ro.disconnect();
+      delete (dom as any).__resizeObserver;
+    }
+  }
+
   toDOM(): HTMLElement {
     const root = document.createElement("div");
     root.className = "cm-image-widget";
     root.setAttribute("contenteditable", "false");
     root.dataset.from = String(this.image.from);
     root.dataset.to = String(this.image.to);
-    root.dataset.width = String(this.image.width ?? 420);
+    if (this.image.width) {
+      root.dataset.width = String(this.image.width);
+    }
     root.dataset.crop = this.image.crop;
     root.dataset.ox = String(this.image.offsetX);
     root.dataset.oy = String(this.image.offsetY);
@@ -780,13 +808,28 @@ class MarkdownImageWidget extends WidgetType {
 
     const stage = document.createElement("div");
     stage.className = "cm-image-widget-stage";
+    if (this.image.width) {
+      stage.style.maxWidth = `min(100%, ${Math.round(this.image.width)}px)`;
+      stage.style.width = "100%";
+    } else {
+      stage.style.maxWidth = "100%";
+      stage.style.width = "auto";
+    }
     root.appendChild(stage);
 
     const img = document.createElement("img");
     img.className = "cm-image-widget-image";
     img.src = resolveVaultImageSrc(this.image.src);
     img.alt = this.image.alt || "Image";
+
+    const widthLabel = document.createElement("span");
+    widthLabel.className = "cm-image-widget-width";
+    widthLabel.textContent = this.image.width ? `${Math.round(this.image.width)}px` : "auto";
+
     img.addEventListener("load", () => {
+      if (!this.image.width && widthLabel && img.naturalWidth) {
+        widthLabel.textContent = `${img.naturalWidth}px`;
+      }
       if (this.view) {
         try { this.view.requestMeasure(); } catch { }
       }
@@ -794,14 +837,26 @@ class MarkdownImageWidget extends WidgetType {
     applyWidgetImageStyles(img, this.image);
     stage.appendChild(img);
 
+    try {
+      const ro = new ResizeObserver(() => {
+        if (this.view) {
+          try { this.view.requestMeasure(); } catch { }
+        }
+      });
+      ro.observe(img);
+      (root as any).__resizeObserver = ro;
+    } catch { }
+
     const metaRow = document.createElement("div");
     metaRow.className = "cm-image-widget-meta";
-    metaRow.style.width = `${this.image.width ?? 420}px`;
-    metaRow.style.maxWidth = "100%";
+    if (this.image.width) {
+      metaRow.style.maxWidth = `min(100%, ${Math.round(this.image.width)}px)`;
+      metaRow.style.width = "100%";
+    } else {
+      metaRow.style.maxWidth = "100%";
+      metaRow.style.width = "auto";
+    }
 
-    const widthLabel = document.createElement("span");
-    widthLabel.className = "cm-image-widget-width";
-    widthLabel.textContent = `${this.image.width ?? 420}px`;
     metaRow.appendChild(widthLabel);
 
     const deleteButton = document.createElement("button");
@@ -843,15 +898,14 @@ function imageWidgetPlugin(onOpenLightbox: (src: string, alt: string) => void) {
   };
 
   const getMaxRenderableWidth = (view: EditorView) => {
+    const scroller = view.dom.querySelector(".cm-scroller") as HTMLElement | null;
     const content = view.dom.querySelector(".cm-content") as HTMLElement | null;
-    const scroller = view.dom.querySelector(
-      ".cm-scroller",
-    ) as HTMLElement | null;
-    const raw =
-      (content?.getBoundingClientRect().width ||
-        scroller?.getBoundingClientRect().width ||
-        view.dom.getBoundingClientRect().width) - 24;
-    const safe = Number.isFinite(raw) ? Math.floor(raw) : 1400;
+    const target = content || scroller || view.dom;
+    const computed = window.getComputedStyle(target);
+    const padLeft = parseFloat(computed.paddingLeft) || 0;
+    const padRight = parseFloat(computed.paddingRight) || 0;
+    const raw = target.getBoundingClientRect().width - padLeft - padRight - 8;
+    const safe = Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 1400;
     return Math.max(120, Math.min(1400, safe));
   };
 
@@ -998,7 +1052,8 @@ function imageWidgetPlugin(onOpenLightbox: (src: string, alt: string) => void) {
                 startWidth + resizeDirection * dx,
                 maxWidth,
               );
-              imageEl.style.width = `${nextWidth}px`;
+              imageEl.style.width = "100%";
+              imageEl.style.maxWidth = `min(100%, ${nextWidth}px)`;
               const widthBadge = widget.querySelector(
                 ".cm-image-widget-width",
               ) as HTMLElement | null;
@@ -1006,7 +1061,17 @@ function imageWidgetPlugin(onOpenLightbox: (src: string, alt: string) => void) {
               const metaRow = widget.querySelector(
                 ".cm-image-widget-meta",
               ) as HTMLElement | null;
-              if (metaRow) metaRow.style.width = `${nextWidth}px`;
+              if (metaRow) {
+                metaRow.style.width = "100%";
+                metaRow.style.maxWidth = `min(100%, ${nextWidth}px)`;
+              }
+              const stageEl = widget.querySelector(
+                ".cm-image-widget-stage",
+              ) as HTMLElement | null;
+              if (stageEl) {
+                stageEl.style.width = "100%";
+                stageEl.style.maxWidth = `min(100%, ${nextWidth}px)`;
+              }
               return;
             }
 
@@ -4884,6 +4949,9 @@ export function Editor({
           ".cm-scroller": {
             overflowY: "auto",
             overflowX: "hidden",
+            boxSizing: "border-box",
+            width: "100%",
+            maxWidth: "100%",
             "--font-family": "var(--font-sans, Inter, system-ui, sans-serif)",
             "--font-mono": "var(--font-mono, monospace)",
             fontFamily: "var(--font-family)",
@@ -4891,7 +4959,10 @@ export function Editor({
           },
           ".cm-content": {
             padding: "20px 40px",
+            boxSizing: "border-box",
+            width: "100%",
             maxWidth: "var(--reading-view-width)",
+            minWidth: "0",
             margin: "0 auto",
             caretColor: "var(--editor-caret)",
             lineHeight: "1.3 !important",
@@ -4899,8 +4970,63 @@ export function Editor({
           ".cm-line": {
             padding: "0 2px",
             borderRadius: "4px",
+            width: "100%",
+            maxWidth: "100%",
+            boxSizing: "border-box",
+            overflowWrap: "anywhere",
+            wordBreak: "break-word",
             caretColor: "var(--editor-caret)",
             lineHeight: "1.3 !important",
+          },
+          ".cm-image-widget": {
+            display: "block",
+            position: "relative",
+            width: "100%",
+            maxWidth: "100%",
+            boxSizing: "border-box",
+            margin: "8px 0",
+            clear: "both",
+          },
+          ".cm-image-widget-stage": {
+            display: "block",
+            position: "relative",
+            maxWidth: "100%",
+            boxSizing: "border-box",
+            overflow: "hidden",
+            borderRadius: "var(--radius-md, 6px)",
+          },
+          ".cm-image-widget-image": {
+            display: "block",
+            maxWidth: "100% !important",
+            height: "auto !important",
+            boxSizing: "border-box",
+            borderRadius: "var(--radius-md, 6px)",
+            userSelect: "none",
+          },
+          ".cm-image-widget-meta": {
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            maxWidth: "100%",
+            boxSizing: "border-box",
+            gap: "8px",
+            marginTop: "4px",
+            fontSize: "11px",
+            color: "var(--text-muted)",
+          },
+          ".cm-image-widget-delete": {
+            background: "none",
+            border: "none",
+            color: "var(--text-muted)",
+            cursor: "pointer",
+            fontSize: "11px",
+            padding: "2px 6px",
+            borderRadius: "var(--radius-sm, 4px)",
+            transition: "all 0.15s ease",
+          },
+          ".cm-image-widget-delete:hover": {
+            color: "var(--text-danger, #ef4444)",
+            background: "var(--bg-hover)",
           },
           ".cm-line[class*='cm-heading-'] span": {
             fontFamily: "var(--font-family) !important",
@@ -6624,7 +6750,7 @@ export function Editor({
                 flex: viewMode === "split" ? `0 0 ${editorWidth}%` : 1,
                 minWidth: 0,
                 height: "100%",
-                overflow: "auto",
+                overflow: "hidden",
                 display:
                   viewMode === "editor" || viewMode === "split"
                     ? "block"

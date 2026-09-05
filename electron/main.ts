@@ -421,9 +421,14 @@ function buildMenu(): void {
       label: 'View',
       submenu: [
         {
-          label: 'Toggle Graph View',
+          label: 'Open Graph View',
           accelerator: 'CmdOrCtrl+G',
           click: () => mainWindow?.webContents.send('menu:toggle-graph'),
+        },
+        {
+          label: 'Open AI Knowledge Graph',
+          accelerator: 'CmdOrCtrl+Shift+G',
+          click: () => mainWindow?.webContents.send('menu:open-ai-graph'),
         },
         {
           label: 'Command Palette',

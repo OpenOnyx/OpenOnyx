@@ -611,6 +611,7 @@ export default function App() {
   const pluginManagerRef = useRef<PluginManager | null>(null);
   const ooAppRef = useRef<OOApp | null>(null);
   const openFileRef = useRef<(path: string, mode?: ViewMode) => Promise<void>>(async () => {});
+  const openGraphAsTabRef = useRef<(mode?: GraphMode) => void>(() => {});
   const pluginFileOpenQueueRef = useRef<Promise<void>>(Promise.resolve());
   const renameRedirectsRef = useRef<Map<string, string>>(new Map());
   const collabSubRef = useRef<{
@@ -2316,35 +2317,17 @@ export default function App() {
   // ── Menu Event Handlers ─────────────────────────────
   useEffect(() => {
     const openGraphFromMenu = () => {
-      setGraphMode("manual");
-      setShowThoughtModel(false);
-      setShowCanvas(false);
-      setShowGraph(false);
-      const existingGraphTab = tabs.find((t) => t.path === GRAPH_TAB_PATH);
-      if (existingGraphTab) {
-        setActiveTabId(existingGraphTab.id);
-        const leaf = findLeafWithTab(paneTree, existingGraphTab.id);
-        if (leaf) {
-          setFocusedLeafId(leaf.id);
-        }
-      } else {
-        const graphTab: Tab = {
-          id: generateId(),
-          path: GRAPH_TAB_PATH,
-          name: "Graph",
-          isModified: false,
-        };
-        setTabs((prev) => [...prev, graphTab]);
-        setActiveTabId(graphTab.id);
-      }
-      setCurrentContent("");
-      setBacklinks([]);
+      openGraphAsTabRef.current("manual");
+    };
+    const openAIGraphFromMenu = () => {
+      openGraphAsTabRef.current("ai");
     };
 
     api.onMenuEvent("menu:open-vault", handleOpenVault);
     api.onMenuEvent("menu:new-note", handleNewNote);
     api.onMenuEvent("menu:save", handleSave);
     api.onMenuEvent("menu:toggle-graph", openGraphFromMenu);
+    api.onMenuEvent("menu:open-ai-graph", openAIGraphFromMenu);
     api.onMenuEvent("menu:command-palette", () => {
       if (settings.coreCommandPalette !== false) setShowCommandPalette(true);
     });
@@ -2356,11 +2339,12 @@ export default function App() {
         "menu:new-note",
         "menu:save",
         "menu:toggle-graph",
+        "menu:open-ai-graph",
         "menu:command-palette",
         "menu:toggle-sidebar",
       ].forEach((ch) => api.removeMenuListener(ch));
     };
-  }, [tabs, activeTabId, settings.coreCommandPalette]);
+  }, [settings.coreCommandPalette]);
 
   // ── Keyboard Shortcuts ──────────────────────────────
   useEffect(() => {
@@ -2388,9 +2372,9 @@ export default function App() {
       } else if (ctrl && e.key === "s") {
         e.preventDefault();
         handleSave();
-      } else if (ctrl && e.key === "g") {
+      } else if (ctrl && e.key.toLowerCase() === "g") {
         e.preventDefault();
-        openGraphAsTab();
+        openGraphAsTabRef.current(shift ? "ai" : "manual");
       } else if (ctrl && e.shiftKey && e.key.toLowerCase() === "c" && settings.coreCanvas !== false) {
         e.preventDefault();
         void handleToggleCanvas();
@@ -3057,33 +3041,48 @@ export default function App() {
   }, [activeTabId, pluginList, tabs]);
 
 
-  const openGraphAsTab = (mode: GraphMode = "manual") => {
-    setGraphMode(mode);
-    setShowThoughtModel(false);
-    setShowCanvas(false);
-    setShowGraph(false);
+  const openGraphAsTab = useCallback(
+    (mode: GraphMode = "manual") => {
+      setGraphMode(mode);
+      setShowThoughtModel(false);
+      setShowCanvas(false);
+      setShowGraph(false);
 
-    const existingGraphTab = tabs.find((t) => t.path === GRAPH_TAB_PATH);
-    if (existingGraphTab) {
-      setActiveTabId(existingGraphTab.id);
-      const leaf = findLeafWithTab(paneTree, existingGraphTab.id);
-      if (leaf) {
-        setFocusedLeafId(leaf.id);
+      const tabName = mode === "ai" ? "AI Graph" : "Graph";
+      const existingGraphTab = tabs.find((t) => t.path === GRAPH_TAB_PATH);
+      if (existingGraphTab) {
+        if (existingGraphTab.name !== tabName) {
+          setTabs((prev) =>
+            prev.map((t) => (t.id === existingGraphTab.id ? { ...t, name: tabName } : t))
+          );
+        }
+        setActiveTabId(existingGraphTab.id);
+        const leaf = findLeafWithTab(paneTree, existingGraphTab.id);
+        if (leaf) {
+          setFocusedLeafId(leaf.id);
+          setPaneTree((prev) => setActiveTabInLeaf(prev, leaf.id, existingGraphTab.id));
+        }
+      } else {
+        const graphTab: Tab = {
+          id: generateId(),
+          path: GRAPH_TAB_PATH,
+          name: tabName,
+          isModified: false,
+        };
+        setTabs((prev) => [...prev, graphTab]);
+        setActiveTabId(graphTab.id);
       }
-    } else {
-      const graphTab: Tab = {
-        id: generateId(),
-        path: GRAPH_TAB_PATH,
-        name: "Graph",
-        isModified: false,
-      };
-      setTabs((prev) => [...prev, graphTab]);
-      setActiveTabId(graphTab.id);
-    }
 
-    setCurrentContent("");
-    setBacklinks([]);
-  };
+      setCurrentContent("");
+      setBacklinks([]);
+
+      requestAnimationFrame(() => {
+        window.dispatchEvent(new Event("resize"));
+      });
+    },
+    [tabs, paneTree],
+  );
+  openGraphAsTabRef.current = openGraphAsTab;
 
   const openSpacesAsTab = () => {
     setShowThoughtModel(false);
@@ -3689,6 +3688,9 @@ export default function App() {
       if (tab.path === GRAPH_TAB_PATH) {
         setCurrentContent("");
         setBacklinks([]);
+        requestAnimationFrame(() => {
+          window.dispatchEvent(new Event("resize"));
+        });
         return;
       }
       if (tab.path === SPACES_TAB_PATH) {
@@ -3801,8 +3803,14 @@ export default function App() {
       setViewMode("split");
     };
 
-    const onOpenGraph = () => {
-      openGraphAsTab();
+    const onOpenGraph = (event?: Event) => {
+      const customEvent = event as CustomEvent<{ mode?: GraphMode }> | undefined;
+      const mode = customEvent?.detail?.mode || "manual";
+      openGraphAsTab(mode);
+    };
+
+    const onOpenAIGraph = () => {
+      openGraphAsTab("ai");
     };
 
     const onOpenChat = () => {
@@ -3926,6 +3934,7 @@ export default function App() {
     window.addEventListener("oo:new-note", onNewNote as EventListener);
     window.addEventListener("oo:split-view", onSplitView as EventListener);
     window.addEventListener("oo:open-graph", onOpenGraph as EventListener);
+    window.addEventListener("oo:open-ai-graph", onOpenAIGraph as EventListener);
     window.addEventListener("oo:open-chat", onOpenChat as EventListener);
     window.addEventListener("oo:daily-note", onDailyNote as EventListener);
     window.addEventListener("oo:fuzzy-search", onFuzzySearch as EventListener);
@@ -3946,6 +3955,7 @@ export default function App() {
       window.removeEventListener("oo:new-note", onNewNote as EventListener);
       window.removeEventListener("oo:split-view", onSplitView as EventListener);
       window.removeEventListener("oo:open-graph", onOpenGraph as EventListener);
+      window.removeEventListener("oo:open-ai-graph", onOpenAIGraph as EventListener);
       window.removeEventListener("oo:open-chat", onOpenChat as EventListener);
       window.removeEventListener("oo:daily-note", onDailyNote as EventListener);
       window.removeEventListener("oo:fuzzy-search", onFuzzySearch as EventListener);
@@ -4837,14 +4847,24 @@ export default function App() {
           <button
             type="button"
             className={`graph-mode-btn ${graphMode !== "ai" ? "active" : ""}`}
-            onClick={() => setGraphMode("manual")}
+            onClick={() => {
+              setGraphMode("manual");
+              requestAnimationFrame(() => {
+                window.dispatchEvent(new Event("resize"));
+              });
+            }}
           >
             Manual
           </button>
           <button
             type="button"
             className={`graph-mode-btn ${graphMode === "ai" ? "active" : ""}`}
-            onClick={() => setGraphMode("ai")}
+            onClick={() => {
+              setGraphMode("ai");
+              requestAnimationFrame(() => {
+                window.dispatchEvent(new Event("resize"));
+              });
+            }}
           >
             AI View
           </button>
@@ -5051,7 +5071,10 @@ export default function App() {
               setShowBookmarks(true);
             }}
             onGraph={() => {
-              openGraphAsTab();
+              openGraphAsTab("manual");
+            }}
+            onAIGraph={() => {
+              openGraphAsTab("ai");
             }}
             onSettings={() => {
               setSettingsSection("home");
