@@ -1125,7 +1125,8 @@ export function MarkdownPreview({
       if (mermaidBlocks.length > 0 || existingMermaid.length > 0) {
         void (async () => {
           try {
-            const { default: mermaid } = await import("mermaid");
+            const mermaidMod = await import("mermaid");
+            const mermaid = mermaidMod.default || mermaidMod;
 
             if (cancelled || !previewRef.current) return;
 
