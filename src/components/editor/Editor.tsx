@@ -12,7 +12,23 @@
 
 import React, { useEffect, useRef, useCallback, useState, useMemo } from "react";
 import { createPortal } from "react-dom";
-import { X, Lightbulb, BookOpen, Pen, RefreshCw, Sparkles, ZoomIn, ZoomOut, RotateCcw } from "lucide-react";
+import { X, Lightbulb, BookOpen, Pen, RefreshCw, Sparkles, ZoomIn, ZoomOut, RotateCcw, MessageSquare } from "lucide-react";
+import {
+  commentExtension,
+  setCommentsEffect,
+  setPendingCommentEffect,
+} from "./commentExtension";
+import { EditorCommentsLayer } from "./EditorCommentsLayer";
+import {
+  getCommentsSync,
+  loadComments,
+  addComment,
+  deleteComment,
+  resolveComment,
+  addReply,
+  subscribeToComments,
+} from "../../utils/commentsStore";
+import type { NoteComment, PendingComment } from "../../types/comments";
 import { Compartment, EditorState, Transaction, StateEffect, StateField, EditorSelection } from "@codemirror/state";
 import {
   EditorView,
@@ -177,7 +193,7 @@ function setWritableViewProperty(view: any, key: string, value: unknown): void {
 const resizerClass =
   "resizer relative z-10 w-1 shrink-0 cursor-ew-resize bg-transparent transition-colors duration-100 after:absolute after:inset-y-0 after:left-px after:w-0.5 after:bg-[var(--divider-color)] after:opacity-100 hover:after:left-0.5 hover:after:w-[3px] hover:after:bg-[var(--interactive-accent)] active:after:left-0.5 active:after:w-[3px] active:after:bg-[var(--interactive-accent)]";
 const inlineAiToolbarClass =
-  "inline-ai-toolbar flex min-w-[400px] flex-col overflow-hidden rounded-[var(--radius-md)] border border-[var(--border-medium)] bg-[var(--bg-secondary)] p-0 shadow-none transition-all duration-150";
+  "inline-ai-toolbar flex min-w-[480px] flex-col overflow-hidden rounded-[var(--radius-md)] border border-[var(--border-medium)] bg-[var(--bg-secondary)] p-0 shadow-none transition-all duration-150";
 const inlineAiButtonsRowClass = "flex w-full items-center";
 const inlineAiButtonsRowPromptClass =
   "border-b border-[var(--border-subtle)]";
@@ -3966,6 +3982,10 @@ export function Editor({
     rect: DOMRect;
   } | null>(null);
 
+  const [comments, setComments] = useState<NoteComment[]>([]);
+  const [pendingComment, setPendingComment] = useState<PendingComment | null>(null);
+  const [activeCommentId, setActiveCommentId] = useState<string | null>(null);
+
   useEffect(() => {
     setPendingInlineEdit(null);
     viewRef.current?.dispatch({
@@ -3978,9 +3998,16 @@ export function Editor({
     const sel = window.getSelection();
     if (!sel || sel.isCollapsed || !sel.toString().trim()) {
       if (pendingInlineEdit) return;
+      if (pendingComment) return;
       if (isInputFocused) return;
       const activeEl = document.activeElement;
-      if (activeEl && (activeEl.closest(".inline-ai-toolbar") || activeEl.classList.contains("inline-ai-prompt-input"))) {
+      if (
+        activeEl &&
+        (activeEl.closest(".inline-ai-toolbar") ||
+          activeEl.classList.contains("inline-ai-prompt-input") ||
+          activeEl.closest(".cm-comment-input-box") ||
+          activeEl.closest(".cm-comments-layer"))
+      ) {
         return;
       }
       // Only call setState if we actually have a value to clear -- avoids
@@ -3994,7 +4021,13 @@ export function Editor({
       const isInsideEditor = editorRef.current?.contains(range.commonAncestorContainer) || previewRef.current?.contains(range.commonAncestorContainer);
       if (!isInsideEditor) {
         const activeEl = document.activeElement;
-        if (activeEl && (activeEl.closest(".inline-ai-toolbar") || activeEl.classList.contains("inline-ai-prompt-input"))) {
+        if (
+          activeEl &&
+          (activeEl.closest(".inline-ai-toolbar") ||
+            activeEl.classList.contains("inline-ai-prompt-input") ||
+            activeEl.closest(".cm-comment-input-box") ||
+            activeEl.closest(".cm-comments-layer"))
+        ) {
           return;
         }
         setSelectionRange(null);
@@ -4057,7 +4090,7 @@ export function Editor({
     } catch (e) {
       // Ignore transient selection range errors
     }
-  }, [isSpecialTab, isInputFocused, pendingInlineEdit]);
+  }, [isSpecialTab, isInputFocused, pendingInlineEdit, pendingComment]);
 
   const applyPendingInlineEdit = useCallback(() => {
     if (!pendingInlineEdit) return;
@@ -4106,6 +4139,155 @@ export function Editor({
       document.removeEventListener("selectionchange", handleSelectionChange);
     };
   }, [handleSelectionChange]);
+
+  // Comments lifecycle, effects, and action handlers
+  useEffect(() => {
+    if (!activePath) {
+      setComments([]);
+      setPendingComment(null);
+      return;
+    }
+    const initial = getCommentsSync(activePath);
+    setComments(initial);
+    setPendingComment(null);
+    if (viewRef.current) {
+      viewRef.current.dispatch({
+        effects: [
+          setCommentsEffect.of(initial),
+          setPendingCommentEffect.of(null),
+        ],
+      });
+    }
+
+    void loadComments(activePath).then((loaded) => {
+      if (activePathRef.current === activePath) {
+        setComments(loaded);
+        if (viewRef.current) {
+          viewRef.current.dispatch({
+            effects: setCommentsEffect.of(loaded),
+          });
+        }
+      }
+    });
+  }, [activePath]);
+
+  useEffect(() => {
+    const unsub = subscribeToComments((path, updated) => {
+      if (path === activePathRef.current) {
+        setComments(updated);
+        viewRef.current?.dispatch({
+          effects: setCommentsEffect.of(updated),
+        });
+      }
+    });
+
+    const handleSelectComment = (e: Event) => {
+      const custom = e as CustomEvent<{ commentId: string }>;
+      if (custom.detail?.commentId) {
+        setActiveCommentId(custom.detail.commentId);
+      }
+    };
+    window.addEventListener("openonyx:select-comment", handleSelectComment);
+
+    return () => {
+      unsub();
+      window.removeEventListener("openonyx:select-comment", handleSelectComment);
+    };
+  }, []);
+
+  const handleStartAddComment = useCallback(() => {
+    const view = viewRef.current;
+    let from = selectionRange?.from ?? 0;
+    let to = selectionRange?.to ?? 0;
+    let text = selectionRange?.text ?? "";
+
+    if (view && !view.state.selection.main.empty) {
+      from = view.state.selection.main.from;
+      to = view.state.selection.main.to;
+      text = view.state.sliceDoc(from, to);
+    }
+
+    if (!text.trim()) return;
+
+    let targetTop = 20;
+    if (view) {
+      try {
+        const line = view.lineBlockAt(Math.min(from, view.state.doc.length));
+        targetTop = line.top;
+      } catch {
+        targetTop = 20;
+      }
+    }
+
+    const pending: PendingComment = {
+      id: "pending",
+      from,
+      to,
+      selectedText: text,
+      targetTop,
+    };
+
+    setPendingComment(pending);
+    view?.dispatch({
+      effects: setPendingCommentEffect.of({ from, to }),
+    });
+
+    setSelectionRange(null);
+    window.getSelection()?.removeAllRanges();
+  }, [selectionRange]);
+
+  const handleSaveComment = useCallback(async (commentText: string) => {
+    if (!pendingComment || !activePathRef.current) return;
+    const notePath = activePathRef.current;
+    await addComment(notePath, {
+      from: pendingComment.from,
+      to: pendingComment.to,
+      selectedText: pendingComment.selectedText,
+      content: commentText,
+    });
+
+    setPendingComment(null);
+    viewRef.current?.dispatch({
+      effects: setPendingCommentEffect.of(null),
+    });
+  }, [pendingComment]);
+
+  const handleCancelPendingComment = useCallback(() => {
+    setPendingComment(null);
+    viewRef.current?.dispatch({
+      effects: setPendingCommentEffect.of(null),
+    });
+  }, []);
+
+  const handleResolveComment = useCallback(async (commentId: string) => {
+    if (!activePathRef.current) return;
+    await resolveComment(activePathRef.current, commentId);
+  }, []);
+
+  const handleDeleteComment = useCallback(async (commentId: string) => {
+    if (!activePathRef.current) return;
+    await deleteComment(activePathRef.current, commentId);
+  }, []);
+
+  const handleReplyComment = useCallback(async (commentId: string, content: string) => {
+    if (!activePathRef.current) return;
+    await addReply(activePathRef.current, commentId, content);
+  }, []);
+
+  // Keyboard shortcut: Ctrl+Shift+M / Cmd+Shift+M to Add Comment
+  useEffect(() => {
+    const handleShortcut = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === "M" || e.key === "m")) {
+        const view = viewRef.current;
+        if (view && !view.state.selection.main.empty) {
+          e.preventDefault();
+          handleStartAddComment();
+        }
+      }
+    };
+    window.addEventListener("keydown", handleShortcut);
+    return () => window.removeEventListener("keydown", handleShortcut);
+  }, [handleStartAddComment]);
 
   const handleInlineAction = async (
     operation: "rewrite" | "expand" | "simplify" | "explain" | "custom",
@@ -4888,6 +5070,7 @@ export function Editor({
             caretColor: "var(--editor-caret)",
           },
           ".cm-scroller": {
+            position: "relative",
             overflowY: "auto",
             overflowX: "hidden",
             boxSizing: "border-box",
@@ -5297,6 +5480,7 @@ export function Editor({
             borderRadius: "2px",
           },
         }),
+        commentExtension(),
       ],
     });
 
@@ -5306,6 +5490,11 @@ export function Editor({
     });
 
     viewRef.current = view;
+    if (comments.length > 0) {
+      view.dispatch({
+        effects: setCommentsEffect.of(comments),
+      });
+    }
     const obsidianEditor = new ObsidianEditor(view);
     obsidianEditorRef.current = obsidianEditor;
     syncObsidianEditorContext();
@@ -6286,6 +6475,16 @@ export function Editor({
       ? `Search for "${selection.length > 20 ? selection.substring(0, 20) + '...' : selection}"`
       : 'Search for selection';
 
+    if (selection) {
+      menu.addItem((item: any) =>
+        item
+          .setTitle('Add Comment')
+          .setIcon('message-square')
+          .onClick(() => {
+            handleStartAddComment();
+          })
+      );
+    }
     menu.addItem((item: any) => item.setTitle('Add link').setIcon('link').onClick(() => { void addLink(); }));
     menu.addItem((item: any) => item.setTitle('Add external link').setIcon('external-link').onClick(() => { void addExternalLink(); }));
     menu.addSeparator();
@@ -6439,7 +6638,7 @@ export function Editor({
   const getClampedToolbarCoords = () => {
     if (!selectionRange) return { top: 0, left: 0 };
     const toolbarHeight = showPromptInput ? 84 : 40;
-    const toolbarWidth = 400;
+    const toolbarWidth = 480;
 
     const y = selectionRange.rect.top < (showPromptInput ? 110 : 70)
       ? selectionRange.rect.bottom + 8
@@ -6498,7 +6697,7 @@ export function Editor({
         containerRef.current || document.body
       )}
 
-      {selectionRange && !pendingInlineEdit && !isInlineQuerying && !explanation && createPortal(
+      {selectionRange && !pendingInlineEdit && !isInlineQuerying && !explanation && !pendingComment && createPortal(
         <div
           className={inlineAiToolbarClass}
           style={{
@@ -6539,6 +6738,14 @@ export function Editor({
               onClick={() => setShowPromptInput(!showPromptInput)}
             >
               Prompt
+            </button>
+            <button
+              className={inlineAiButtonClass}
+              onClick={handleStartAddComment}
+              title="Add Comment (Ctrl+Shift+M)"
+            >
+              <MessageSquare className="mr-1.5 h-3.5 w-3.5 inline opacity-75" />
+              Comment
             </button>
           </div>
           {showPromptInput && (
@@ -6682,6 +6889,20 @@ export function Editor({
               getView={() => viewRef.current}
               isOpen={isSearchOpen}
               onClose={() => setIsSearchOpen(false)}
+            />
+
+            {/* Notion-style Comments Layer */}
+            <EditorCommentsLayer
+              view={viewRef.current}
+              comments={comments}
+              pendingComment={pendingComment}
+              activeCommentId={activeCommentId}
+              onSaveComment={handleSaveComment}
+              onCancelPending={handleCancelPendingComment}
+              onSelectComment={(id) => setActiveCommentId(id)}
+              onResolveComment={handleResolveComment}
+              onDeleteComment={handleDeleteComment}
+              onReplyComment={handleReplyComment}
             />
 
             <div
