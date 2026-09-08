@@ -631,7 +631,8 @@ html[data-theme="dark"] .docs {
 }
 .docs-main {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 248px;
+  grid-template-columns: minmax(0, 52rem) 248px;
+  justify-content: start;
   gap: 0 8px;
   align-items: start;
   width: 100%;
