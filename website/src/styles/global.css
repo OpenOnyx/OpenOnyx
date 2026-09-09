@@ -554,7 +554,7 @@ img, video { max-width: 100%; display: block; }
   --docs-caution-edge: #9a6700;
   --docs-code: #f3f4f6;
   display: grid;
-  grid-template-columns: 260px minmax(0, 1fr);
+  grid-template-columns: 272px minmax(0, 1fr);
   min-height: calc(100vh - var(--header));
   background: var(--docs-paper);
   color: var(--docs-ink);
@@ -631,9 +631,11 @@ html[data-theme="dark"] .docs {
 }
 .docs-main {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 220px;
-  gap: 0;
+  grid-template-columns: minmax(0, 52rem) 248px;
+  justify-content: start;
+  gap: 0 8px;
   align-items: start;
+  width: 100%;
   padding: 0;
   background: var(--docs-paper);
 }
@@ -641,7 +643,7 @@ html[data-theme="dark"] .docs {
   max-width: none;
   min-width: 0;
   overflow-wrap: break-word;
-  padding: 28px 48px 80px;
+  padding: 32px 40px 80px 36px;
   margin: 0;
   min-height: calc(100vh - var(--header));
   background: var(--docs-paper);
@@ -651,11 +653,11 @@ html[data-theme="dark"] .docs {
 .docs-body > *,
 .docs-hero,
 .docs-crumbs {
-  max-width: 46rem;
+  max-width: none;
 }
 .docs-body .compare-wrap,
 .docs-body table {
-  max-width: 52rem;
+  max-width: none;
 }
 .docs-crumbs {
   display: flex;
@@ -685,7 +687,7 @@ html[data-theme="dark"] .docs {
   color: var(--docs-copy);
   font-size: 18px;
   line-height: 1.55;
-  max-width: 46rem;
+  max-width: none;
 }
 .docs-body h2 {
   font-size: 22px;
@@ -825,7 +827,7 @@ html[data-theme="dark"] .docs {
   margin-top: 48px;
   border-top: 1px solid var(--docs-line);
   padding-top: 20px;
-  max-width: 46rem;
+  max-width: none;
 }
 .doc-nav a {
   display: block;
@@ -848,7 +850,7 @@ html[data-theme="dark"] .docs {
 .docs-rail {
   position: sticky;
   top: var(--header);
-  padding: 28px 18px 56px 16px;
+  padding: 32px 28px 56px 20px;
   border-left: 1px solid var(--docs-line);
   min-height: calc(100vh - var(--header));
   background: var(--docs-paper);
@@ -886,7 +888,7 @@ html[data-theme="dark"] .docs {
 }
 
 @media (max-width: 1100px) {
-  .docs-main { grid-template-columns: 1fr; }
+  .docs-main { grid-template-columns: 1fr; max-width: none; }
   .docs-body { padding: 32px 28px 64px; }
   .docs-next { grid-template-columns: 1fr; }
   .docs-rail {
@@ -955,7 +957,7 @@ html[data-theme="dark"] .docs {
   }
   .docs-side > div {
     display: flex;
-    flex-wrap: nowrap;
+    flex-wrap: wrap;
     gap: 4px;
     align-items: center;
   }
