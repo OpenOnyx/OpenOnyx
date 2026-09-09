@@ -16,14 +16,21 @@
       property="og:description"
       content="OpenOnyx is a local-first knowledge workspace with built-in Spaces, an AI graph, and an Apache-2.0 desktop. Your notes stay as Markdown. No account required."
     />
-    <meta property="og:image" content="/images/banner.webp" />
+    <meta
+      property="og:image"
+      content="https://raw.githubusercontent.com/OpenOnyx/OpenOnyx/main/website/public/images/banner.webp"
+    />
+    <link rel="canonical" href="/" />
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content="OpenOnyx — Local-first knowledge workspace" />
     <meta
       name="twitter:description"
       content="OpenOnyx is a local-first knowledge workspace with built-in Spaces, an AI graph, and an Apache-2.0 desktop. Your notes stay as Markdown. No account required."
     />
-    <meta name="twitter:image" content="/images/banner.webp" />
+    <meta
+      name="twitter:image"
+      content="https://raw.githubusercontent.com/OpenOnyx/OpenOnyx/main/website/public/images/banner.webp"
+    />
     <title>OpenOnyx — Local-first knowledge workspace</title>
     <script>
       try {
@@ -33,6 +40,22 @@
         }
         document.documentElement.dataset.theme = t;
         document.documentElement.style.colorScheme = t;
+        var origin = location.origin;
+        var img = origin + "/images/banner.webp";
+        var url = origin + location.pathname + location.search;
+        var ogImage = document.querySelector('meta[property="og:image"]');
+        var twImage = document.querySelector('meta[name="twitter:image"]');
+        var ogUrl = document.querySelector('meta[property="og:url"]');
+        var canon = document.querySelector('link[rel="canonical"]');
+        if (ogImage) ogImage.setAttribute("content", img);
+        if (twImage) twImage.setAttribute("content", img);
+        if (!ogUrl) {
+          ogUrl = document.createElement("meta");
+          ogUrl.setAttribute("property", "og:url");
+          document.head.appendChild(ogUrl);
+        }
+        ogUrl.setAttribute("content", url);
+        if (canon) canon.setAttribute("href", url);
       } catch (e) {}
     </script>
     <link rel="preconnect" href="https://fonts.googleapis.com" />

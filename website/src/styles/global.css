@@ -788,7 +788,9 @@ html[data-theme="dark"] .docs {
   font-size: 13px;
   color: var(--docs-ink);
   margin: 0 0 16px;
-  white-space: pre;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  word-break: normal;
 }
 .docs-body table { width: 100%; border-collapse: collapse; font-size: 14px; margin: 8px 0 20px; background: var(--docs-paper); }
 .docs-body th, .docs-body td {
@@ -878,7 +880,29 @@ html[data-theme="dark"] .docs {
 }
 .card:hover { border-color: var(--line-strong); }
 .card .btn { align-self: flex-start; margin: 4px 0 10px; }
-.card pre { margin: 0; }
+.card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 4px 0 10px;
+}
+.card-actions .btn { margin: 0; }
+.download-more {
+  margin: 0 0 10px;
+  font-size: 12px;
+}
+.download-more a {
+  color: var(--muted);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.download-more a:hover { color: var(--text); }
+.card pre {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  word-break: normal;
+}
 .card h3 { margin: 0 0 6px; font-size: 15px; }
 .card p { margin: 0 0 10px; color: var(--muted); font-size: 13px; }
 
