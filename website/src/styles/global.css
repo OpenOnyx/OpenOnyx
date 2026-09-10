@@ -635,6 +635,8 @@ html[data-theme="dark"] .docs {
   gap: 0 8px;
   align-items: start;
   width: 100%;
+  max-width: var(--page);
+  margin-inline: auto;
   padding: 0;
   background: var(--docs-paper);
 }
