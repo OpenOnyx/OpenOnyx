@@ -100,7 +100,7 @@ export const VERSUS_OBSIDIAN: Array<{ item: string; us: string; them: string; wi
   },
   {
     item: "AI writing",
-    us: "Inline rewrite, expand, simplify, plus vault-grounded answers. Local path needs no key.",
+    us: "Rewrite, expand, and simplify with an optional OpenAI or OpenRouter key. Local embeddings and Spaces retrieval need no key.",
     them: "Community plugins or paid add-ons",
     win: true,
   },
@@ -237,14 +237,25 @@ export const THEATER = [
   { ...STORY[5], kicker: "07 · sync" },
 ] as const;
 
+const RELEASE_FILES = `${PRODUCT.repo}/releases/download/v${PRODUCT.version}`;
+
 export const DOWNLOADS = {
   macNote:
     'If macOS says the app is from an unidentified developer or is "damaged", right-click OpenOnyx.app and choose Open, or run: xattr -cr /Applications/OpenOnyx.app',
   windowsNote:
-    "Download the .exe installer from Releases. Free code signing is provided by SignPath.io; the certificate is issued by SignPath Foundation.",
+    "Free code signing is provided by SignPath.io; the certificate is issued by SignPath Foundation.",
   linuxNote:
     "Download .AppImage, .deb, or Arch .pkg.tar.zst from Releases, or run the official installer script.",
   linuxInstall: "curl -fsSL https://raw.githubusercontent.com/OpenOnyx/OpenOnyx/main/scripts/install.sh | bash",
+  files: {
+    macArmDmg: `${RELEASE_FILES}/OpenOnyx-${PRODUCT.version}-arm64.dmg`,
+    macIntelDmg: `${RELEASE_FILES}/OpenOnyx-${PRODUCT.version}.dmg`,
+    winSetup: `${RELEASE_FILES}/OpenOnyx.Setup.${PRODUCT.version}.exe`,
+    winPortable: `${RELEASE_FILES}/OpenOnyx.${PRODUCT.version}.exe`,
+    linuxAppImage: `${RELEASE_FILES}/OpenOnyx-${PRODUCT.version}.AppImage`,
+    linuxDeb: `${RELEASE_FILES}/openonyx_${PRODUCT.version}_amd64.deb`,
+    linuxArch: `${RELEASE_FILES}/openonyx-${PRODUCT.version}-1-x86_64.pkg.tar.zst`,
+  },
 } as const;
 
 export const FEATURES = [
@@ -340,7 +351,7 @@ export const FEATURES = [
     id: "export",
     kicker: "12",
     title: "Export tooling",
-    body: "Managed Pandoc 3.10 WASM backend for export plugins, plus Node and Electron shims so desktop plugin workflows keep working.",
+    body: "Plugin-driven export: a bundled Pandoc 3.10 WASM backend plus Node and Electron shims. There is no separate export guide — start from Plugins.",
     points: ["Pandoc backend", "Plugin shims", "Canvas compat tests"],
     href: "/docs/plugins",
   },

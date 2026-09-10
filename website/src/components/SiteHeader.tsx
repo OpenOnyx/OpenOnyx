@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { NavLink, useLocation } from "react-router-dom";
 import { PRODUCT } from "../data/facts";
+import { paletteHotkeyLabel } from "../lib/hotkey";
 import { useTheme } from "../theme";
 
 function formatCount(n: number) {
@@ -83,8 +84,9 @@ export function SiteHeader() {
             type="button"
             className="meta-chip meta-chip-palette"
             onClick={() => window.dispatchEvent(new Event("openonyx:palette"))}
+            aria-label={`Open command palette (${paletteHotkeyLabel()})`}
           >
-            ⌘K
+            {paletteHotkeyLabel()}
           </button>
           <a className="meta-chip meta-chip-version" href={PRODUCT.latestRelease} target="_blank" rel="noreferrer">
             v{PRODUCT.version}
