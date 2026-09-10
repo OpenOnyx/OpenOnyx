@@ -28,6 +28,7 @@ import { bindPreviewMediaFallbacks, sanitizePreviewHtml } from "../../utils/prev
 import { getSmartEmbed, getDisplayDomain, cleanEmbedUrl, toggleUrlInMarkdown } from "../../utils/urlHelper";
 import { runMarkdownPostProcessors } from "../../lib/obsidian-api/markdown";
 import type { AppSettings } from "../settings/SettingsPage";
+import type { NoteComment, PendingComment } from "../../types/comments";
 
 import { initializeInteractiveMermaid } from "../../utils/mermaid-layout-engine";
 
@@ -179,6 +180,9 @@ interface MarkdownPreviewProps {
   settings?: AppSettings;
   onContentChange?: (content: string) => void;
   constrainWidth?: boolean;
+  comments?: NoteComment[];
+  pendingComment?: PendingComment | null;
+  onCommentClick?: (commentId: string) => void;
 }
 
 const linkPreviewClass = "bg-(--bg-elevated) border border-(--border-medium) rounded-lg shadow-none max-w-[400px] max-h-[300px] overflow-hidden flex flex-col animate-fade-in";
@@ -502,6 +506,50 @@ function protectInlineCode(text: string): {
       value.replace(/\uE001INLINE_CODE_(\d+)\uE001/g, (_, index) => blocks[Number(index)] || ""),
   };
 }
+
+/**
+ * Wraps commented phrases in the rendered HTML with comment highlight marks.
+ * Operates strictly on text content outside HTML tags.
+ */
+function applyCommentHighlightsToHtml(
+  html: string,
+  comments?: NoteComment[],
+  pendingComment?: PendingComment | null,
+): string {
+  if ((!comments || comments.length === 0) && !pendingComment) return html;
+
+  let result = html;
+
+  const highlightPhrase = (src: string, phrase: string, tagStart: string): string => {
+    if (!phrase || !phrase.trim()) return src;
+    const cleanPhrase = phrase.trim();
+    const escaped = cleanPhrase.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const regex = new RegExp(`(?![^<]*>)(${escaped})`, "i");
+    return src.replace(regex, `${tagStart}$1</mark>`);
+  };
+
+  if (comments) {
+    for (const c of comments) {
+      if (c.resolved || !c.selectedText) continue;
+      result = highlightPhrase(
+        result,
+        c.selectedText,
+        `<mark class="cm-comment-highlight" data-comment-id="${c.id}">`,
+      );
+    }
+  }
+
+  if (pendingComment && pendingComment.selectedText) {
+    result = highlightPhrase(
+      result,
+      pendingComment.selectedText,
+      `<mark class="cm-comment-highlight cm-comment-pending">`,
+    );
+  }
+
+  return result;
+}
+
 export function MarkdownPreview({
   content,
   onLinkClick,
@@ -513,6 +561,9 @@ export function MarkdownPreview({
   settings,
   onContentChange,
   constrainWidth = true,
+  comments,
+  pendingComment,
+  onCommentClick,
 }: MarkdownPreviewProps) {
   const previewRef = useRef<HTMLDivElement>(null);
   const [debouncedContent, setDebouncedContent] = useState("");
@@ -936,16 +987,28 @@ export function MarkdownPreview({
     });
 
     // Sanitize
-    return sanitizePreviewHtml(html);
-  }, [debouncedContent, onEmbed, themeMode, getSmartEmbed, getUrlPreviewMarkup]);
+    const sanitized = sanitizePreviewHtml(html);
 
-  // Handle clicks on wiki-links, tags, and checkboxes
+    // Apply comment highlights to rendered preview
+    return applyCommentHighlightsToHtml(sanitized, comments, pendingComment);
+  }, [debouncedContent, onEmbed, themeMode, getSmartEmbed, getUrlPreviewMarkup, comments, pendingComment]);
+
+  // Handle clicks on wiki-links, tags, checkboxes, and comment highlights
   useEffect(() => {
     const container = previewRef.current;
     if (!container) return;
 
     const handleClick = (e: Event) => {
       const target = e.target as HTMLElement;
+
+      // Handle comment highlight clicks to open the comment box
+      const commentMark = target.closest(".cm-comment-highlight");
+      if (commentMark) {
+        const commentId = commentMark.getAttribute("data-comment-id");
+        if (commentId && onCommentClick) {
+          onCommentClick(commentId);
+        }
+      }
 
       // Handle image click for fullscreen preview
       if (target.tagName === "IMG" && !target.classList.contains("yt-poster-img") && onImageClick) {
@@ -1009,7 +1072,7 @@ export function MarkdownPreview({
 
     container.addEventListener("click", handleClick);
     return () => container.removeEventListener("click", handleClick);
-  }, [onLinkClick, onCheckboxToggle, onImageClick, onContentChange]);
+  }, [onLinkClick, onCheckboxToggle, onImageClick, onContentChange, onCommentClick]);
 
   // Handle link hover for preview
   useEffect(() => {

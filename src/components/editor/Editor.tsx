@@ -3753,6 +3753,7 @@ export function Editor({
 
   const editorRef = useRef<HTMLDivElement>(null);
   const previewRef = useRef<HTMLDivElement>(null);
+  const [previewEl, setPreviewEl] = useState<HTMLDivElement | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
   const viewRef = useRef<EditorView | null>(null);
@@ -3769,6 +3770,7 @@ export function Editor({
   // sync effect to avoid replacing the CM document with stale debounced
   // content while the user is actively typing.
   const lastLocalEditTsRef = useRef<number>(0);
+  const handleContextMenuRef = useRef<((e: React.MouseEvent | MouseEvent) => void) | null>(null);
   const [internalShowInsight, setInternalShowInsight] = useState(false);
   const isInsightVisible = showInsight !== undefined ? showInsight : internalShowInsight;
   const toggleInsight = (val: boolean) => {
@@ -4197,20 +4199,90 @@ export function Editor({
 
   const handleStartAddComment = useCallback(() => {
     const view = viewRef.current;
-    let from = selectionRange?.from ?? 0;
-    let to = selectionRange?.to ?? 0;
-    let text = selectionRange?.text ?? "";
+    let from = 0;
+    let to = 0;
+    let text = "";
 
-    if (view && !view.state.selection.main.empty) {
-      from = view.state.selection.main.from;
-      to = view.state.selection.main.to;
-      text = view.state.sliceDoc(from, to);
+    if (viewMode === "preview") {
+      const sel = window.getSelection();
+      const rawSelected = sel ? sel.toString().trim() : "";
+      text = rawSelected || selectionRange?.text?.trim() || "";
+      if (text) {
+        const docString = view ? view.state.doc.toString() : content;
+        const idx = docString.indexOf(text);
+        if (idx !== -1) {
+          from = idx;
+          to = idx + text.length;
+        } else {
+          const idxLower = docString.toLowerCase().indexOf(text.toLowerCase());
+          if (idxLower !== -1) {
+            from = idxLower;
+            to = idxLower + text.length;
+          } else {
+            from = 0;
+            to = 0;
+          }
+        }
+      }
+    } else if (view) {
+      const main = view.state.selection.main;
+      if (!main.empty) {
+        from = main.from;
+        to = main.to;
+        text = view.state.sliceDoc(from, to);
+      } else if (
+        selectionRange &&
+        selectionRange.from <= main.head &&
+        main.head <= selectionRange.to &&
+        selectionRange.text.trim()
+      ) {
+        from = selectionRange.from;
+        to = selectionRange.to;
+        text = selectionRange.text;
+      } else {
+        const pos = main.head;
+        const word = view.state.wordAt(pos);
+        if (word && word.from < word.to && view.state.sliceDoc(word.from, word.to).trim()) {
+          from = word.from;
+          to = word.to;
+          text = view.state.sliceDoc(from, to);
+          view.dispatch({ selection: { anchor: from, head: to } });
+        } else {
+          const line = view.state.doc.lineAt(pos);
+          if (line.text.trim()) {
+            from = line.from;
+            to = line.to;
+            text = line.text;
+            view.dispatch({ selection: { anchor: from, head: to } });
+          } else {
+            from = pos;
+            to = pos;
+            text = line.text || "Comment";
+          }
+        }
+      }
+    } else if (selectionRange) {
+      from = selectionRange.from;
+      to = selectionRange.to;
+      text = selectionRange.text;
     }
 
-    if (!text.trim()) return;
-
     let targetTop = 20;
-    if (view) {
+    if (viewMode === "preview") {
+      const previewContainer = previewEl || previewRef.current;
+      if (previewContainer) {
+        const pRect = previewContainer.getBoundingClientRect();
+        if (selectionRange?.rect) {
+          targetTop = Math.max(8, selectionRange.rect.top - pRect.top + previewContainer.scrollTop);
+        } else {
+          const sel = window.getSelection();
+          if (sel && sel.rangeCount > 0) {
+            const r = sel.getRangeAt(0).getBoundingClientRect();
+            targetTop = Math.max(8, r.top - pRect.top + previewContainer.scrollTop);
+          }
+        }
+      }
+    } else if (view) {
       try {
         const line = view.lineBlockAt(Math.min(from, view.state.doc.length));
         targetTop = line.top;
@@ -4228,13 +4300,15 @@ export function Editor({
     };
 
     setPendingComment(pending);
-    view?.dispatch({
-      effects: setPendingCommentEffect.of({ from, to }),
-    });
+    if (view && from < to) {
+      view.dispatch({
+        effects: setPendingCommentEffect.of({ from, to }),
+      });
+    }
 
     setSelectionRange(null);
     window.getSelection()?.removeAllRanges();
-  }, [selectionRange]);
+  }, [viewMode, content, selectionRange, previewEl]);
 
   const handleSaveComment = useCallback(async (commentText: string) => {
     if (!pendingComment || !activePathRef.current) return;
@@ -4279,7 +4353,11 @@ export function Editor({
     const handleShortcut = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === "M" || e.key === "m")) {
         const view = viewRef.current;
-        if (view && !view.state.selection.main.empty) {
+        const sel = window.getSelection();
+        const hasSelection =
+          (view && !view.state.selection.main.empty) ||
+          (Boolean(sel && !sel.isCollapsed && sel.toString().trim()));
+        if (hasSelection) {
           e.preventDefault();
           handleStartAddComment();
         }
@@ -5045,6 +5123,10 @@ export function Editor({
           }
         }),
         EditorView.domEventHandlers({
+          contextmenu(event, _view) {
+            handleContextMenuRef.current?.(event);
+            return true;
+          },
           click(event, view) {
             const target = event.target as HTMLElement | null;
             const button = target?.closest<HTMLButtonElement>("[data-table-action][data-table-line]");
@@ -5507,6 +5589,10 @@ export function Editor({
     };
     const editorEl = editorRef.current;
     editorEl?.addEventListener('focusin', handleEditorFocusIn);
+    const handleNativeContextMenu = (e: MouseEvent) => {
+      handleContextMenuRef.current?.(e);
+    };
+    view.dom.addEventListener('contextmenu', handleNativeContextMenu);
     if (initialScroll > 0) {
       setTimeout(() => {
         if (view.scrollDOM) {
@@ -5527,6 +5613,7 @@ export function Editor({
     }
 
     return () => {
+      view.dom.removeEventListener('contextmenu', handleNativeContextMenu);
       editorEl?.removeEventListener('focusin', handleEditorFocusIn);
       const obsidianApp = (window as any).__oo_app;
       if (obsidianApp?.workspace?.activeEditor?.editor === obsidianEditor) {
@@ -6104,10 +6191,36 @@ export function Editor({
     };
   }, [activeTabId, tabs, isSpecialTab]);
 
-  const handleContextMenu = useCallback((e: React.MouseEvent) => {
+  const handleContextMenu = useCallback((e: React.MouseEvent | MouseEvent) => {
+    const mouseEvt = ('nativeEvent' in e ? (e as React.MouseEvent).nativeEvent : e) as MouseEvent;
+    if ((mouseEvt as any)?.__oo_context_handled || (e as any)?.__oo_context_handled) return;
+    (mouseEvt as any).__oo_context_handled = true;
+    (e as any).__oo_context_handled = true;
     e.preventDefault();
-    const app = (window as any).__oo_app;
-    if (!app) return;
+
+    const cmView = viewRef.current;
+    const clientX = typeof mouseEvt?.clientX === 'number' && !isNaN(mouseEvt.clientX) ? mouseEvt.clientX : 100;
+    const clientY = typeof mouseEvt?.clientY === 'number' && !isNaN(mouseEvt.clientY) ? mouseEvt.clientY : 100;
+
+    // If there is no selection or right-clicked outside existing selection, select word or position
+    if (cmView && viewMode !== "preview") {
+      const state = cmView.state;
+      const main = state.selection.main;
+      const clickPos = cmView.posAtCoords({ x: clientX, y: clientY });
+      const isInsideSelection = !main.empty && clickPos !== null && clickPos >= main.from && clickPos <= main.to;
+      if (!isInsideSelection && clickPos !== null) {
+        const word = state.wordAt(clickPos);
+        if (word && word.from < word.to && state.sliceDoc(word.from, word.to).trim()) {
+          cmView.dispatch({
+            selection: { anchor: word.from, head: word.to }
+          });
+        } else {
+          cmView.dispatch({
+            selection: { anchor: clickPos, head: clickPos }
+          });
+        }
+      }
+    }
 
     const getSettings = () => {
       try {
@@ -6294,6 +6407,17 @@ export function Editor({
 
     const menu = new Menu();
 
+    // Prominently add "Add Comment" at the top of the context menu
+    menu.addItem((item: any) =>
+      item
+        .setTitle('Add Comment')
+        .setIcon('message-square')
+        .onClick(() => {
+          handleStartAddComment();
+        })
+    );
+    menu.addSeparator();
+
     const findLinkOrEmbedAtCursor = (lineText: string, posInLine: number) => {
       const mdLinkRegex = /\[([^\]]*)\]\((https?:\/\/[^\s)]+)\)/g;
       let match;
@@ -6346,7 +6470,6 @@ export function Editor({
       return null;
     };
 
-    const cmView = viewRef.current;
     let detected = null;
     let targetFrom = 0;
     let targetTo = 0;
@@ -6467,24 +6590,16 @@ export function Editor({
       }
     }
 
-    const selection = viewRef.current?.state.sliceDoc(
-      viewRef.current.state.selection.main.from,
-      viewRef.current.state.selection.main.to
-    ) || '';
+    const selection = (viewMode === "preview"
+      ? (window.getSelection()?.toString() || selectionRange?.text || '')
+      : (viewRef.current?.state.sliceDoc(
+          viewRef.current.state.selection.main.from,
+          viewRef.current.state.selection.main.to
+        ) || ''));
     const searchTitle = selection
       ? `Search for "${selection.length > 20 ? selection.substring(0, 20) + '...' : selection}"`
       : 'Search for selection';
 
-    if (selection) {
-      menu.addItem((item: any) =>
-        item
-          .setTitle('Add Comment')
-          .setIcon('message-square')
-          .onClick(() => {
-            handleStartAddComment();
-          })
-      );
-    }
     menu.addItem((item: any) => item.setTitle('Add link').setIcon('link').onClick(() => { void addLink(); }));
     menu.addItem((item: any) => item.setTitle('Add external link').setIcon('external-link').onClick(() => { void addExternalLink(); }));
     menu.addSeparator();
@@ -6571,69 +6686,81 @@ export function Editor({
     }));
 
     // Sync real editor state to the API mock before triggering event
-    const activeLeaf = app.workspace.activeLeaf;
-    if (activeLeaf?.view?.getViewType?.() === 'markdown' && viewRef.current) {
-      // Ensure this leaf is considered the active one during the event trigger
-      if (activeLeaf.view) {
-        const view = activeLeaf.view;
-        let editorDescriptor: PropertyDescriptor | undefined;
-        for (let target: any = view; target && !editorDescriptor; target = Object.getPrototypeOf(target)) {
-          editorDescriptor = Object.getOwnPropertyDescriptor(target, 'editor');
+    try {
+      const app = (window as any).__oo_app;
+      const activeLeaf = app?.workspace?.activeLeaf;
+      if (activeLeaf?.view?.getViewType?.() === 'markdown' && viewRef.current) {
+        // Ensure this leaf is considered the active one during the event trigger
+        if (activeLeaf.view) {
+          const view = activeLeaf.view;
+          let editorDescriptor: PropertyDescriptor | undefined;
+          for (let target: any = view; target && !editorDescriptor; target = Object.getPrototypeOf(target)) {
+            editorDescriptor = Object.getOwnPropertyDescriptor(target, 'editor');
+          }
+          // Excalidraw subclasses the Markdown-compatible view surface but
+          // exposes a getter-only editor property. Its own editor bridge must
+          // remain untouched by the host Markdown context-menu bridge.
+          if (editorDescriptor && !editorDescriptor.writable && !editorDescriptor.set) {
+            menu.showAtMouseEvent(mouseEvt);
+            return;
+          }
+          const currentCmView = viewRef.current;
+          const state = currentCmView.state;
+
+          // Sync the file info
+          const activeTab = tabs.find(t => t.id === activeTabId);
+          if (activeTab) {
+            setWritableViewProperty(activeLeaf.view, 'file', new TFile(activeTab.path));
+          }
+
+          // Initialize editor mocks if needed
+          const editor = view.editor || {};
+          view.editor = editor;
+
+          // Update the mock methods with real data from CodeMirror 6
+          editor.getValue = () => state.doc.toString();
+          editor.getSelection = () => state.sliceDoc(state.selection.main.from, state.selection.main.to);
+          editor.somethingSelected = () => !state.selection.main.empty;
+          editor.getCursor = () => {
+            const pos = state.selection.main.head;
+            const line = state.doc.lineAt(pos);
+            return { line: line.number - 1, ch: pos - line.from };
+          };
+          editor.replaceSelection = (text: string) => {
+            const main = state.selection.main;
+            currentCmView.dispatch({
+              changes: { from: main.from, to: main.to, insert: text },
+              selection: { anchor: main.from + text.length }
+            });
+          };
+
+          // Add more standard Obsidian editor methods for compatibility
+          editor.getLine = (n: number) => state.doc.line(n + 1).text;
+          editor.lineCount = () => state.doc.lines;
+          editor.getDoc = () => editor;
+          editor.cm = editor;
+
+          // Ensure sourceMode shim is present as expected by many plugins
+          try {
+            if (view.sourceMode) {
+              view.sourceMode.cmEditor = editor;
+            }
+          } catch { }
+
+          console.log(`[Editor] Triggering editor-menu for ${activeTab?.path}. Selection: "${editor.getSelection()}"`);
+          if (typeof app?.workspace?.trigger === 'function') {
+            app.workspace.trigger('editor-menu', menu, editor, view);
+          }
         }
-        // Excalidraw subclasses the Markdown-compatible view surface but
-        // exposes a getter-only editor property. Its own editor bridge must
-        // remain untouched by the host Markdown context-menu bridge.
-        if (editorDescriptor && !editorDescriptor.writable && !editorDescriptor.set) {
-          menu.showAtMouseEvent(e.nativeEvent);
-          return;
-        }
-        const cmView = viewRef.current;
-        const state = cmView.state;
-
-        // Sync the file info
-        const activeTab = tabs.find(t => t.id === activeTabId);
-        if (activeTab) {
-          setWritableViewProperty(activeLeaf.view, 'file', new TFile(activeTab.path));
-        }
-
-        // Initialize editor mocks if needed
-        const editor = view.editor || {};
-        view.editor = editor;
-
-        // Update the mock methods with real data from CodeMirror 6
-        editor.getValue = () => state.doc.toString();
-        editor.getSelection = () => state.sliceDoc(state.selection.main.from, state.selection.main.to);
-        editor.somethingSelected = () => !state.selection.main.empty;
-        editor.getCursor = () => {
-          const pos = state.selection.main.head;
-          const line = state.doc.lineAt(pos);
-          return { line: line.number - 1, ch: pos - line.from };
-        };
-        editor.replaceSelection = (text: string) => {
-          const main = state.selection.main;
-          cmView.dispatch({
-            changes: { from: main.from, to: main.to, insert: text },
-            selection: { anchor: main.from + text.length }
-          });
-        };
-
-        // Add more standard Obsidian editor methods for compatibility
-        editor.getLine = (n: number) => state.doc.line(n + 1).text;
-        editor.lineCount = () => state.doc.lines;
-        editor.getDoc = () => editor;
-        editor.cm = editor;
-
-        // Ensure sourceMode shim is present as expected by many plugins
-        view.sourceMode = view.sourceMode || {};
-        view.sourceMode.cmEditor = editor;
-
-        console.log(`[Editor] Triggering editor-menu for ${activeTab?.path}. Selection: "${editor.getSelection()}"`);
-        app.workspace.trigger('editor-menu', menu, editor, view);
       }
+    } catch (err) {
+      console.warn('[Editor] Failed to sync editor mock for plugins:', err);
     }
 
-    menu.showAtMouseEvent(e.nativeEvent);
-  }, [activeTabId, tabs]);
+    menu.showAtMouseEvent(mouseEvt);
+  }, [activeTabId, tabs, handleStartAddComment, viewMode, selectionRange]);
+
+  handleContextMenuRef.current = handleContextMenu;
 
   const getClampedToolbarCoords = () => {
     if (!selectionRange) return { top: 0, left: 0 };
@@ -6705,6 +6832,7 @@ export function Editor({
             ...getClampedToolbarCoords(),
             zIndex: 5000,
           }}
+          onContextMenu={handleContextMenu}
           onMouseDown={(e) => {
             const target = e.target as HTMLElement;
             if (
@@ -6738,14 +6866,6 @@ export function Editor({
               onClick={() => setShowPromptInput(!showPromptInput)}
             >
               Prompt
-            </button>
-            <button
-              className={inlineAiButtonClass}
-              onClick={handleStartAddComment}
-              title="Add Comment (Ctrl+Shift+M)"
-            >
-              <MessageSquare className="mr-1.5 h-3.5 w-3.5 inline opacity-75" />
-              Comment
             </button>
           </div>
           {showPromptInput && (
@@ -6903,6 +7023,8 @@ export function Editor({
               onResolveComment={handleResolveComment}
               onDeleteComment={handleDeleteComment}
               onReplyComment={handleReplyComment}
+              containerEl={viewMode === "preview" ? (previewEl || previewRef.current) : (viewRef.current?.scrollDOM || null)}
+              isReadMode={viewMode === "preview"}
             />
 
             <div
@@ -6927,9 +7049,15 @@ export function Editor({
 
             {(viewMode === "preview" || viewMode === "split") && (
               <div
-                ref={previewRef}
+                ref={(el) => {
+                  (previewRef as any).current = el;
+                  if (previewEl !== el) {
+                    setPreviewEl(el);
+                  }
+                }}
                 onContextMenu={handleContextMenu}
                 style={{
+                  position: "relative",
                   flex:
                     viewMode === "split"
                       ? `0 0 calc(${100 - editorWidth}% - 4px)`
@@ -6950,6 +7078,9 @@ export function Editor({
                   onImageClick={handleOpenImageLightbox}
                   theme={theme}
                   settings={settings}
+                  comments={comments}
+                  pendingComment={pendingComment}
+                  onCommentClick={(id) => setActiveCommentId(id)}
                   onContentChange={(nextContent) => onContentChange(nextContent, true, activePathRef.current || undefined)}
                 />
               </div>

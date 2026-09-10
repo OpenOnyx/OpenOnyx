@@ -3,10 +3,10 @@ import {
   Paperclip,
   AtSign,
   ArrowUp,
-  Check,
   Trash2,
   CornerDownRight,
-  MoreVertical,
+  MessageSquare,
+  X,
 } from "lucide-react";
 import type { NoteComment, CommentReply } from "../../types/comments";
 import { formatRelativeTime } from "../../utils/commentsStore";
@@ -119,27 +119,60 @@ export const CommentInputBox: React.FC<CommentInputBoxProps> = ({
   );
 };
 
+export interface CommentBadgeProps {
+  count: number;
+  isActive?: boolean;
+  onClick: (e: React.MouseEvent) => void;
+}
+
+/**
+ * Compact Notion-style comment indicator shown when space is limited (Image 1)
+ */
+export const CommentBadge: React.FC<CommentBadgeProps> = ({
+  count,
+  isActive = false,
+  onClick,
+}) => {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`cm-comment-badge group flex items-center gap-1 rounded px-1.5 py-0.5 text-[12px] font-normal transition-all cursor-pointer select-none ${
+        isActive
+          ? "bg-[#333] text-white shadow-sm"
+          : "text-[#999999] hover:bg-[#2a2a2a] hover:text-[#f0f0f0]"
+      }`}
+      title={`${count} comment${count > 1 ? "s" : ""}`}
+    >
+      <MessageSquare className="h-3.5 w-3.5 opacity-80 group-hover:opacity-100" />
+      <span className="leading-none">{count}</span>
+    </button>
+  );
+};
+
 interface CommentCardProps {
   comment: NoteComment;
   isActive?: boolean;
+  embedded?: boolean;
   onSelect?: () => void;
   onResolve?: () => void;
   onDelete?: () => void;
   onReply?: (content: string) => void;
+  onClose?: () => void;
 }
 
 export const CommentCard: React.FC<CommentCardProps> = ({
   comment,
   isActive = false,
+  embedded = false,
   onSelect,
-  onResolve,
   onDelete,
   onReply,
+  onClose,
 }) => {
   const [isReplying, setIsReplying] = useState(false);
   const [replyText, setReplyText] = useState("");
   const [showActions, setShowActions] = useState(false);
-  const [avatarError, setAvatarError] = useState(false);
 
   const handleSendReply = () => {
     if (replyText.trim() && onReply) {
@@ -151,81 +184,67 @@ export const CommentCard: React.FC<CommentCardProps> = ({
 
   return (
     <div
-      className={`group relative w-[300px] rounded-lg border bg-[#1c1c1c] p-3 text-left shadow-md transition-all ${
-        isActive
-          ? "border-[var(--accent-primary,#facc15)] shadow-[0_0_12px_rgba(250,204,21,0.15)]"
-          : "border-[#2c2d2c] hover:border-[#444]"
-      }`}
+      className={
+        embedded
+          ? "group relative w-full text-left transition-all py-1"
+          : "group relative w-[300px] rounded-lg border border-[#2c2d2c] bg-[#1e1e1e] p-3 text-left shadow-md transition-all hover:border-[#383838]"
+      }
       onClick={onSelect}
       onMouseEnter={() => setShowActions(true)}
       onMouseLeave={() => setShowActions(false)}
     >
-      {/* Top Header Row */}
+      {/* Top Header Row - no profile picture avatar */}
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <div className="flex h-6 w-6 shrink-0 items-center justify-center overflow-hidden rounded-full bg-emerald-800 text-[10px] font-bold text-white">
-            {!avatarError && (comment.author.avatar || "/default-avatar.png") ? (
-              <img
-                src={comment.author.avatar || "/default-avatar.png"}
-                alt={comment.author.name}
-                className="h-full w-full object-cover"
-                onError={() => setAvatarError(true)}
-              />
-            ) : (
-              (comment.author.name[0] || "U").toUpperCase()
-            )}
-          </div>
-          <div className="flex items-baseline gap-2">
-            <span className="text-[13px] font-semibold text-white tracking-tight">
-              {comment.author.name}
-            </span>
-            <span className="text-[12px] font-normal text-[#888888]">
-              {formatRelativeTime(comment.createdAt)}
-            </span>
-          </div>
+        <div className="flex items-baseline gap-2">
+          <span className="text-[13px] font-medium text-[#f0f0f0] tracking-tight">
+            {comment.author.name}
+          </span>
+          <span className="text-[11.5px] font-normal text-[#888888]">
+            {formatRelativeTime(comment.createdAt)}
+          </span>
         </div>
 
-        {/* Action buttons on hover */}
+        {/* Action buttons on hover - ONLY delete button, no tick mark */}
         <div
           className={`flex items-center gap-1 transition-opacity ${
             showActions ? "opacity-100" : "opacity-0"
           }`}
           onClick={(e) => e.stopPropagation()}
         >
-          {onResolve && (
-            <button
-              type="button"
-              title="Resolve comment"
-              className="flex h-5 w-5 items-center justify-center rounded text-[#888] hover:bg-[#2e2e2e] hover:text-[#4ade80]"
-              onClick={onResolve}
-            >
-              <Check className="h-3.5 w-3.5 stroke-[2.5]" />
-            </button>
-          )}
           {onDelete && (
             <button
               type="button"
               title="Delete comment"
-              className="flex h-5 w-5 items-center justify-center rounded text-[#888] hover:bg-[#2e2e2e] hover:text-[#f87171]"
+              className="flex h-5 w-5 items-center justify-center rounded text-[#888] hover:bg-[#2e2e2e] hover:text-[#f87171] transition-colors"
               onClick={onDelete}
             >
               <Trash2 className="h-3.5 w-3.5" />
             </button>
           )}
+          {onClose && (
+            <button
+              type="button"
+              title="Close"
+              className="flex h-5 w-5 items-center justify-center rounded text-[#888] hover:bg-[#2e2e2e] hover:text-white transition-colors"
+              onClick={onClose}
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          )}
         </div>
       </div>
 
-      {/* Comment Body */}
-      <div className="ml-[32px] mt-1 break-words text-[13px] leading-relaxed text-[#ededed] whitespace-pre-wrap">
+      {/* Comment Body - flush with left padding */}
+      <div className="mt-1.5 break-words text-[13px] leading-relaxed text-[#ededed] whitespace-pre-wrap">
         {comment.content}
       </div>
 
-      {/* Threaded Replies */}
+      {/* Threaded Replies - flush with left padding, no profile picture */}
       {comment.replies && comment.replies.length > 0 && (
-        <div className="ml-[32px] mt-2.5 flex flex-col gap-2 border-t border-[#2e2e2e] pt-2">
+        <div className="mt-2.5 flex flex-col gap-2 border-t border-[#2a2a2a] pt-2">
           {comment.replies.map((rep) => (
             <div key={rep.id} className="flex flex-col gap-0.5">
-              <div className="flex items-center gap-1.5">
+              <div className="flex items-baseline gap-2">
                 <span className="text-[12px] font-medium text-[#ccc]">
                   {rep.author.name}
                 </span>
@@ -233,7 +252,7 @@ export const CommentCard: React.FC<CommentCardProps> = ({
                   {formatRelativeTime(rep.createdAt)}
                 </span>
               </div>
-              <div className="text-[12px] text-[#ddd] break-words">
+              <div className="mt-0.5 text-[12px] text-[#ddd] break-words whitespace-pre-wrap">
                 {rep.content}
               </div>
             </div>
@@ -241,9 +260,9 @@ export const CommentCard: React.FC<CommentCardProps> = ({
         </div>
       )}
 
-      {/* Reply Toggle & Input */}
+      {/* Reply Toggle & Input - flush with left padding */}
       {onReply && (
-        <div className="ml-[32px] mt-2 pt-1">
+        <div className="mt-2 pt-0.5">
           {!isReplying ? (
             <button
               type="button"

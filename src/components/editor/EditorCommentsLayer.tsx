@@ -1,20 +1,60 @@
 import React, { useMemo, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import type { EditorView } from "@codemirror/view";
+import { MessageSquare, X } from "lucide-react";
 import type { NoteComment, PendingComment } from "../../types/comments";
-import { CommentInputBox, CommentCard } from "./CommentComponents";
+import { CommentInputBox, CommentCard, CommentBadge } from "./CommentComponents";
 
 interface EditorCommentsLayerProps {
   view: EditorView | null;
+  containerEl?: HTMLElement | null;
+  isReadMode?: boolean;
   comments: NoteComment[];
   pendingComment: PendingComment | null;
   activeCommentId: string | null;
   onSaveComment: (text: string) => void;
   onCancelPending: () => void;
   onSelectComment: (commentId: string) => void;
-  onResolveComment: (commentId: string) => void;
+  onResolveComment?: (commentId: string) => void;
   onDeleteComment: (commentId: string) => void;
   onReplyComment: (commentId: string, content: string) => void;
+}
+
+/**
+ * Returns the document-relative vertical pixel coordinate for a given position
+ * within view.scrollDOM. Uses coordsAtPos when available for visual accuracy
+ * (accounts for wrapping, zoom, font size), with lineBlockAt fallback.
+ */
+function getLineTopForPos(view: EditorView, pos: number): number {
+  if (!view || !view.state || !view.state.doc) return 20;
+  const docLength = view.state.doc.length;
+  const clampedPos = Math.max(0, Math.min(pos, docLength));
+
+  try {
+    const coords = view.coordsAtPos(clampedPos);
+    if (coords && view.scrollDOM) {
+      const scrollRect = view.scrollDOM.getBoundingClientRect();
+      const topInScroller = coords.top - scrollRect.top + view.scrollDOM.scrollTop;
+      if (Number.isFinite(topInScroller) && topInScroller >= 0) {
+        return topInScroller;
+      }
+    }
+  } catch {
+    // fallback to lineBlockAt below
+  }
+
+  try {
+    const block = view.lineBlockAt(clampedPos);
+    return Math.max(8, block.top);
+  } catch {
+    return 20;
+  }
+}
+
+interface LineCommentGroup {
+  lineNumber: number;
+  comments: NoteComment[];
+  targetTop: number;
 }
 
 interface LayoutItem {
@@ -27,52 +67,195 @@ interface LayoutItem {
 
 export const EditorCommentsLayer: React.FC<EditorCommentsLayerProps> = ({
   view,
+  containerEl,
+  isReadMode = false,
   comments,
   pendingComment,
   activeCommentId,
   onSaveComment,
   onCancelPending,
   onSelectComment,
-  onResolveComment,
   onDeleteComment,
   onReplyComment,
 }) => {
-  // Update tick to trigger re-measurement when doc or viewport changes
+  // Update tick to trigger re-measurement when doc, font size, content width, or viewport changes
   const [layoutTick, setLayoutTick] = useState(0);
+  const [openPopoverLine, setOpenPopoverLine] = useState<number | null>(null);
+
+  const targetScrollEl = isReadMode && containerEl ? containerEl : (view?.scrollDOM || containerEl || null);
 
   useEffect(() => {
-    if (!view) return;
+    if (!targetScrollEl) return;
 
-    // Listen to scroll and resize
-    const handleScroll = () => setLayoutTick((t) => (t + 1) % 10000);
-    const scrollEl = view.scrollDOM;
-    scrollEl?.addEventListener("scroll", handleScroll, { passive: true });
-    window.addEventListener("resize", handleScroll, { passive: true });
+    const handleUpdate = () => setLayoutTick((t) => (t + 1) % 10000);
+
+    targetScrollEl.addEventListener("scroll", handleUpdate, { passive: true });
+    window.addEventListener("resize", handleUpdate, { passive: true });
+
+    let ro: ResizeObserver | null = null;
+    if (typeof ResizeObserver !== "undefined") {
+      ro = new ResizeObserver(() => handleUpdate());
+      ro.observe(targetScrollEl);
+      if (view?.contentDOM) ro.observe(view.contentDOM);
+      const previewChild = targetScrollEl.querySelector(".markdown-preview");
+      if (previewChild) ro.observe(previewChild);
+    }
 
     return () => {
-      scrollEl?.removeEventListener("scroll", handleScroll);
-      window.removeEventListener("resize", handleScroll);
+      targetScrollEl.removeEventListener("scroll", handleUpdate);
+      window.removeEventListener("resize", handleUpdate);
+      ro?.disconnect();
     };
-  }, [view]);
+  }, [targetScrollEl, view]);
 
-  // Compute non-overlapping layout positions
-  const layoutItems = useMemo<LayoutItem[]>(() => {
-    if (!view) return [];
+  // If an active comment is selected, open its popover in compact mode
+  useEffect(() => {
+    if (!activeCommentId) return;
+    const comment = comments.find((c) => c.id === activeCommentId);
+    if (!comment) return;
+    try {
+      if (view) {
+        const docLength = view.state.doc.length;
+        const line = view.state.doc.lineAt(Math.max(0, Math.min(comment.from, docLength)));
+        setOpenPopoverLine(line.number);
+      } else {
+        setOpenPopoverLine(1);
+      }
+    } catch {
+      setOpenPopoverLine(1);
+    }
+  }, [activeCommentId, comments, view]);
+
+  // Close compact popover on Escape or click outside
+  useEffect(() => {
+    if (openPopoverLine === null) return;
+    const handleOutsideClick = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (
+        !target.closest(".cm-comment-popover") &&
+        !target.closest(".cm-comment-badge")
+      ) {
+        setOpenPopoverLine(null);
+      }
+    };
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setOpenPopoverLine(null);
+      }
+    };
+    document.addEventListener("pointerdown", handleOutsideClick);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", handleOutsideClick);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [openPopoverLine]);
+
+  // Compute line top in either Editor mode or Read Mode
+  const getLineTop = (pos: number, commentId?: string, isPending?: boolean): number => {
+    if (isReadMode && targetScrollEl) {
+      if (commentId) {
+        const mark = targetScrollEl.querySelector(`.cm-comment-highlight[data-comment-id="${commentId}"]`);
+        if (mark) {
+          const cRect = targetScrollEl.getBoundingClientRect();
+          const mRect = mark.getBoundingClientRect();
+          return Math.max(8, mRect.top - cRect.top + targetScrollEl.scrollTop);
+        }
+      }
+      if (isPending) {
+        const pendingMark = targetScrollEl.querySelector(".cm-comment-highlight.cm-comment-pending");
+        if (pendingMark) {
+          const cRect = targetScrollEl.getBoundingClientRect();
+          const mRect = pendingMark.getBoundingClientRect();
+          return Math.max(8, mRect.top - cRect.top + targetScrollEl.scrollTop);
+        }
+        if (pendingComment?.targetTop) {
+          return pendingComment.targetTop;
+        }
+      }
+      const docLen = view?.state?.doc?.length || 1;
+      const ratio = Math.max(0, Math.min(1, pos / docLen));
+      return Math.max(20, ratio * (targetScrollEl.scrollHeight || 600));
+    }
+
+    if (view) {
+      return getLineTopForPos(view, pos);
+    }
+    return 20;
+  };
+
+  // Space calculation: check if there is room for full 300px cards in the right margin
+  const spaceInfo = useMemo(() => {
+    if (!targetScrollEl) {
+      return { hasEnoughSpace: false, rightMargin: 0 };
+    }
+    const scrollerRect = targetScrollEl.getBoundingClientRect();
+    const contentChild =
+      (isReadMode ? targetScrollEl.querySelector(".markdown-preview") : view?.contentDOM) ||
+      targetScrollEl.firstElementChild;
+    const contentRect = contentChild ? contentChild.getBoundingClientRect() : scrollerRect;
+    const rightMargin = scrollerRect.right - contentRect.right;
+    return {
+      hasEnoughSpace: rightMargin >= 320,
+      rightMargin,
+    };
+  }, [targetScrollEl, view, isReadMode, layoutTick]);
+
+  // Compact mode groups by line (Image 1)
+  const lineGroups = useMemo<LineCommentGroup[]>(() => {
+    if (!targetScrollEl) return [];
+    const docLength = view?.state?.doc?.length || 0;
+    const map = new Map<number, { comments: NoteComment[]; targetTop: number }>();
+
+    for (const c of comments) {
+      if (c.resolved) continue;
+      let lineNum = 1;
+      try {
+        if (view) {
+          const line = view.state.doc.lineAt(Math.max(0, Math.min(c.from, docLength)));
+          lineNum = line.number;
+        } else {
+          lineNum = Math.floor(c.from / 80) + 1;
+        }
+      } catch {
+        lineNum = 1;
+      }
+
+      const top = getLineTop(c.from, c.id);
+      // Group comments with matching line or close vertical distance
+      let grouped = false;
+      for (const [existingLine, data] of map.entries()) {
+        if (existingLine === lineNum || Math.abs(data.targetTop - top) < 22) {
+          data.comments.push(c);
+          grouped = true;
+          break;
+        }
+      }
+
+      if (!grouped) {
+        map.set(lineNum, { comments: [c], targetTop: top });
+      }
+    }
+
+    return Array.from(map.entries())
+      .map(([lineNum, data]) => ({
+        lineNumber: lineNum,
+        comments: data.comments,
+        targetTop: data.targetTop,
+      }))
+      .sort((a, b) => a.targetTop - b.targetTop);
+  }, [targetScrollEl, view, comments, isReadMode, layoutTick]);
+
+  // Wide mode layout items with vertical collision avoidance (Image 3)
+  const wideLayoutItems = useMemo<LayoutItem[]>(() => {
+    if (!targetScrollEl) return [];
 
     const items: LayoutItem[] = [];
-    const docLength = view.state.doc.length;
 
     // Existing active comments
     for (const c of comments) {
       if (c.resolved) continue;
-      let targetTop = 20;
-      try {
-        const pos = Math.max(0, Math.min(c.from, docLength));
-        const line = view.lineBlockAt(pos);
-        targetTop = line.top;
-      } catch {
-        targetTop = 20;
-      }
+      const targetTop = getLineTop(c.from, c.id);
       items.push({
         key: c.id,
         isPending: false,
@@ -84,14 +267,7 @@ export const EditorCommentsLayer: React.FC<EditorCommentsLayerProps> = ({
 
     // Pending draft comment
     if (pendingComment) {
-      let targetTop = pendingComment.targetTop;
-      try {
-        const pos = Math.max(0, Math.min(pendingComment.from, docLength));
-        const line = view.lineBlockAt(pos);
-        targetTop = line.top;
-      } catch {
-        targetTop = pendingComment.targetTop || 20;
-      }
+      const targetTop = getLineTop(pendingComment.from, undefined, true);
       items.push({
         key: "pending-comment",
         isPending: true,
@@ -103,7 +279,7 @@ export const EditorCommentsLayer: React.FC<EditorCommentsLayerProps> = ({
     // Sort ascending by targetTop
     items.sort((a, b) => a.targetTop - b.targetTop);
 
-    // Collision avoidance: ensure adjacent cards don't overlap
+    // Collision avoidance: ensure adjacent cards don't overlap vertically
     let currentY = 16;
     const MIN_GAP = 12;
 
@@ -112,34 +288,113 @@ export const EditorCommentsLayer: React.FC<EditorCommentsLayerProps> = ({
       const actualY = Math.max(desiredY, currentY);
       item.computedTop = actualY;
 
-      const estimatedHeight = item.isPending ? 44 : 76;
+      const replyCount = item.comment?.replies?.length || 0;
+      const estimatedHeight = item.isPending ? 48 : 74 + replyCount * 38;
       currentY = actualY + estimatedHeight + MIN_GAP;
     }
 
     return items;
-  }, [view, comments, pendingComment, layoutTick]);
+  }, [targetScrollEl, view, comments, pendingComment, isReadMode, layoutTick]);
 
-  if (!view || !view.scrollDOM) return null;
-  if (layoutItems.length === 0) return null;
+  if (!targetScrollEl) return null;
+  const hasComments = comments.some((c) => !c.resolved);
+  if (!hasComments && !pendingComment) return null;
+
+  const isCompactMode = !spaceInfo.hasEnoughSpace;
 
   const content = (
     <div
-      className="cm-comments-layer pointer-events-none absolute right-[28px] top-0 z-[40] w-[320px]"
+      className="cm-comments-layer pointer-events-none absolute left-0 right-0 top-0 z-[40]"
       style={{
         height: `${Math.max(
-          view.scrollDOM.scrollHeight || 0,
-          view.contentDOM.offsetHeight || 0,
+          targetScrollEl.scrollHeight || 0,
+          targetScrollEl.clientHeight || 0,
           800
         )}px`,
       }}
     >
-      {layoutItems.map((item) => {
-        if (item.isPending) {
-          return (
+      {/* ── Compact Mode (Image 1): Line Badges + Click-to-Open Popover ── */}
+      {isCompactMode && (
+        <>
+          {lineGroups.map((group) => {
+            const isPopoverOpen = openPopoverLine === group.lineNumber;
+            return (
+              <div
+                key={`badge-line-${group.lineNumber}`}
+                className="pointer-events-auto absolute right-[14px] transition-all duration-150 ease-out"
+                style={{ top: `${group.targetTop}px` }}
+              >
+                <CommentBadge
+                  count={group.comments.length}
+                  isActive={isPopoverOpen}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setOpenPopoverLine(isPopoverOpen ? null : group.lineNumber);
+                  }}
+                />
+
+                {/* Popover shown ONLY when clicked (Image 1 requirement) */}
+                {isPopoverOpen && (
+                  <div
+                    className="cm-comment-popover pointer-events-auto absolute right-0 top-7 z-[60] flex w-[310px] flex-col gap-2.5 rounded-lg border border-[#383838] bg-[#1a1a1a] p-3 shadow-2xl transition-all"
+                    onClick={(e) => e.stopPropagation()}
+                    onMouseDown={(e) => e.stopPropagation()}
+                  >
+                    <div className="flex items-center justify-between border-b border-[#2c2c2c] pb-1.5">
+                      <div className="flex items-center gap-1.5 text-[12px] font-medium text-[#aaa]">
+                        <MessageSquare className="h-3.5 w-3.5 text-[#888]" />
+                        <span>
+                          {group.comments.length} comment
+                          {group.comments.length > 1 ? "s" : ""}
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        title="Close"
+                        className="flex h-5 w-5 items-center justify-center rounded text-[#888] hover:bg-[#2a2a2a] hover:text-white"
+                        onClick={() => setOpenPopoverLine(null)}
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+
+                    <div className="flex flex-col gap-2">
+                      {group.comments.map((c, idx) => (
+                        <div key={c.id} className={idx > 0 ? "border-t border-[#2a2a2a] pt-2" : ""}>
+                          <CommentCard
+                            comment={c}
+                            isActive={c.id === activeCommentId}
+                            embedded={true}
+                            onSelect={() => {
+                              onSelectComment(c.id);
+                              if (view) {
+                                try {
+                                  view.dispatch({
+                                    selection: { anchor: c.from },
+                                    scrollIntoView: true,
+                                  });
+                                } catch {}
+                              }
+                            }}
+                            onDelete={() => onDeleteComment(c.id)}
+                            onReply={(text) => onReplyComment(c.id, text)}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+
+          {/* Pending Comment Input in Compact Mode */}
+          {pendingComment && (
             <div
-              key="pending-comment"
-              className="pointer-events-auto absolute right-0 transition-all duration-150 ease-out"
-              style={{ top: `${item.computedTop}px` }}
+              className="pointer-events-auto absolute right-[14px] z-[65] transition-all duration-150 ease-out"
+              style={{
+                top: `${getLineTop(pendingComment.from, undefined, true)}px`,
+              }}
             >
               <CommentInputBox
                 onSubmit={onSaveComment}
@@ -147,44 +402,67 @@ export const EditorCommentsLayer: React.FC<EditorCommentsLayerProps> = ({
                 autoFocus
               />
             </div>
-          );
-        }
+          )}
+        </>
+      )}
 
-        if (item.comment) {
-          const c = item.comment;
-          const isActive = c.id === activeCommentId;
-          return (
-            <div
-              key={c.id}
-              className="pointer-events-auto absolute right-0 transition-all duration-150 ease-out"
-              style={{ top: `${item.computedTop}px` }}
-            >
-              <CommentCard
-                comment={c}
-                isActive={isActive}
-                onSelect={() => {
-                  onSelectComment(c.id);
-                  try {
-                    view.dispatch({
-                      selection: { anchor: c.from },
-                      scrollIntoView: true,
-                    });
-                  } catch {
-                    // ignore
-                  }
-                }}
-                onResolve={() => onResolveComment(c.id)}
-                onDelete={() => onDeleteComment(c.id)}
-                onReply={(text) => onReplyComment(c.id, text)}
-              />
-            </div>
-          );
-        }
+      {/* ── Wide Mode (Image 3): Full Cards in Right Margin ── */}
+      {!isCompactMode && (
+        <>
+          {wideLayoutItems.map((item) => {
+            if (item.isPending) {
+              return (
+                <div
+                  key="pending-comment"
+                  className="pointer-events-auto absolute right-[20px] transition-all duration-150 ease-out"
+                  style={{ top: `${item.computedTop}px` }}
+                >
+                  <CommentInputBox
+                    onSubmit={onSaveComment}
+                    onCancel={onCancelPending}
+                    autoFocus
+                  />
+                </div>
+              );
+            }
 
-        return null;
-      })}
+            if (item.comment) {
+              const c = item.comment;
+              const isActive = c.id === activeCommentId;
+              return (
+                <div
+                  key={c.id}
+                  className="pointer-events-auto absolute right-[20px] transition-all duration-150 ease-out"
+                  style={{ top: `${item.computedTop}px` }}
+                >
+                  <CommentCard
+                    comment={c}
+                    isActive={isActive}
+                    onSelect={() => {
+                      onSelectComment(c.id);
+                      if (view) {
+                        try {
+                          view.dispatch({
+                            selection: { anchor: c.from },
+                            scrollIntoView: true,
+                          });
+                        } catch {}
+                      }
+                    }}
+                    onDelete={() => onDeleteComment(c.id)}
+                    onReply={(text) => onReplyComment(c.id, text)}
+                  />
+                </div>
+              );
+            }
+
+            return null;
+          })}
+        </>
+      )}
     </div>
   );
 
-  return createPortal(content, view.scrollDOM);
+  return createPortal(content, targetScrollEl);
 };
+

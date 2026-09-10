@@ -129,6 +129,7 @@ function getLucideIconHtml(iconId: string): string | null {
     'pencil': 'pencil',
     'trash': 'trash-2',
     'save': 'save',
+    'comment': 'message-square',
   };
   iconId = aliases[iconId] || iconId;
 

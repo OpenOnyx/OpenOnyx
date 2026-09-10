@@ -655,16 +655,29 @@ export class Menu {
     }
   }
 
+  private _closeHandler: ((e: any) => void) | null = null;
+  private _keyHandler: ((e: any) => void) | null = null;
+
   showAtMouseEvent(evt: MouseEvent): this {
+    // Dismiss any existing menus first
+    document.querySelectorAll('.oo-plugin-menu').forEach(el => el.remove());
+
+    const clientX = typeof evt?.clientX === 'number' && !isNaN(evt.clientX) ? evt.clientX : 100;
+    const clientY = typeof evt?.clientY === 'number' && !isNaN(evt.clientY) ? evt.clientY : 100;
+
     this.dom.style.position = 'fixed';
-    this.dom.style.visibility = 'hidden';
+    this.dom.style.left = `${Math.max(10, clientX)}px`;
+    this.dom.style.top = `${Math.max(10, clientY)}px`;
+    this.dom.style.zIndex = '99999';
+    this.dom.style.visibility = 'visible';
+    this.dom.style.display = 'block';
     (this._parentEl || document.body).appendChild(this.dom);
 
-    // Use requestAnimationFrame to ensure the DOM has been updated so we can measure it
+    // Adjust position so it fits within screen bounds
     requestAnimationFrame(() => {
       const rect = this.dom.getBoundingClientRect();
-      let left = evt.clientX;
-      let top = evt.clientY;
+      let left = clientX;
+      let top = clientY;
 
       if (left + rect.width > window.innerWidth) {
         left = window.innerWidth - rect.width - 10;
@@ -675,7 +688,6 @@ export class Menu {
 
       this.dom.style.left = `${Math.max(10, left)}px`;
       this.dom.style.top = `${Math.max(10, top)}px`;
-      this.dom.style.visibility = 'visible';
     });
 
     const isTargetInMenuOrSubmenus = (menu: Menu, target: Node): boolean => {
@@ -687,26 +699,45 @@ export class Menu {
     const close = (e: MouseEvent) => {
       if (!isTargetInMenuOrSubmenus(this, e.target as Node)) {
         this.close();
-        document.removeEventListener('mousedown', close);
       }
     };
-    // Use mousedown instead of click to prevent issues with other click handlers
-    setTimeout(() => document.addEventListener('mousedown', close), 0);
+
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        this.close();
+      }
+    };
+
+    this._closeHandler = close;
+    this._keyHandler = handleKey;
+
+    setTimeout(() => {
+      if (this._closeHandler === close) {
+        document.addEventListener('pointerdown', close, true);
+        document.addEventListener('mousedown', close, true);
+        document.addEventListener('keydown', handleKey, true);
+      }
+    }, 100);
     return this;
   }
 
   showAtPosition(pos: { x: number; y: number }): this {
-    this.dom.style.position = 'fixed';
-    this.dom.style.left = `${pos.x}px`;
-    this.dom.style.top = `${pos.y}px`;
-    (this._parentEl || document.body).appendChild(this.dom);
-    return this;
+    return this.showAtMouseEvent({ clientX: pos.x, clientY: pos.y } as MouseEvent);
   }
 
   hide(): this { this.close(); return this; }
   close(): void {
     this.hideActiveSubmenu();
     this.dom.remove();
+    if (this._closeHandler) {
+      document.removeEventListener('pointerdown', this._closeHandler, true);
+      document.removeEventListener('mousedown', this._closeHandler, true);
+      this._closeHandler = null;
+    }
+    if (this._keyHandler) {
+      document.removeEventListener('keydown', this._keyHandler, true);
+      this._keyHandler = null;
+    }
     for (const callback of this._onHideCallbacks.splice(0)) callback();
   }
 }
@@ -730,6 +761,9 @@ export class MenuItem {
         return;
       }
       this._callback?.(e);
+      if (this.parentMenu) {
+        this.parentMenu.close();
+      }
       // Dismiss all open menus
       document.querySelectorAll('.oo-plugin-menu').forEach(el => el.remove());
     });

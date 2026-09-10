@@ -175,4 +175,110 @@ describe("Comments System", () => {
       expect(fieldVal.decorations.size).toBe(1);
     });
   });
+
+  describe("Right Click Context Menu for Comments", () => {
+    it("renders context menu with Add Comment option at high z-index", async () => {
+      const { Menu } = await import("../src/lib/obsidian-api/components");
+      const menu = new Menu();
+      let commentClicked = false;
+
+      menu.addItem((item) =>
+        item
+          .setTitle("Add Comment")
+          .setIcon("message-square")
+          .onClick(() => {
+            commentClicked = true;
+          })
+      );
+      menu.addSeparator();
+
+      // Show at mouse event
+      const fakeEvt = new MouseEvent("contextmenu", {
+        clientX: 120,
+        clientY: 240,
+      });
+      menu.showAtMouseEvent(fakeEvt);
+
+      // Verify DOM
+      const menuDom = document.querySelector(".oo-plugin-menu") as HTMLElement;
+      expect(menuDom).not.toBeNull();
+      expect(menuDom.style.zIndex).toBe("99999");
+      expect(menuDom.style.position).toBe("fixed");
+
+      const titleEl = menuDom.querySelector(".menu-item-title");
+      expect(titleEl?.textContent).toBe("Add Comment");
+
+      const iconEl = menuDom.querySelector(".menu-item-icon");
+      expect(iconEl).not.toBeNull();
+
+      // Trigger click on the Add Comment item
+      const itemEl = menuDom.querySelector(".menu-item") as HTMLElement;
+      itemEl.click();
+      expect(commentClicked).toBe(true);
+
+      // Menu should be dismissed
+      expect(document.querySelector(".oo-plugin-menu")).toBeNull();
+    });
+
+    it("maps comment icon alias properly in obsidian API utils", async () => {
+      const { setIcon } = await import("../src/lib/obsidian-api/utils");
+      const container = document.createElement("div");
+      setIcon(container, "comment");
+
+      expect(container.getAttribute("data-icon")).toBe("comment");
+      const svg = container.querySelector("svg");
+      expect(svg?.getAttribute("data-icon-name")).toBe("comment");
+      expect(svg?.innerHTML).toContain("path");
+    });
+  });
+
+  describe("Comment UI Components", () => {
+    it("renders CommentBadge with count and icon for compact mode", async () => {
+      const React = await import("react");
+      const ReactDOMServer = await import("react-dom/server");
+      const { CommentBadge } = await import("../src/components/editor/CommentComponents");
+
+      const html = ReactDOMServer.renderToStaticMarkup(
+        React.createElement(CommentBadge, {
+          count: 3,
+          onClick: () => {},
+        })
+      );
+
+      expect(html).toContain("3");
+      expect(html).toContain("cm-comment-badge");
+      expect(html).toContain("svg");
+    });
+
+    it("renders CommentCard with ONLY delete action and NO check/resolve tick mark", async () => {
+      const React = await import("react");
+      const ReactDOMServer = await import("react-dom/server");
+      const { CommentCard } = await import("../src/components/editor/CommentComponents");
+
+      const html = ReactDOMServer.renderToStaticMarkup(
+        React.createElement(CommentCard, {
+          comment: {
+            id: "c-test",
+            notePath: "note.md",
+            from: 10,
+            to: 20,
+            selectedText: "power.",
+            content: "Test comment text",
+            author: { name: "Varshith Programmer" },
+            createdAt: Date.now(),
+          },
+          onDelete: () => {},
+        })
+      );
+
+      expect(html).toContain("Test comment text");
+      expect(html).toContain("Varshith Programmer");
+      expect(html).toContain('title="Delete comment"');
+      // Must NOT contain resolve or check mark
+      expect(html).not.toContain('title="Resolve comment"');
+      // Must NOT contain ml-[32px]
+      expect(html).not.toContain("ml-[32px]");
+    });
+  });
 });
+

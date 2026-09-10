@@ -2481,6 +2481,115 @@ html[data-theme="light"] .app.has-wallpaper .sort-menu {
   box-sizing: border-box !important;
 }
 
+/* ── Context Menu & Plugin Menu ───────────────────── */
+.menu.oo-plugin-menu,
+.oo-plugin-menu {
+  position: fixed !important;
+  background: var(--bg-elevated, #202020) !important;
+  border: 1px solid var(--border-medium, #383838) !important;
+  border-radius: 8px !important;
+  padding: 4px !important;
+  min-width: 200px !important;
+  max-width: 320px !important;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5), 0 2px 6px rgba(0, 0, 0, 0.3) !important;
+  z-index: 99999 !important;
+  font-family: var(--font-sans, Inter, system-ui, sans-serif) !important;
+  user-select: none !important;
+  backdrop-filter: blur(8px) !important;
+}
+
+.menu.oo-plugin-menu .menu-item,
+.oo-plugin-menu .menu-item {
+  display: flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+  padding: 6px 10px !important;
+  border-radius: 6px !important;
+  font-size: 13px !important;
+  font-weight: 450 !important;
+  color: var(--text-primary, #f0f0f0) !important;
+  cursor: pointer !important;
+  transition: background-color 0.1s ease, color 0.1s ease !important;
+}
+
+.menu.oo-plugin-menu .menu-item:hover,
+.oo-plugin-menu .menu-item:hover {
+  background: var(--bg-hover, rgba(255, 255, 255, 0.08)) !important;
+  color: var(--text-primary, #ffffff) !important;
+}
+
+.menu.oo-plugin-menu .menu-item-icon,
+.oo-plugin-menu .menu-item-icon {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  width: 16px !important;
+  height: 16px !important;
+  flex-shrink: 0 !important;
+  color: var(--text-secondary, #999999) !important;
+}
+
+.menu.oo-plugin-menu .menu-item:hover .menu-item-icon,
+.oo-plugin-menu .menu-item:hover .menu-item-icon {
+  color: var(--text-primary, #ffffff) !important;
+}
+
+.menu.oo-plugin-menu .menu-item-icon svg,
+.oo-plugin-menu .menu-item-icon svg {
+  width: 15px !important;
+  height: 15px !important;
+  stroke-width: 1.75 !important;
+}
+
+.menu.oo-plugin-menu .menu-item-title,
+.oo-plugin-menu .menu-item-title {
+  flex: 1 !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+}
+
+.menu.oo-plugin-menu .menu-item-submenu-indicator,
+.oo-plugin-menu .menu-item-submenu-indicator {
+  margin-left: auto !important;
+  color: var(--text-muted, #777777) !important;
+  display: flex !important;
+  align-items: center !important;
+}
+
+.menu.oo-plugin-menu .menu-separator,
+.oo-plugin-menu .menu-separator {
+  height: 1px !important;
+  background: var(--border-subtle, rgba(255, 255, 255, 0.08)) !important;
+  margin: 4px 2px !important;
+}
+
+/* ── Comment Highlights (both Editor and Read Mode) ── */
+.cm-comment-highlight,
+mark.cm-comment-highlight {
+  background-color: rgba(250, 204, 21, 0.28) !important;
+  border-bottom: 2px solid rgba(250, 204, 21, 0.8) !important;
+  border-radius: 2px !important;
+  color: inherit !important;
+  cursor: pointer !important;
+  transition: background-color 0.15s ease !important;
+}
+
+.cm-comment-highlight:hover,
+.cm-comment-highlight.cm-comment-active,
+mark.cm-comment-highlight:hover,
+mark.cm-comment-highlight.cm-comment-active {
+  background-color: rgba(250, 204, 21, 0.45) !important;
+  border-bottom: 2px solid rgba(250, 204, 21, 1) !important;
+}
+
+.cm-comment-highlight.cm-comment-pending,
+mark.cm-comment-highlight.cm-comment-pending {
+  background-color: rgba(250, 204, 21, 0.35) !important;
+  border-bottom: 2px dashed rgba(250, 204, 21, 0.9) !important;
+}
+
+
 
 
 
