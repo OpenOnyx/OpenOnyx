@@ -12,12 +12,12 @@ interface EditorCommentsLayerProps {
   comments: NoteComment[];
   pendingComment: PendingComment | null;
   activeCommentId: string | null;
-  onSaveComment: (text: string) => void;
+  onSaveComment: (text: string, image?: string) => void;
   onCancelPending: () => void;
   onSelectComment: (commentId: string) => void;
   onResolveComment?: (commentId: string) => void;
   onDeleteComment: (commentId: string) => void;
-  onReplyComment: (commentId: string, content: string) => void;
+  onReplyComment: (commentId: string, content: string, image?: string) => void;
 }
 
 /**
@@ -49,6 +49,26 @@ function getLineTopForPos(view: EditorView, pos: number): number {
   } catch {
     return 20;
   }
+}
+
+function isTableRowText(text: string): boolean {
+  const trimmed = text.trim();
+  if (!trimmed.includes("|")) return false;
+  if (trimmed.startsWith("|") && trimmed.endsWith("|")) return true;
+  return /^[^|]+\|[^|]+/.test(trimmed);
+}
+
+function findTableRange(doc: any, lineNumber: number): { start: number; end: number } | null {
+  if (lineNumber < 1 || lineNumber > doc.lines || !isTableRowText(doc.line(lineNumber).text)) return null;
+
+  let start = lineNumber;
+  while (start > 1 && isTableRowText(doc.line(start - 1).text)) start--;
+
+  let end = lineNumber;
+  while (end < doc.lines && isTableRowText(doc.line(end + 1).text)) end++;
+
+  if (end - start < 1) return null;
+  return { start, end };
 }
 
 interface LineCommentGroup {
@@ -153,34 +173,90 @@ export const EditorCommentsLayer: React.FC<EditorCommentsLayerProps> = ({
 
   // Compute line top in either Editor mode or Read Mode
   const getLineTop = (pos: number, commentId?: string, isPending?: boolean): number => {
-    if (isReadMode && targetScrollEl) {
-      if (commentId) {
-        const mark = targetScrollEl.querySelector(`.cm-comment-highlight[data-comment-id="${commentId}"]`);
-        if (mark) {
-          const cRect = targetScrollEl.getBoundingClientRect();
-          const mRect = mark.getBoundingClientRect();
-          return Math.max(8, mRect.top - cRect.top + targetScrollEl.scrollTop);
-        }
-      }
-      if (isPending) {
-        const pendingMark = targetScrollEl.querySelector(".cm-comment-highlight.cm-comment-pending");
-        if (pendingMark) {
-          const cRect = targetScrollEl.getBoundingClientRect();
-          const mRect = pendingMark.getBoundingClientRect();
-          return Math.max(8, mRect.top - cRect.top + targetScrollEl.scrollTop);
-        }
-        if (pendingComment?.targetTop) {
-          return pendingComment.targetTop;
-        }
-      }
-      const docLen = view?.state?.doc?.length || 1;
-      const ratio = Math.max(0, Math.min(1, pos / docLen));
-      return Math.max(20, ratio * (targetScrollEl.scrollHeight || 600));
+    // 1. If it's a pending comment and we have a valid targetTop, always honor it
+    if (isPending && pendingComment?.targetTop && pendingComment.targetTop > 0) {
+      return pendingComment.targetTop;
     }
 
-    if (view) {
+    const scrollEl = targetScrollEl || (view?.scrollDOM ?? null);
+
+    // 2. If a comment highlight mark exists in the DOM, compute its exact visual position
+    // (Works in BOTH Read Mode and Editor Mode!)
+    if (scrollEl && commentId) {
+      const mark = scrollEl.querySelector(`.cm-comment-highlight[data-comment-id="${commentId}"]`);
+      if (mark) {
+        const cRect = scrollEl.getBoundingClientRect();
+        const mRect = mark.getBoundingClientRect();
+        return Math.max(8, mRect.top - cRect.top + scrollEl.scrollTop);
+      }
+    }
+
+    // 3. If pending mark exists in DOM
+    if (scrollEl && isPending) {
+      const pendingMark = scrollEl.querySelector(".cm-comment-highlight.cm-comment-pending");
+      if (pendingMark) {
+        const cRect = scrollEl.getBoundingClientRect();
+        const mRect = pendingMark.getBoundingClientRect();
+        return Math.max(8, mRect.top - cRect.top + scrollEl.scrollTop);
+      }
+    }
+
+    // 4. In Read Mode, if mark wasn't found, estimate based on pos ratio
+    if (isReadMode && scrollEl) {
+      const docLen = view?.state?.doc?.length || 1;
+      const ratio = Math.max(0, Math.min(pos / docLen));
+      return Math.max(20, ratio * (scrollEl.scrollHeight || 600));
+    }
+
+    // 5. In Editor Mode, check if pos is inside a table line
+    if (view && scrollEl) {
+      try {
+        const docLength = view.state.doc.length;
+        const clampedPos = Math.max(0, Math.min(pos, docLength));
+        const line = view.state.doc.lineAt(clampedPos);
+        const lineNum = line.number;
+        const tableRange = findTableRange(view.state.doc, lineNum);
+        if (tableRange) {
+          const tableStartLine = view.state.doc.line(tableRange.start);
+          const tableWrappers = Array.from(scrollEl.querySelectorAll<HTMLElement>(".cm-live-table-wrapper"));
+          let matchingWrapper: HTMLElement | null = null;
+          for (const w of tableWrappers) {
+            const wPos = view.posAtDOM(w);
+            if (wPos >= tableStartLine.from && wPos <= view.state.doc.line(tableRange.end).to) {
+              matchingWrapper = w;
+              break;
+            }
+          }
+          if (matchingWrapper) {
+            const tableEl = matchingWrapper.querySelector("table");
+            if (tableEl) {
+              if (lineNum === tableRange.start) {
+                const headerTr = tableEl.querySelector("thead tr");
+                if (headerTr) {
+                  const r = headerTr.getBoundingClientRect();
+                  const cRect = scrollEl.getBoundingClientRect();
+                  return Math.max(8, r.top - cRect.top + scrollEl.scrollTop);
+                }
+              } else if (lineNum >= tableRange.start + 2) {
+                const bodyRowIdx = lineNum - (tableRange.start + 2);
+                const bodyTrs = tableEl.querySelectorAll("tbody tr");
+                const targetTr = bodyTrs[bodyRowIdx] || bodyTrs[bodyTrs.length - 1];
+                if (targetTr) {
+                  const r = targetTr.getBoundingClientRect();
+                  const cRect = scrollEl.getBoundingClientRect();
+                  return Math.max(8, r.top - cRect.top + scrollEl.scrollTop);
+                }
+              }
+            }
+          }
+        }
+      } catch {
+        // fallback to getLineTopForPos below
+      }
+
       return getLineTopForPos(view, pos);
     }
+
     return 20;
   };
 
@@ -377,7 +453,7 @@ export const EditorCommentsLayer: React.FC<EditorCommentsLayerProps> = ({
                               }
                             }}
                             onDelete={() => onDeleteComment(c.id)}
-                            onReply={(text) => onReplyComment(c.id, text)}
+                            onReply={(text, img) => onReplyComment(c.id, text, img)}
                           />
                         </div>
                       ))}
@@ -397,7 +473,8 @@ export const EditorCommentsLayer: React.FC<EditorCommentsLayerProps> = ({
               }}
             >
               <CommentInputBox
-                onSubmit={onSaveComment}
+                initialImage={pendingComment.image}
+                onSubmit={(text, img) => onSaveComment(text, img)}
                 onCancel={onCancelPending}
                 autoFocus
               />
@@ -418,7 +495,8 @@ export const EditorCommentsLayer: React.FC<EditorCommentsLayerProps> = ({
                   style={{ top: `${item.computedTop}px` }}
                 >
                   <CommentInputBox
-                    onSubmit={onSaveComment}
+                    initialImage={pendingComment?.image}
+                    onSubmit={(text, img) => onSaveComment(text, img)}
                     onCancel={onCancelPending}
                     autoFocus
                   />
@@ -450,7 +528,7 @@ export const EditorCommentsLayer: React.FC<EditorCommentsLayerProps> = ({
                       }
                     }}
                     onDelete={() => onDeleteComment(c.id)}
-                    onReply={(text) => onReplyComment(c.id, text)}
+                    onReply={(text, img) => onReplyComment(c.id, text, img)}
                   />
                 </div>
               );

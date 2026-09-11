@@ -7,6 +7,7 @@ export interface CommentReply {
   id: string;
   author: CommentAuthor;
   content: string;
+  image?: string;
   createdAt: number;
 }
 
@@ -17,6 +18,7 @@ export interface NoteComment {
   to: number;
   selectedText: string;
   content: string;
+  image?: string;
   author: CommentAuthor;
   createdAt: number;
   resolved?: boolean;
@@ -29,4 +31,5 @@ export interface PendingComment {
   to: number;
   selectedText: string;
   targetTop: number;
+  image?: string;
 }

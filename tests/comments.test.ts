@@ -279,6 +279,229 @@ describe("Comments System", () => {
       // Must NOT contain ml-[32px]
       expect(html).not.toContain("ml-[32px]");
     });
+
+    it("renders CommentCard with pasted image and reply with image", async () => {
+      const React = await import("react");
+      const ReactDOMServer = await import("react-dom/server");
+      const { CommentCard, getCommentImage, getReplyImage } = await import(
+        "../src/components/editor/CommentComponents"
+      );
+
+      const testImage = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
+      const testReplyImage = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=";
+
+      const parsed = getCommentImage({
+        id: "c-img",
+        notePath: "note.md",
+        from: 0,
+        to: 3,
+        selectedText: "img",
+        content: "Check this diagram",
+        image: testImage,
+        author: { name: "Varshith Programmer" },
+        createdAt: Date.now(),
+      });
+      expect(parsed.image).toBe(testImage);
+      expect(parsed.text).toBe("Check this diagram");
+
+      const parsedReply = getReplyImage({
+        id: "r-img",
+        author: { name: "Varshith Programmer" },
+        content: "Here is the chromosome",
+        image: testReplyImage,
+        createdAt: Date.now(),
+      });
+      expect(parsedReply.image).toBe(testReplyImage);
+
+      const html = ReactDOMServer.renderToStaticMarkup(
+        React.createElement(CommentCard, {
+          comment: {
+            id: "c-img-card",
+            notePath: "note.md",
+            from: 0,
+            to: 3,
+            selectedText: "img",
+            content: "Check this diagram",
+            image: testImage,
+            author: { name: "Varshith Programmer" },
+            createdAt: Date.now(),
+            replies: [
+              {
+                id: "rep-1",
+                author: { name: "Varshith Programmer" },
+                content: "Chromosome detail",
+                image: testReplyImage,
+                createdAt: Date.now(),
+              },
+            ],
+          },
+          onDelete: () => {},
+        })
+      );
+
+      expect(html).toContain('alt="Comment attachment"');
+      expect(html).toContain(testImage);
+      expect(html).toContain('alt="Reply attachment"');
+      expect(html).toContain(testReplyImage);
+    });
+
+    it("saves and loads comments with images in store", async () => {
+      const testImage = "data:image/png;base64,test-image-data";
+      const testNote = "test/image-note.md";
+      await saveComments(testNote, []);
+
+      const comment = await addComment(testNote, {
+        from: 5,
+        to: 8,
+        selectedText: "img",
+        content: "Diagram note",
+        image: testImage,
+      });
+
+      expect(comment.image).toBe(testImage);
+
+      const list = await loadComments(testNote);
+      expect(list.length).toBe(1);
+      expect(list[0].image).toBe(testImage);
+
+      const updated = await addReply(testNote, comment.id, "Reply with image", testImage);
+      expect(updated?.replies?.[0].image).toBe(testImage);
+    });
+  });
+
+  describe("Table Comments Alignment", () => {
+    it("EditorCommentsLayer positions pending comment using targetTop", async () => {
+      const React = await import("react");
+      const ReactDOM = await import("react-dom/client");
+      const { EditorCommentsLayer } = await import("../src/components/editor/EditorCommentsLayer");
+
+      const container = document.createElement("div");
+      document.body.appendChild(container);
+
+      const scrollEl = document.createElement("div");
+      scrollEl.style.height = "500px";
+      container.appendChild(scrollEl);
+
+      const pendingComment = {
+        id: "pending",
+        from: 45,
+        to: 55,
+        selectedText: "TableCellWord",
+        targetTop: 185,
+      };
+
+      const root = ReactDOM.createRoot(container);
+      await React.act(async () => {
+        root.render(
+          React.createElement(EditorCommentsLayer, {
+            containerEl: scrollEl,
+            comments: [],
+            pendingComment,
+            onSaveComment: () => {},
+            onCancelPending: () => {},
+            onSelectComment: () => {},
+            onDeleteComment: () => {},
+            onResolveComment: () => {},
+            onReplyComment: () => {},
+          })
+        );
+      });
+
+      const layer = scrollEl.querySelector(".cm-comments-layer");
+      expect(layer).not.toBeNull();
+      const inputWrapper = scrollEl.querySelector(".cm-comment-input-box")?.parentElement;
+      expect(inputWrapper).not.toBeNull();
+      expect(inputWrapper?.getAttribute("style")).toContain("top: 185px");
+
+      root.unmount();
+      container.remove();
+    });
+
+    it("EditorCommentsLayer aligns comment to DOM highlight mark inside a table cell", async () => {
+      const React = await import("react");
+      const ReactDOM = await import("react-dom/client");
+      const { EditorCommentsLayer } = await import("../src/components/editor/EditorCommentsLayer");
+
+      const container = document.createElement("div");
+      document.body.appendChild(container);
+
+      const scrollEl = document.createElement("div");
+      scrollEl.style.height = "500px";
+      scrollEl.getBoundingClientRect = () => ({
+        top: 100,
+        bottom: 600,
+        left: 0,
+        right: 800,
+        width: 800,
+        height: 500,
+        x: 0,
+        y: 100,
+        toJSON: () => {},
+      });
+      container.appendChild(scrollEl);
+
+      // Add table inside scrollEl
+      const table = document.createElement("table");
+      const tr = document.createElement("tr");
+      const td = document.createElement("td");
+      const mark = document.createElement("mark");
+      mark.className = "cm-comment-highlight";
+      mark.setAttribute("data-comment-id", "tbl-comment-1");
+      mark.textContent = "WordInCell";
+      mark.getBoundingClientRect = () => ({
+        top: 240, // 240 - 100 = 140px relative to scroller
+        bottom: 260,
+        left: 50,
+        right: 150,
+        width: 100,
+        height: 20,
+        x: 50,
+        y: 240,
+        toJSON: () => {},
+      });
+      td.appendChild(mark);
+      tr.appendChild(td);
+      table.appendChild(tr);
+      scrollEl.appendChild(table);
+
+      const comment = {
+        id: "tbl-comment-1",
+        notePath: "note.md",
+        from: 30,
+        to: 40,
+        selectedText: "WordInCell",
+        content: "Comment on table cell",
+        author: { name: "Varshith Programmer" },
+        createdAt: Date.now(),
+      };
+
+      const root = ReactDOM.createRoot(container);
+      await React.act(async () => {
+        root.render(
+          React.createElement(EditorCommentsLayer, {
+            containerEl: scrollEl,
+            comments: [comment],
+            onSaveComment: () => {},
+            onCancelPending: () => {},
+            onSelectComment: () => {},
+            onDeleteComment: () => {},
+            onResolveComment: () => {},
+            onReplyComment: () => {},
+          })
+        );
+      });
+
+      const layer = scrollEl.querySelector(".cm-comments-layer");
+      expect(layer).not.toBeNull();
+      const cardWrapper = layer?.querySelector("div[style*=\"top:\"]") as HTMLElement;
+      expect(cardWrapper).not.toBeNull();
+      // Should align to 140px (240 - 100)
+      expect(cardWrapper?.getAttribute("style")).toContain("top: 140px");
+
+      root.unmount();
+      container.remove();
+    });
   });
 });
+
 

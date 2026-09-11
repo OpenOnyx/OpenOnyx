@@ -158,6 +158,7 @@ export async function addComment(
     to: number;
     selectedText: string;
     content: string;
+    image?: string;
   }
 ): Promise<NoteComment> {
   const current = await loadComments(notePath);
@@ -168,6 +169,7 @@ export async function addComment(
     to: data.to,
     selectedText: data.selectedText,
     content: data.content,
+    image: data.image,
     author: getCurrentUser(),
     createdAt: Date.now(),
     resolved: false,
@@ -211,13 +213,15 @@ export async function resolveComment(
 export async function addReply(
   notePath: string,
   commentId: string,
-  content: string
+  content: string,
+  image?: string
 ): Promise<NoteComment | null> {
   const current = await loadComments(notePath);
   const reply: CommentReply = {
     id: uuidv4(),
     author: getCurrentUser(),
     content,
+    image,
     createdAt: Date.now(),
   };
 
