@@ -6,6 +6,7 @@ import {
   getUserDatabaseConfig,
   loadSavedUserDatabaseConfig,
   saveUserDatabaseConfig,
+  setupUserDatabase,
   testConnection,
   type UserDatabaseConfig,
 } from "../../../lib/userDatabase";
@@ -31,6 +32,7 @@ export function DatabaseInfrastructureView() {
   ));
   const [databaseSchemaCopyStatus, setDatabaseSchemaCopyStatus] = useState<{ type: "idle" | "success" | "error"; message: string }>({ type: "idle", message: "" });
   const [isTestingDatabase, setIsTestingDatabase] = useState(false);
+  const [isValidatingSchema, setIsValidatingSchema] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
 
   const normalizedDatabaseConfig = (): UserDatabaseConfig => ({
@@ -99,6 +101,26 @@ export function DatabaseInfrastructureView() {
       setDatabaseSchemaCopyStatus({ type: "success", message: "Copied migration SQL script to clipboard." });
     } catch {
       setDatabaseSchemaCopyStatus({ type: "error", message: "Failed to copy migration SQL." });
+    }
+  };
+
+  const handleValidateDatabaseSchema = async () => {
+    const config = normalizedDatabaseConfig();
+    if (!config.supabaseUrl || !config.anonKey) {
+      setDatabaseStatus({ type: "error", message: "Supabase URL and API Key are required." });
+      return;
+    }
+    setIsValidatingSchema(true);
+    setDatabaseStatus({ type: "info", message: "Checking OpenOnyx schema..." });
+    try {
+      const result = await setupUserDatabase(config);
+      if (result.success) {
+        setDatabaseStatus({ type: "success", message: `Schema ready. Verified ${result.tables?.length || 0} required tables.` });
+      } else {
+        setDatabaseStatus({ type: "error", message: result.error || "Schema validation failed." });
+      }
+    } finally {
+      setIsValidatingSchema(false);
     }
   };
 
@@ -237,20 +259,44 @@ export function DatabaseInfrastructureView() {
             </div>
 
             {/* Schema Migration Runner */}
-            <div className="flex items-center justify-between border-t border-[var(--border-subtle)] pt-4">
+            <div className="border-t border-[var(--border-subtle)] pt-4">
+              <div className="mb-4 grid grid-cols-1 gap-2 text-[11px] text-[var(--text-secondary)] md:grid-cols-3">
+                <div className="rounded-md border border-[var(--border-subtle)] bg-[var(--bg-primary)] p-3">
+                  <div className="mb-1 font-bold text-[var(--text-primary)]">1. Save credentials</div>
+                  <div>Use the project URL and anon key from your Supabase project settings.</div>
+                </div>
+                <div className="rounded-md border border-[var(--border-subtle)] bg-[var(--bg-primary)] p-3">
+                  <div className="mb-1 font-bold text-[var(--text-primary)]">2. Run SQL</div>
+                  <div>Paste the bundled migration into the Supabase SQL Editor and execute it.</div>
+                </div>
+                <div className="rounded-md border border-[var(--border-subtle)] bg-[var(--bg-primary)] p-3">
+                  <div className="mb-1 font-bold text-[var(--text-primary)]">3. Validate schema</div>
+                  <div>Confirm tables, RLS policies, and vector search functions are reachable.</div>
+                </div>
+              </div>
               <div>
                 <h4 className="text-xs font-bold uppercase tracking-wider text-[var(--text-primary)]">Schema Migration SQL</h4>
                 <p className="mt-0.5 text-xs text-[var(--text-muted)]">
                   Copy bundled schema.sql script to initialize your database tables and RLS policies.
                 </p>
               </div>
-              <button
-                type="button"
-                onClick={handleCopyDatabaseSchema}
-                className="h-8 rounded-md bg-[var(--bg-tertiary)] px-3 text-xs font-semibold text-[var(--text-primary)] border border-[var(--border-medium)] hover:bg-[var(--bg-hover)]"
-              >
-                Copy SQL
-              </button>
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleCopyDatabaseSchema}
+                  className="h-8 rounded-md bg-[var(--bg-tertiary)] px-3 text-xs font-semibold text-[var(--text-primary)] border border-[var(--border-medium)] hover:bg-[var(--bg-hover)]"
+                >
+                  Copy SQL
+                </button>
+                <button
+                  type="button"
+                  onClick={handleValidateDatabaseSchema}
+                  disabled={isValidatingSchema}
+                  className="h-8 rounded-md bg-[var(--text-primary)] px-3 text-xs font-bold text-[var(--bg-primary)] hover:opacity-90 disabled:opacity-60"
+                >
+                  {isValidatingSchema ? "Validating..." : "Validate Schema"}
+                </button>
+              </div>
             </div>
             {databaseSchemaCopyStatus.message && (
               <span className="text-xs font-semibold text-[var(--text-primary)]">{databaseSchemaCopyStatus.message}</span>

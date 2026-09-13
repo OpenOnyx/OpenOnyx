@@ -3,9 +3,10 @@ import { BacklinksPanel } from "../panels/BacklinksPanel";
 import { OutgoingLinksPanel } from "../panels/OutgoingLinksPanel";
 import { OutlinePane } from "../panels/OutlinePane";
 import { UnlinkedMentionsPanel } from "../panels/UnlinkedMentionsPanel";
-import { AIPage } from "../ai/AIPage";
 import { getPluginScopeClass } from "../../lib/pluginStyles";
 import type { Theme, FileEntry } from "../../types";
+
+const AIPage = React.lazy(() => import("../ai/AIPage").then(m => ({ default: m.AIPage })));
 
 export type RightSidebarTabType = "backlinks" | "outgoing" | "outline" | "ai" | string;
 
@@ -170,18 +171,20 @@ export function RightSidebar({
 
         {activeTab === "ai" && vaultPath && (
           <div className="flex flex-col h-full overflow-hidden">
-            <AIPage
-              vaultPath={vaultPath}
-              theme={theme || "dark"}
-              fileTree={fileTree}
-              activeNotePath={activeFilePath}
-              onOpenNote={(path) => {
-                void openFile(path);
-              }}
-              onClose={() => onClose?.()}
-              isFullScreen={false}
-              onToggleFullScreen={() => {}}
-            />
+            <React.Suspense fallback={<div className="flex h-full items-center justify-center text-xs text-[var(--text-muted)]">Loading AI...</div>}>
+              <AIPage
+                vaultPath={vaultPath}
+                theme={theme || "dark"}
+                fileTree={fileTree}
+                activeNotePath={activeFilePath}
+                onOpenNote={(path) => {
+                  void openFile(path);
+                }}
+                onClose={() => onClose?.()}
+                isFullScreen={false}
+                onToggleFullScreen={() => {}}
+              />
+            </React.Suspense>
           </div>
         )}
 

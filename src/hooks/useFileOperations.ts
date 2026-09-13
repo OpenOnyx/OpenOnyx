@@ -6,6 +6,7 @@ import { collaborationEngine } from "../lib/collaborationEngine";
 import { syncEngine } from "../lib/syncEngine";
 import { getNoteName, generateId } from "../utils/helpers";
 import { loadStore, removeEmbedding, removeEmbeddingsByPrefix } from "../utils/embeddings";
+import { resetAIGraphCache } from "../components/graph/AIKnowledgeGraph";
 import {
   splitLeaf,
   collectAllTabs,
@@ -162,6 +163,8 @@ export function useFileOperations({
         }
 
         await refreshFileTree();
+        resetAIGraphCache();
+        window.dispatchEvent(new CustomEvent("oo:embeddings-updated"));
       } catch (error) {
         console.error("Failed to delete:", error);
       }

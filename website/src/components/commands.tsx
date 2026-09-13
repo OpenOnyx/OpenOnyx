@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useMemo, useState, type ReactNode
 import { useNavigate } from "react-router-dom";
 import { PRODUCT } from "../data/facts";
 import { DOC_PAGES } from "../data/docs";
+import { isApplePlatform } from "../lib/hotkey";
 
 export type SiteCommand = {
   id: string;
@@ -110,7 +111,7 @@ function CommandPalette({ commands, onClose }: { commands: SiteCommand[]; onClos
         onClick={(event) => event.stopPropagation()}
       >
         <div className="palette-input">
-          <span aria-hidden>⌘</span>
+          <span aria-hidden>{isApplePlatform() ? "⌘" : "Ctrl"}</span>
           <input
             autoFocus
             value={query}

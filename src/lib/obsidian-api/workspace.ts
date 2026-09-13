@@ -439,7 +439,9 @@ Object.defineProperty(_MarkdownView.prototype, 'sourceMode', {
     const self = this;
     return {
       get cmEditor() { return self.editor; },
+      set cmEditor(ed: any) { self.editor = ed; },
       get editor() { return self.editor; },
+      set editor(ed: any) { self.editor = ed; },
       sourceMode: true,
       type: 'source',
       get: () => self.editor?.getValue?.() || '',

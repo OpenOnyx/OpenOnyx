@@ -419,6 +419,81 @@ export function LeafPaneEditor({
     };
   }, [activeTab.path]);
 
+  useEffect(() => {
+    if (activeTab.path === "__new_tab__") return;
+    let cancelled = false;
+    let retryCount = 0;
+
+    const reloadActiveFile = async (): Promise<boolean> => {
+      try {
+        const exists = await api.fileExists(activeTab.path);
+        if (cancelled) return false;
+        if (!exists) {
+          setFileExists(false);
+          return false;
+        }
+
+        const diskContent = await api.readFile(activeTab.path);
+        if (cancelled) return false;
+        const c = diskContent ?? "";
+        contentCacheRef.current.set(activeTab.path, c);
+        setContentPath(activeTab.path);
+        setContent(c);
+        latestContentRef.current = c;
+        latestContentPathRef.current = activeTab.path;
+        setFileExists(true);
+        setIsLoading(false);
+
+        if (!useCRDT && editorViewRef.current && editorViewRef.current.state.doc.toString() !== c) {
+          editorViewRef.current.dispatch({
+            changes: { from: 0, to: editorViewRef.current.state.doc.length, insert: c },
+            annotations: [Transaction.remote.of(true)],
+          });
+        }
+
+        onContentChangeGlobalRef.current(activeTab.path, c, false);
+        return true;
+      } catch (err) {
+        if (!cancelled && retryCount > 4) {
+          setFileExists(false);
+          setIsLoading(false);
+        }
+        return false;
+      }
+    };
+
+    const retryMissingFile = () => {
+      if (fileExists) return;
+      retryCount += 1;
+      void reloadActiveFile();
+    };
+
+    const retryTimer = window.setInterval(retryMissingFile, 600);
+    const stopRetryTimer = window.setTimeout(() => window.clearInterval(retryTimer), 8_000);
+
+    const unsubscribeVaultWatcher = api.onVaultFileChanges?.((changes) => {
+      const touched = changes.some((change) => change.path === activeTab.path);
+      if (!touched) return;
+      const deleted = changes.some((change) => change.path === activeTab.path && change.type === "delete");
+      if (deleted) {
+        setFileExists(false);
+        return;
+      }
+      void reloadActiveFile();
+    });
+
+    if (!fileExists) {
+      void reloadActiveFile();
+    }
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(retryTimer);
+      window.clearTimeout(stopRetryTimer);
+      unsubscribeVaultWatcher?.();
+    };
+  }, [activeTab.path, fileExists, useCRDT]);
+
   // ── Content Change Handler ──────────────────────────────────────────────────
 
   const handleContentChange = useCallback((newContent: string, isUserEdit?: boolean, sourcePath = activeTab.path) => {

@@ -7,6 +7,7 @@
 
 import { app, IpcMain, BrowserWindow, clipboard, dialog, shell } from 'electron';
 import * as fs from 'fs/promises';
+import * as nodeFs from 'fs';
 import * as nodePath from 'path';
 import { FileSystemManager } from './fileSystem.js';
 import { SearchEngine } from './search.js';
@@ -28,6 +29,136 @@ export function registerIpcHandlers(
     fsManager.getVaultPath?.(),
     ...(getPreviousPaths ? getPreviousPaths() : []),
   ]);
+
+  type VaultFileChange = {
+    type: 'create' | 'modify' | 'delete' | 'rename';
+    path: string;
+    isDirectory: boolean;
+    timestamp: number;
+  };
+
+  const watchedDirs = new Map<string, nodeFs.FSWatcher>();
+  const pendingChanges = new Map<string, VaultFileChange>();
+  let flushTimer: ReturnType<typeof setTimeout> | null = null;
+  let rescanTimer: ReturnType<typeof setTimeout> | null = null;
+
+  const normalizeRelativePath = (absolutePath: string): string | null => {
+    const vaultPath = fsManager.getVaultPath();
+    if (!vaultPath) return null;
+    const relative = nodePath.relative(vaultPath, absolutePath).replace(/\\/g, '/');
+    if (!relative || relative.startsWith('..') || nodePath.isAbsolute(relative)) return null;
+    return relative;
+  };
+
+  const shouldIgnoreRelativePath = (relativePath: string): boolean => {
+    return relativePath
+      .split('/')
+      .some((part) => part.startsWith('.') || part === 'node_modules');
+  };
+
+  const flushVaultFileChanges = () => {
+    flushTimer = null;
+    const changes = [...pendingChanges.values()];
+    pendingChanges.clear();
+    if (changes.length === 0) return;
+    getMainWindow()?.webContents.send('vault:file-changes', changes);
+  };
+
+  const queueVaultFileChange = (change: VaultFileChange) => {
+    if (shouldIgnoreRelativePath(change.path)) return;
+    pendingChanges.set(change.path, change);
+    if (flushTimer) clearTimeout(flushTimer);
+    flushTimer = setTimeout(flushVaultFileChanges, 150);
+  };
+
+  const closeVaultWatchers = () => {
+    for (const watcher of watchedDirs.values()) watcher.close();
+    watchedDirs.clear();
+    pendingChanges.clear();
+    if (flushTimer) {
+      clearTimeout(flushTimer);
+      flushTimer = null;
+    }
+    if (rescanTimer) {
+      clearTimeout(rescanTimer);
+      rescanTimer = null;
+    }
+  };
+
+  const scheduleWatcherRescan = () => {
+    if (rescanTimer) clearTimeout(rescanTimer);
+    rescanTimer = setTimeout(() => {
+      rescanTimer = null;
+      startVaultWatchers();
+    }, 300);
+  };
+
+  const watchDirectory = (absoluteDir: string) => {
+    if (watchedDirs.has(absoluteDir)) return;
+    try {
+      const watcher = nodeFs.watch(absoluteDir, (eventType, fileName) => {
+        if (!fileName) {
+          scheduleWatcherRescan();
+          return;
+        }
+
+        const absolutePath = nodePath.join(absoluteDir, fileName.toString());
+        const relativePath = normalizeRelativePath(absolutePath);
+        if (!relativePath || shouldIgnoreRelativePath(relativePath)) return;
+
+        let exists = false;
+        let isDirectory = false;
+        try {
+          const stats = nodeFs.statSync(absolutePath);
+          exists = true;
+          isDirectory = stats.isDirectory();
+        } catch {
+          exists = false;
+        }
+
+        queueVaultFileChange({
+          type: eventType === 'rename' ? (exists ? 'create' : 'delete') : 'modify',
+          path: relativePath,
+          isDirectory,
+          timestamp: Date.now(),
+        });
+
+        if (eventType === 'rename') scheduleWatcherRescan();
+        if (isDirectory) scheduleWatcherRescan();
+      });
+      watcher.on('error', (err) => {
+        console.warn(`[IPC] Vault watcher failed for ${absoluteDir}:`, err);
+        watcher.close();
+        watchedDirs.delete(absoluteDir);
+      });
+      watchedDirs.set(absoluteDir, watcher);
+    } catch (err) {
+      console.warn(`[IPC] Failed to watch vault directory ${absoluteDir}:`, err);
+    }
+  };
+
+  function startVaultWatchers() {
+    const vaultPath = fsManager.getVaultPath();
+    closeVaultWatchers();
+    if (!vaultPath) return;
+
+    const walk = (absoluteDir: string) => {
+      watchDirectory(absoluteDir);
+      let entries: nodeFs.Dirent[] = [];
+      try {
+        entries = nodeFs.readdirSync(absoluteDir, { withFileTypes: true });
+      } catch {
+        return;
+      }
+      for (const entry of entries) {
+        if (!entry.isDirectory()) continue;
+        if (entry.name.startsWith('.') || entry.name === 'node_modules') continue;
+        walk(nodePath.join(absoluteDir, entry.name));
+      }
+    };
+
+    walk(vaultPath);
+  }
 
   const resolveInsideCurrentVault = (targetPath: string): string => {
     const vaultPath = fsManager.getVaultPath();
@@ -59,6 +190,7 @@ export function registerIpcHandlers(
       
       // Rebuild search index when vault changes
       await searchEngine.buildIndex(fsManager);
+      startVaultWatchers();
     }
     return success;
   });
@@ -163,11 +295,13 @@ export function registerIpcHandlers(
 
   ipcMain.handle('fs:createDirectory', async (_event, dirPath: string) => {
     await fsManager.createDirectory(dirPath);
+    scheduleWatcherRescan();
     searchEngine.buildIndex(fsManager).catch(console.error);
   });
 
   ipcMain.handle('fs:deleteDirectory', async (_event, dirPath: string) => {
     await fsManager.deleteDirectory(dirPath);
+    scheduleWatcherRescan();
     searchEngine.buildIndex(fsManager).catch(console.error);
   });
 

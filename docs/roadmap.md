@@ -13,7 +13,7 @@ The current release is a local-first Electron app for macOS, Windows, and Linux:
 - Obsidian-compatible plugin runtime
 - Themes, wallpaper, and no product telemetry
 
-Cloud is a switch. Live multiplayer editing is in the tree, but the collaboration panel currently shows a maintenance notice. A phone client is in progress and is not released.
+Cloud is a switch. Live multiplayer editing is available through private cloud spaces backed by Supabase and Yjs. A phone client is in progress and is not released.
 
 ## Next
 
@@ -29,7 +29,7 @@ Work that is already visible in the tracker, in roughly this order of importance
 
 ## Later
 
-- Take live collaboration out of maintenance (Yjs is already in the app)
+- Harden live collaboration conflict handling and recovery
 - Ship a phone client against the same Markdown vault
 - Spaces and search hardening (citations that open the note, incremental search index, real note IDs)
 

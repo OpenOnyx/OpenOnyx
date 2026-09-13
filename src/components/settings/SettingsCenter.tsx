@@ -14,7 +14,9 @@ import { PluginMarketplace } from "../plugins/PluginMarketplace";
 import { authManager } from "../../lib/auth";
 import { AuthModal } from "../modals/AuthModal";
 import { version as APP_VERSION } from "../../../package.json";
-import { DEFAULT_SETTINGS } from "./SettingsPage";
+import { DEFAULT_SETTINGS } from "../../types/settings";
+import { getAPI } from "../../utils/api";
+import { buildVaultHealthReport, type VaultHealthReport } from "../../utils/vaultHealth";
 
 export type StudioTab =
   | "home"
@@ -78,6 +80,8 @@ export function SettingsCenter({
   const [searchQuery, setSearchQuery] = useState("");
   const [isBrowsingPlugins, setIsBrowsingPlugins] = useState(false);
   const [currentUser] = useState(authManager.getUser());
+  const [vaultHealthReport, setVaultHealthReport] = useState<VaultHealthReport | null>(null);
+  const [isScanningVaultHealth, setIsScanningVaultHealth] = useState(false);
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [authModalMode, setAuthModalMode] = useState<"login" | "signup">("login");
 
@@ -104,6 +108,18 @@ export function SettingsCenter({
       onSettingsChange({ ...settings, ...keyOrUpdates });
     } else {
       onSettingsChange({ ...settings, [keyOrUpdates as K]: value });
+    }
+  };
+
+  const handleScanVaultHealth = async () => {
+    setIsScanningVaultHealth(true);
+    try {
+      const api = getAPI();
+      const tree = await api.getFileTree();
+      const report = await buildVaultHealthReport(tree, (path) => api.readFile(path));
+      setVaultHealthReport(report);
+    } finally {
+      setIsScanningVaultHealth(false);
     }
   };
 
@@ -290,6 +306,70 @@ export function SettingsCenter({
                       </div>
 
                       <div className="flex flex-col">
+                        <div className="mb-6 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-secondary)] p-4">
+                          <div className="flex items-center justify-between gap-4">
+                            <div className="min-w-0">
+                              <h3 className="text-[13px] font-bold text-[var(--text-primary)]">Vault Health Report</h3>
+                              <p className="mt-1 text-[11px] text-[var(--text-muted)]">
+                                Scan for broken links, duplicate titles, empty notes, large notes, and unreferenced attachments.
+                              </p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={handleScanVaultHealth}
+                              disabled={isScanningVaultHealth || !vaultPath}
+                              className="h-8 shrink-0 rounded-md bg-[var(--text-primary)] px-3 text-xs font-bold text-[var(--bg-primary)] hover:opacity-90 disabled:opacity-60"
+                            >
+                              {isScanningVaultHealth ? "Scanning..." : "Scan Vault"}
+                            </button>
+                          </div>
+
+                          {vaultHealthReport && (
+                            <div className="mt-4">
+                              <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
+                                {[
+                                  ["Notes", vaultHealthReport.noteCount],
+                                  ["Broken links", vaultHealthReport.brokenLinkCount],
+                                  ["Duplicate titles", vaultHealthReport.duplicateTitleCount],
+                                  ["Unused media", vaultHealthReport.orphanAttachmentCount],
+                                ].map(([label, value]) => (
+                                  <div key={label} className="rounded-md border border-[var(--border-subtle)] bg-[var(--bg-primary)] px-3 py-2">
+                                    <div className="text-[10px] font-semibold uppercase tracking-[0.05em] text-[var(--text-muted)]">{label}</div>
+                                    <div className="mt-0.5 text-sm font-bold text-[var(--text-primary)]">{value}</div>
+                                  </div>
+                                ))}
+                              </div>
+
+                              <div className="mt-3 max-h-64 overflow-y-auto rounded-md border border-[var(--border-subtle)]">
+                                {vaultHealthReport.issues.length === 0 ? (
+                                  <div className="bg-[var(--bg-primary)] px-3 py-3 text-[12px] text-[var(--text-secondary)]">No vault health issues found.</div>
+                                ) : (
+                                  vaultHealthReport.issues.slice(0, 50).map((issue) => (
+                                    <button
+                                      key={issue.id}
+                                      type="button"
+                                      className="flex w-full items-start gap-3 border-b border-[var(--border-subtle)] bg-[var(--bg-primary)] px-3 py-2 text-left last:border-b-0 hover:bg-[var(--bg-hover)] disabled:cursor-default"
+                                      onClick={() => issue.path && getAPI().writeClipboardText(issue.path)}
+                                      title={issue.path ? "Copy path" : issue.detail}
+                                      disabled={!issue.path}
+                                    >
+                                      <span className={`mt-1 h-2 w-2 shrink-0 rounded-full ${
+                                        issue.severity === "danger" ? "bg-red-500" :
+                                        issue.severity === "warning" ? "bg-yellow-500" :
+                                        "bg-[var(--text-muted)]"
+                                      }`} />
+                                      <span className="min-w-0 flex-1">
+                                        <span className="block text-[12px] font-semibold text-[var(--text-primary)]">{issue.title}</span>
+                                        <span className="block truncate text-[11px] text-[var(--text-muted)]">{issue.path ? `${issue.path}: ` : ""}{issue.detail}</span>
+                                      </span>
+                                    </button>
+                                  ))
+                                )}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+
                         <PreferenceCard
                           title="Startup Document Location"
                           description="File behavior when launching OpenOnyx."

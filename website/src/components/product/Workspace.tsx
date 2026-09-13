@@ -7,6 +7,7 @@ import { DEFAULT_SETTINGS } from "../../../../src/components/settings/SettingsPa
 import { getAPI } from "../../../../src/utils/api";
 import type { FileEntry, Tab, ViewMode } from "../../../../src/types";
 import { PLUGINS_TESTED } from "../../data/facts";
+import { paletteHotkeyLabel } from "../../lib/hotkey";
 import vault from "../../data/real-vault.json";
 import { useTheme } from "../../theme";
 import { useCommands, type SiteCommand } from "../commands";
@@ -218,7 +219,7 @@ export function Workspace() {
           ))}
         </div>
         <button type="button" className="oo-k" onClick={openPalette}>
-          ⌘K
+          {paletteHotkeyLabel()}
         </button>
       </div>
 

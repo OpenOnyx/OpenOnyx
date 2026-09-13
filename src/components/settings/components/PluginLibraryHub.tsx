@@ -35,6 +35,10 @@ export function PluginLibraryHub({
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
 
   const activePluginTab = pluginSettingTabs.find((t) => t.pluginId === activeTabId);
+  const enabledCount = plugins.filter((plugin) => plugin.state === "enabled").length;
+  const erroredCount = plugins.filter((plugin) => plugin.state === "errored").length;
+  const desktopOnlyCount = plugins.filter((plugin) => plugin.manifest.isDesktopOnly).length;
+  const permissionedCount = plugins.filter((plugin) => (plugin.manifest.permissions || []).length > 0 || (plugin.approvedPermissions || []).length > 0).length;
 
   return (
     <div className="flex flex-col gap-8">
@@ -55,6 +59,31 @@ export function PluginLibraryHub({
         >
           Browse Library
         </button>
+      </div>
+
+      <div>
+        <h3 className="mb-3 text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">
+          Compatibility Dashboard
+        </h3>
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+          {[
+            ["Installed", plugins.length],
+            ["Enabled", enabledCount],
+            ["Errored", erroredCount],
+            ["Desktop APIs", desktopOnlyCount],
+            ["Permissions", permissionedCount],
+          ].map(([label, value]) => (
+            <div key={label} className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-secondary)] p-4">
+              <div className="text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)]">{label}</div>
+              <div className="mt-1 text-lg font-bold text-[var(--text-primary)]">{value}</div>
+            </div>
+          ))}
+        </div>
+        {erroredCount > 0 && (
+          <div className="mt-3 rounded-md border border-red-500/20 bg-red-500/[0.08] px-3 py-2 text-[12px] text-red-500">
+            Some plugins failed to load. Open the plugin card for the recorded error and use Reload after updating or changing permissions.
+          </div>
+        )}
       </div>
 
       {/* Core Features */}
@@ -131,6 +160,35 @@ export function PluginLibraryHub({
                     <p className="mt-1 text-[11px] leading-relaxed text-[var(--text-muted)]">
                       {plugin.manifest.description}
                     </p>
+                    <div className="mt-3 flex flex-wrap gap-1.5">
+                      <span className={`rounded px-1.5 py-0.5 text-[9.5px] font-bold uppercase tracking-wider ${
+                        plugin.state === "enabled" ? "bg-emerald-500/[0.12] text-emerald-500" :
+                        plugin.state === "errored" ? "bg-red-500/[0.12] text-red-500" :
+                        "bg-[var(--bg-tertiary)] text-[var(--text-muted)]"
+                      }`}>
+                        {plugin.state}
+                      </span>
+                      {plugin.manifest.minAppVersion && (
+                        <span className="rounded bg-[var(--bg-tertiary)] px-1.5 py-0.5 text-[9.5px] font-semibold text-[var(--text-muted)]">
+                          min {plugin.manifest.minAppVersion}
+                        </span>
+                      )}
+                      {plugin.manifest.isDesktopOnly && (
+                        <span className="rounded bg-[var(--bg-tertiary)] px-1.5 py-0.5 text-[9.5px] font-semibold text-[var(--text-muted)]">
+                          desktop
+                        </span>
+                      )}
+                      {(plugin.approvedPermissions || plugin.manifest.permissions || []).map((permission) => (
+                        <span key={permission} className="rounded bg-[var(--bg-tertiary)] px-1.5 py-0.5 text-[9.5px] font-semibold text-[var(--text-muted)]">
+                          {permission}
+                        </span>
+                      ))}
+                    </div>
+                    {plugin.error && (
+                      <div className="mt-3 rounded-md border border-red-500/20 bg-red-500/[0.08] px-2 py-1.5 text-[10.5px] text-red-500">
+                        {plugin.error}
+                      </div>
+                    )}
                   </div>
 
                   <div className="mt-4 flex items-center justify-between border-t border-[var(--border-subtle)] pt-3">

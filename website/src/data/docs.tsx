@@ -301,7 +301,8 @@ npm run dev`}</pre>
             <b>AI graph</b> — suggested links, bridges, and idea islands from on-device embeddings.
           </li>
           <li>
-            <b>AI writing</b> — inline rewrite, expand, and simplify, plus answers grounded in your notes.
+            <b>AI writing</b> — optional OpenAI or OpenRouter keys unlock rewrite, expand, and simplify. Local
+            embeddings need no key.
           </li>
           <li>
             <b>Your cloud, or none</b> — optional Supabase that you own. No required account, no product

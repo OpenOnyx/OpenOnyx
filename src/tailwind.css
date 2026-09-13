@@ -1365,6 +1365,222 @@ img.emoji {
 /* Plugin views intentionally rely on injected Obsidian compatibility CSS plus
    each plugin's raw styles.css, so this file does not restyle plugin DOM. */
 
+/* ── Graph View Layout and Controls ─────────────────── */
+.graph-view-container {
+  display: flex !important;
+  flex-direction: column !important;
+  height: 100% !important;
+  width: 100% !important;
+  background: var(--bg-primary) !important;
+  position: relative !important;
+  -webkit-user-select: none !important;
+  user-select: none !important;
+  overflow: hidden !important;
+}
+
+.graph-view-container.fullscreen {
+  position: fixed !important;
+  inset: 0 !important;
+  z-index: 100 !important;
+}
+
+.graph-mode-shell {
+  position: relative !important;
+  width: 100% !important;
+  height: 100% !important;
+  overflow: hidden !important;
+}
+
+.graph-mode-switch {
+  position: absolute !important;
+  top: 10px !important;
+  left: 12px !important;
+  z-index: 90 !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 4px !important;
+  padding: 4px !important;
+  border-radius: 999px !important;
+  border: 1px solid var(--border-medium) !important;
+  background: color-mix(in srgb, var(--bg-elevated) 86%, transparent) !important;
+  backdrop-filter: blur(10px) !important;
+}
+
+.graph-mode-btn {
+  border: none !important;
+  background: transparent !important;
+  color: var(--text-secondary) !important;
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  border-radius: 999px !important;
+  padding: 4px 10px !important;
+  cursor: pointer !important;
+  transition: all 0.15s ease !important;
+}
+
+.graph-mode-btn:hover {
+  color: var(--text-primary) !important;
+  background: color-mix(in srgb, var(--bg-hover) 74%, transparent) !important;
+}
+
+.graph-mode-btn.active {
+  color: var(--text-on-accent) !important;
+  background: var(--accent-primary) !important;
+}
+
+.graph-main {
+  flex: 1 1 0% !important;
+  display: flex !important;
+  position: relative !important;
+  overflow: hidden !important;
+  width: 100% !important;
+  height: 100% !important;
+}
+
+.graph-canvas-container {
+  flex: 1 1 0% !important;
+  position: relative !important;
+  width: 100% !important;
+  height: 100% !important;
+  overflow: hidden !important;
+}
+
+.graph-canvas-container canvas {
+  width: 100% !important;
+  height: 100% !important;
+  display: block !important;
+}
+
+.graph-tools-rail {
+  position: absolute !important;
+  top: 12px !important;
+  right: 12px !important;
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: flex-end !important;
+  gap: 8px !important;
+  z-index: 32 !important;
+  pointer-events: none !important;
+}
+
+.graph-tools-group {
+  display: flex !important;
+  flex-direction: column !important;
+  background: color-mix(in srgb, var(--bg-elevated) 82%, transparent) !important;
+  backdrop-filter: blur(12px) !important;
+  border: 1px solid var(--border-medium) !important;
+  border-radius: 10px !important;
+  overflow: hidden !important;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12) !important;
+  pointer-events: auto !important;
+}
+
+.graph-tools-group .graph-btn {
+  width: 36px !important;
+  height: 36px !important;
+  border-radius: 0 !important;
+}
+
+.graph-tools-group .graph-btn + .graph-btn {
+  border-top: 1px solid color-mix(in srgb, var(--border-medium) 52%, transparent) !important;
+}
+
+.graph-tools-sim-indicator {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 6px !important;
+  min-width: 40px !important;
+  padding: 5px 8px !important;
+  border-radius: 999px !important;
+  border: 1px solid var(--border-medium) !important;
+  background: color-mix(in srgb, var(--bg-elevated) 88%, transparent) !important;
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  color: var(--text-secondary) !important;
+  pointer-events: none !important;
+}
+
+.graph-btn {
+  width: 28px !important;
+  height: 28px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  background: transparent !important;
+  border: none !important;
+  border-radius: var(--radius-sm) !important;
+  color: var(--text-secondary) !important;
+  cursor: pointer !important;
+  transition: all 0.15s ease !important;
+}
+
+.graph-btn:hover {
+  background: var(--bg-hover) !important;
+  color: var(--text-primary) !important;
+}
+
+.graph-btn.active {
+  background: var(--accent-primary) !important;
+  color: var(--text-on-accent) !important;
+}
+
+.graph-btn-primary {
+  flex: 1 !important;
+  min-height: 32px !important;
+  padding: var(--space-2) !important;
+  background: var(--accent-primary) !important;
+  border: none !important;
+  border-radius: 9px !important;
+  color: var(--text-on-accent) !important;
+  font-size: var(--text-xs) !important;
+  font-weight: 600 !important;
+  cursor: pointer !important;
+  transition: all 0.15s ease !important;
+}
+
+.graph-btn-primary:hover {
+  background: var(--interactive-accent-hover, var(--accent-primary)) !important;
+  color: var(--text-on-accent) !important;
+}
+
+.graph-btn-secondary {
+  flex: 1 !important;
+  min-height: 32px !important;
+  padding: var(--space-2) !important;
+  background: transparent !important;
+  border: 1px solid var(--border-medium) !important;
+  border-radius: 9px !important;
+  color: var(--text-secondary) !important;
+  font-size: var(--text-xs) !important;
+  cursor: pointer !important;
+  transition: all 0.15s ease !important;
+}
+
+.graph-btn-secondary:hover {
+  background: var(--bg-hover) !important;
+  border-color: var(--accent-primary) !important;
+  color: var(--text-primary) !important;
+}
+
+.graph-node-counter {
+  position: absolute !important;
+  left: 12px !important;
+  bottom: 12px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  padding: 5px 10px !important;
+  border-radius: 999px !important;
+  border: 1px solid var(--border-medium) !important;
+  background: color-mix(in srgb, var(--bg-elevated) 84%, transparent) !important;
+  backdrop-filter: blur(10px) !important;
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  color: var(--text-secondary) !important;
+  z-index: 20 !important;
+}
+
 /* ── Graph Settings Panel Styling ───────────────────── */
 .graph-settings-panel {
   position: absolute;
@@ -1835,6 +2051,18 @@ img.emoji {
 .onyx-tree {
 }
 
+.sidebar.onyx-tree .nn-explorer-container,
+.sidebar.onyx-tree .nn-folders-pane,
+.sidebar.onyx-tree .nn-notes-pane,
+.sidebar.onyx-tree .nn-compact-header,
+.sidebar.onyx-tree .file-explorer {
+  background-color: var(--bg-tree, var(--bg-secondary)) !important;
+}
+
+.sidebar.onyx-tree .onyx-quick-search {
+  background-color: var(--bg-input, color-mix(in srgb, var(--bg-tree, #111) 88%, white 12%));
+}
+
 .onyx-tree .file-tree-item.active {
   box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
 }
@@ -2252,7 +2480,206 @@ html[data-theme="light"] .app.has-wallpaper .sort-menu {
   transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
+/* CodeMirror live preview image widget responsive containment */
+.cm-image-widget,
+.cm-image-widget-stage {
+  max-width: 100% !important;
+  box-sizing: border-box !important;
+}
 
+.cm-image-widget-image {
+  max-width: 100% !important;
+  height: auto !important;
+  box-sizing: border-box !important;
+}
 
+/* ── Context Menu & Plugin Menu ───────────────────── */
+.menu.oo-plugin-menu,
+.oo-plugin-menu {
+  position: fixed !important;
+  background: var(--bg-elevated, #202020) !important;
+  border: 1px solid var(--border-medium, #383838) !important;
+  border-radius: 8px !important;
+  padding: 4px !important;
+  min-width: 200px !important;
+  max-width: 320px !important;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5), 0 2px 6px rgba(0, 0, 0, 0.3) !important;
+  z-index: 99999 !important;
+  font-family: var(--font-sans, Inter, system-ui, sans-serif) !important;
+  user-select: none !important;
+  backdrop-filter: blur(8px) !important;
+}
 
+.menu.oo-plugin-menu .menu-item,
+.oo-plugin-menu .menu-item {
+  display: flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+  padding: 6px 10px !important;
+  border-radius: 6px !important;
+  font-size: 13px !important;
+  font-weight: 450 !important;
+  color: var(--text-primary, #f0f0f0) !important;
+  cursor: pointer !important;
+  transition: background-color 0.1s ease, color 0.1s ease !important;
+}
 
+.menu.oo-plugin-menu .menu-item:hover,
+.oo-plugin-menu .menu-item:hover {
+  background: var(--bg-hover, rgba(255, 255, 255, 0.08)) !important;
+  color: var(--text-primary, #ffffff) !important;
+}
+
+.menu.oo-plugin-menu .menu-item-icon,
+.oo-plugin-menu .menu-item-icon {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  width: 16px !important;
+  height: 16px !important;
+  flex-shrink: 0 !important;
+  color: var(--text-secondary, #999999) !important;
+}
+
+.menu.oo-plugin-menu .menu-item:hover .menu-item-icon,
+.oo-plugin-menu .menu-item:hover .menu-item-icon {
+  color: var(--text-primary, #ffffff) !important;
+}
+
+.menu.oo-plugin-menu .menu-item-icon svg,
+.oo-plugin-menu .menu-item-icon svg {
+  width: 15px !important;
+  height: 15px !important;
+  stroke-width: 1.75 !important;
+}
+
+.menu.oo-plugin-menu .menu-item-title,
+.oo-plugin-menu .menu-item-title {
+  flex: 1 !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+}
+
+.menu.oo-plugin-menu .menu-item-submenu-indicator,
+.oo-plugin-menu .menu-item-submenu-indicator {
+  margin-left: auto !important;
+  color: var(--text-muted, #777777) !important;
+  display: flex !important;
+  align-items: center !important;
+}
+
+.menu.oo-plugin-menu .menu-separator,
+.oo-plugin-menu .menu-separator {
+  height: 1px !important;
+  background: var(--border-subtle, rgba(255, 255, 255, 0.08)) !important;
+  margin: 4px 2px !important;
+}
+
+/* ── Comment Highlights (both Editor and Read Mode) ── */
+.cm-comment-highlight,
+mark.cm-comment-highlight {
+  background-color: var(--editor-search-match, rgba(250, 204, 21, 0.28)) !important;
+  border-bottom: 2px solid var(--editor-search-match-border, rgba(250, 204, 21, 0.8)) !important;
+  border-radius: 2px !important;
+  color: inherit !important;
+  cursor: pointer !important;
+  transition: background-color 0.15s ease !important;
+}
+
+.cm-comment-highlight:hover,
+.cm-comment-highlight.cm-comment-active,
+mark.cm-comment-highlight:hover,
+mark.cm-comment-highlight.cm-comment-active {
+  background-color: var(--editor-search-active, rgba(250, 204, 21, 0.45)) !important;
+  border-bottom: 2px solid var(--editor-search-active-border, rgba(250, 204, 21, 1)) !important;
+}
+
+.cm-comment-highlight.cm-comment-pending,
+mark.cm-comment-highlight.cm-comment-pending {
+  background-color: var(--editor-search-match, rgba(250, 204, 21, 0.35)) !important;
+  border-bottom: 2px dashed var(--editor-search-match-border, rgba(250, 204, 21, 0.9)) !important;
+}
+
+@keyframes commentCardSweep {
+  0% {
+    opacity: 0;
+    transform: translateX(110%);
+  }
+  18% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 1;
+    transform: translateX(-110%);
+  }
+  82% {
+    opacity: 0.75;
+  }
+  100% {
+    opacity: 0;
+    transform: translateX(110%);
+  }
+}
+
+.cm-comment-card {
+  isolation: isolate;
+  overflow: hidden;
+}
+
+.cm-comment-card::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0;
+  transform: translateX(110%);
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    color-mix(in srgb, var(--editor-search-match, #facc15) 20%, transparent) 42%,
+    color-mix(in srgb, var(--editor-search-match, #facc15) 34%, transparent) 50%,
+    color-mix(in srgb, var(--editor-search-match, #facc15) 20%, transparent) 58%,
+    transparent 100%
+  );
+}
+
+.cm-comment-card:hover::after,
+.cm-comment-card.cm-comment-card-sweep::after {
+  animation: commentCardSweep 760ms ease-out;
+}
+
+.cm-comment-card > * {
+  position: relative;
+  z-index: 1;
+}
+
+.cm-comment-collapsed-body {
+  position: relative;
+  max-height: 22px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.cm-comment-collapsed-body > p,
+.cm-comment-collapsed-body > div {
+  display: inline;
+}
+
+.cm-comment-rich-editor ul {
+  list-style-type: disc;
+  padding-left: 1.25rem;
+  margin: 0.25rem 0;
+}
+
+.cm-comment-rich-editor ol {
+  list-style-type: decimal;
+  padding-left: 1.25rem;
+  margin: 0.25rem 0;
+}
+
+.cm-comment-rich-editor li {
+  margin: 0.125rem 0;
+}

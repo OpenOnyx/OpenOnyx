@@ -22,13 +22,7 @@ import { EditorHeader } from "./components/editor/EditorHeader";
 import { FormattingToolbar } from "./components/layout/FormattingToolbar";
 import { LeafPaneEditor } from "./components/layout/LeafPaneEditor";
 import { NewTabView } from "./components/layout/NewTabView";
-import { GraphView } from "./components/graph/GraphView";
-import { AIKnowledgeGraph } from "./components/graph/AIKnowledgeGraph";
-import { CanvasView } from "./components/canvas/CanvasView";
-import { SearchModal } from "./components/modals/SearchModal";
-import { BookmarkModal } from "./components/modals/BookmarkModal";
 import { BookmarksPanel } from "./components/layout/BookmarksPanel";
-import { CommandPalette } from "./components/modals/CommandPalette";
 import { BacklinksPanel } from "./components/panels/BacklinksPanel";
 import { RightSidebar, RightSidebarTabType } from "./components/layout/RightSidebar";
 import { StatusBar } from "./components/layout/StatusBar";
@@ -37,23 +31,27 @@ import {
   type VaultEntryAction,
   type VaultEntryTransitionPhase,
 } from "./components/settings/WelcomeScreen";
-import { VaultManager } from "./components/settings/VaultManager";
 import { Modal } from "./components/modals/Modal";
 import { Ribbon } from "./components/layout/Ribbon";
 import { OutlinePane } from "./components/panels/OutlinePane";
 import { TagPane } from "./components/panels/TagPane";
 import { OutgoingLinksPanel } from "./components/panels/OutgoingLinksPanel";
 import { PropertiesPanel } from "./components/panels/PropertiesPanel";
-import {
-  SettingsPage,
-  AppSettings,
-  DEFAULT_SETTINGS,
-} from "./components/settings/SettingsPage";
-import { TemplateModal } from "./components/modals/TemplateModal";
 import { UnlinkedMentionsPanel } from "./components/panels/UnlinkedMentionsPanel";
-import { AIPage } from "./components/ai/AIPage";
-import { SpacesPage } from "./components/spaces/SpacesPage";
-import { DatabaseView } from "./components/settings/DatabaseView";
+import type { AppSettings } from "./types/settings";
+import { DEFAULT_SETTINGS } from "./types/settings";
+
+const GraphView = React.lazy(() => import("./components/graph/GraphView").then((m) => ({ default: m.GraphView })));
+const AIKnowledgeGraph = React.lazy(() => import("./components/graph/AIKnowledgeGraph").then((m) => ({ default: m.AIKnowledgeGraph })));
+const CanvasView = React.lazy(() => import("./components/canvas/CanvasView").then((m) => ({ default: m.CanvasView })));
+const SearchModal = React.lazy(() => import("./components/modals/SearchModal").then((m) => ({ default: m.SearchModal })));
+const BookmarkModal = React.lazy(() => import("./components/modals/BookmarkModal").then((m) => ({ default: m.BookmarkModal })));
+const CommandPalette = React.lazy(() => import("./components/modals/CommandPalette").then((m) => ({ default: m.CommandPalette })));
+const VaultManager = React.lazy(() => import("./components/settings/VaultManager").then((m) => ({ default: m.VaultManager })));
+const SettingsPage = React.lazy(() => import("./components/settings/SettingsPage").then((m) => ({ default: m.SettingsPage })));
+const TemplateModal = React.lazy(() => import("./components/modals/TemplateModal").then((m) => ({ default: m.TemplateModal })));
+const SpacesPage = React.lazy(() => import("./components/spaces/SpacesPage").then((m) => ({ default: m.SpacesPage })));
+const DatabaseView = React.lazy(() => import("./components/settings/DatabaseView").then((m) => ({ default: m.DatabaseView })));
 import {
   embedNote,
   loadStore,
@@ -613,6 +611,7 @@ export default function App() {
   const pluginManagerRef = useRef<PluginManager | null>(null);
   const ooAppRef = useRef<OOApp | null>(null);
   const openFileRef = useRef<(path: string, mode?: ViewMode) => Promise<void>>(async () => {});
+  const openGraphAsTabRef = useRef<(mode?: GraphMode) => void>(() => {});
   const pluginFileOpenQueueRef = useRef<Promise<void>>(Promise.resolve());
   const renameRedirectsRef = useRef<Map<string, string>>(new Map());
   const collabSubRef = useRef<{
@@ -2318,35 +2317,17 @@ export default function App() {
   // ── Menu Event Handlers ─────────────────────────────
   useEffect(() => {
     const openGraphFromMenu = () => {
-      setGraphMode("manual");
-      setShowThoughtModel(false);
-      setShowCanvas(false);
-      setShowGraph(false);
-      const existingGraphTab = tabs.find((t) => t.path === GRAPH_TAB_PATH);
-      if (existingGraphTab) {
-        setActiveTabId(existingGraphTab.id);
-        const leaf = findLeafWithTab(paneTree, existingGraphTab.id);
-        if (leaf) {
-          setFocusedLeafId(leaf.id);
-        }
-      } else {
-        const graphTab: Tab = {
-          id: generateId(),
-          path: GRAPH_TAB_PATH,
-          name: "Graph",
-          isModified: false,
-        };
-        setTabs((prev) => [...prev, graphTab]);
-        setActiveTabId(graphTab.id);
-      }
-      setCurrentContent("");
-      setBacklinks([]);
+      openGraphAsTabRef.current("manual");
+    };
+    const openAIGraphFromMenu = () => {
+      openGraphAsTabRef.current("ai");
     };
 
     api.onMenuEvent("menu:open-vault", handleOpenVault);
     api.onMenuEvent("menu:new-note", handleNewNote);
     api.onMenuEvent("menu:save", handleSave);
     api.onMenuEvent("menu:toggle-graph", openGraphFromMenu);
+    api.onMenuEvent("menu:open-ai-graph", openAIGraphFromMenu);
     api.onMenuEvent("menu:command-palette", () => {
       if (settings.coreCommandPalette !== false) setShowCommandPalette(true);
     });
@@ -2358,11 +2339,12 @@ export default function App() {
         "menu:new-note",
         "menu:save",
         "menu:toggle-graph",
+        "menu:open-ai-graph",
         "menu:command-palette",
         "menu:toggle-sidebar",
       ].forEach((ch) => api.removeMenuListener(ch));
     };
-  }, [tabs, activeTabId, settings.coreCommandPalette]);
+  }, [settings.coreCommandPalette]);
 
   // ── Keyboard Shortcuts ──────────────────────────────
   useEffect(() => {
@@ -2390,9 +2372,9 @@ export default function App() {
       } else if (ctrl && e.key === "s") {
         e.preventDefault();
         handleSave();
-      } else if (ctrl && e.key === "g") {
+      } else if (ctrl && e.key.toLowerCase() === "g") {
         e.preventDefault();
-        openGraphAsTab();
+        openGraphAsTabRef.current(shift ? "ai" : "manual");
       } else if (ctrl && e.shiftKey && e.key.toLowerCase() === "c" && settings.coreCanvas !== false) {
         e.preventDefault();
         void handleToggleCanvas();
@@ -2511,10 +2493,41 @@ export default function App() {
     window.addEventListener("openonyx:file-created", onFileCreated as EventListener);
     window.addEventListener("openonyx:directory-created", onFileCreated as EventListener);
     window.addEventListener("openonyx:file-written", onFileWritten as EventListener);
+
+    const unsubscribeVaultWatcher = api.onVaultFileChanges?.((changes) => {
+      const meaningfulChanges = changes.filter((change) => {
+        const path = change.path || "";
+        return path && !path.startsWith(".openonyx/") && !path.startsWith(".trash/");
+      });
+      if (meaningfulChanges.length === 0) return;
+
+      void refreshFileTree();
+      for (const change of meaningfulChanges) {
+        if (!change.isDirectory && change.type !== "delete") {
+          void indexMarkdownFileNow(change.path);
+        } else if (change.type === "delete" && change.path.toLowerCase().endsWith(".md")) {
+          void (async () => {
+            try {
+              const store = loadStore();
+              await removeEmbedding(store, change.path);
+              window.dispatchEvent(
+                new CustomEvent("openonyx:embedding-updated", {
+                  detail: { path: change.path },
+                }),
+              );
+            } catch (err) {
+              console.warn("[Auto-index] Failed to remove deleted file embedding:", err);
+            }
+          })();
+        }
+      }
+    });
+
     return () => {
       window.removeEventListener("openonyx:file-created", onFileCreated as EventListener);
       window.removeEventListener("openonyx:directory-created", onFileCreated as EventListener);
       window.removeEventListener("openonyx:file-written", onFileWritten as EventListener);
+      unsubscribeVaultWatcher?.();
     };
   }, [indexMarkdownFileNow, refreshFileTree]);
 
@@ -3059,33 +3072,48 @@ export default function App() {
   }, [activeTabId, pluginList, tabs]);
 
 
-  const openGraphAsTab = (mode: GraphMode = "manual") => {
-    setGraphMode(mode);
-    setShowThoughtModel(false);
-    setShowCanvas(false);
-    setShowGraph(false);
+  const openGraphAsTab = useCallback(
+    (mode: GraphMode = "manual") => {
+      setGraphMode(mode);
+      setShowThoughtModel(false);
+      setShowCanvas(false);
+      setShowGraph(false);
 
-    const existingGraphTab = tabs.find((t) => t.path === GRAPH_TAB_PATH);
-    if (existingGraphTab) {
-      setActiveTabId(existingGraphTab.id);
-      const leaf = findLeafWithTab(paneTree, existingGraphTab.id);
-      if (leaf) {
-        setFocusedLeafId(leaf.id);
+      const tabName = mode === "ai" ? "AI Graph" : "Graph";
+      const existingGraphTab = tabs.find((t) => t.path === GRAPH_TAB_PATH);
+      if (existingGraphTab) {
+        if (existingGraphTab.name !== tabName) {
+          setTabs((prev) =>
+            prev.map((t) => (t.id === existingGraphTab.id ? { ...t, name: tabName } : t))
+          );
+        }
+        setActiveTabId(existingGraphTab.id);
+        const leaf = findLeafWithTab(paneTree, existingGraphTab.id);
+        if (leaf) {
+          setFocusedLeafId(leaf.id);
+          setPaneTree((prev) => setActiveTabInLeaf(prev, leaf.id, existingGraphTab.id));
+        }
+      } else {
+        const graphTab: Tab = {
+          id: generateId(),
+          path: GRAPH_TAB_PATH,
+          name: tabName,
+          isModified: false,
+        };
+        setTabs((prev) => [...prev, graphTab]);
+        setActiveTabId(graphTab.id);
       }
-    } else {
-      const graphTab: Tab = {
-        id: generateId(),
-        path: GRAPH_TAB_PATH,
-        name: "Graph",
-        isModified: false,
-      };
-      setTabs((prev) => [...prev, graphTab]);
-      setActiveTabId(graphTab.id);
-    }
 
-    setCurrentContent("");
-    setBacklinks([]);
-  };
+      setCurrentContent("");
+      setBacklinks([]);
+
+      requestAnimationFrame(() => {
+        window.dispatchEvent(new Event("resize"));
+      });
+    },
+    [tabs, paneTree],
+  );
+  openGraphAsTabRef.current = openGraphAsTab;
 
   const openSpacesAsTab = () => {
     setShowThoughtModel(false);
@@ -3691,6 +3719,9 @@ export default function App() {
       if (tab.path === GRAPH_TAB_PATH) {
         setCurrentContent("");
         setBacklinks([]);
+        requestAnimationFrame(() => {
+          window.dispatchEvent(new Event("resize"));
+        });
         return;
       }
       if (tab.path === SPACES_TAB_PATH) {
@@ -3803,8 +3834,14 @@ export default function App() {
       setViewMode("split");
     };
 
-    const onOpenGraph = () => {
-      openGraphAsTab();
+    const onOpenGraph = (event?: Event) => {
+      const customEvent = event as CustomEvent<{ mode?: GraphMode }> | undefined;
+      const mode = customEvent?.detail?.mode || "manual";
+      openGraphAsTab(mode);
+    };
+
+    const onOpenAIGraph = () => {
+      openGraphAsTab("ai");
     };
 
     const onOpenChat = () => {
@@ -3928,6 +3965,7 @@ export default function App() {
     window.addEventListener("oo:new-note", onNewNote as EventListener);
     window.addEventListener("oo:split-view", onSplitView as EventListener);
     window.addEventListener("oo:open-graph", onOpenGraph as EventListener);
+    window.addEventListener("oo:open-ai-graph", onOpenAIGraph as EventListener);
     window.addEventListener("oo:open-chat", onOpenChat as EventListener);
     window.addEventListener("oo:daily-note", onDailyNote as EventListener);
     window.addEventListener("oo:fuzzy-search", onFuzzySearch as EventListener);
@@ -3948,6 +3986,7 @@ export default function App() {
       window.removeEventListener("oo:new-note", onNewNote as EventListener);
       window.removeEventListener("oo:split-view", onSplitView as EventListener);
       window.removeEventListener("oo:open-graph", onOpenGraph as EventListener);
+      window.removeEventListener("oo:open-ai-graph", onOpenAIGraph as EventListener);
       window.removeEventListener("oo:open-chat", onOpenChat as EventListener);
       window.removeEventListener("oo:daily-note", onDailyNote as EventListener);
       window.removeEventListener("oo:fuzzy-search", onFuzzySearch as EventListener);
@@ -4685,22 +4724,24 @@ export default function App() {
 
     if (tabIsCanvas) {
       return (
-        <CanvasView
-          onClose={() => closeTab(leafActiveTab.id)}
-          isFullScreen={false}
-          onToggleFullScreen={() => setCanvasFullScreen((f) => !f)}
-          theme={theme}
-          vaultPath={vaultPath!}
-          fileTree={fileTree}
-          canvasFilePath={leafActiveTab.path}
-          spaceId={collaborationEngine.activeSpaceId || undefined}
-          onOpenFile={(path) => openFile(path)}
-          onNewCanvas={() => { void handleToggleCanvas(); }}
-          onDuplicateCanvas={() => { void handleDuplicateCanvas(); }}
-          onSaveCanvasAs={() => { void handleSaveCanvasAs(); }}
-          recentCanvasFiles={recentCanvasFiles}
-          onOpenRecentCanvas={(path) => { void openFile(path, "preview"); }}
-        />
+        <React.Suspense fallback={<div className="flex h-full w-full items-center justify-center text-sm text-[var(--text-muted)]">Loading Canvas...</div>}>
+          <CanvasView
+            onClose={() => closeTab(leafActiveTab.id)}
+            isFullScreen={false}
+            onToggleFullScreen={() => setCanvasFullScreen((f) => !f)}
+            theme={theme}
+            vaultPath={vaultPath!}
+            fileTree={fileTree}
+            canvasFilePath={leafActiveTab.path}
+            spaceId={collaborationEngine.activeSpaceId || undefined}
+            onOpenFile={(path) => openFile(path)}
+            onNewCanvas={() => { void handleToggleCanvas(); }}
+            onDuplicateCanvas={() => { void handleDuplicateCanvas(); }}
+            onSaveCanvasAs={() => { void handleSaveCanvasAs(); }}
+            recentCanvasFiles={recentCanvasFiles}
+            onOpenRecentCanvas={(path) => { void openFile(path, "preview"); }}
+          />
+        </React.Suspense>
       );
     }
 
@@ -4724,10 +4765,12 @@ export default function App() {
       }
 
       return (
-        <DatabaseView
-          folderNode={folderNode}
-          onOpenFile={openFile}
-        />
+        <React.Suspense fallback={<div className="flex h-full w-full items-center justify-center text-sm text-[var(--text-muted)]">Loading Database...</div>}>
+          <DatabaseView
+            folderNode={folderNode}
+            onOpenFile={openFile}
+          />
+        </React.Suspense>
       );
     }
 
@@ -4835,43 +4878,57 @@ export default function App() {
           <button
             type="button"
             className={`graph-mode-btn ${graphMode !== "ai" ? "active" : ""}`}
-            onClick={() => setGraphMode("manual")}
+            onClick={() => {
+              setGraphMode("manual");
+              requestAnimationFrame(() => {
+                window.dispatchEvent(new Event("resize"));
+              });
+            }}
           >
             Manual
           </button>
           <button
             type="button"
             className={`graph-mode-btn ${graphMode === "ai" ? "active" : ""}`}
-            onClick={() => setGraphMode("ai")}
+            onClick={() => {
+              setGraphMode("ai");
+              requestAnimationFrame(() => {
+                window.dispatchEvent(new Event("resize"));
+              });
+            }}
           >
             AI View
           </button>
         </div>
 
         <div style={{ display: graphMode === "ai" ? "block" : "none", height: "100%", width: "100%" }}>
-          <AIKnowledgeGraph
-            onNodeClick={onNodeClick}
-            onClose={onClose}
-            isFullScreen={isFullScreen}
-            onToggleFullScreen={() => setGraphFullScreen((f) => !f)}
-            theme={theme}
-            vaultPath={vaultPath}
-            fileTree={fileTree}
-            localNodePath={localNodePath}
-            onCreateGroupFromPaths={handleCreateGroupFromPaths}
-            onOpenPathsAsGroup={handleOpenPathsAsGroup}
-          />
+          <React.Suspense fallback={<div className="flex h-full w-full items-center justify-center text-sm text-[var(--text-muted)]">Loading Graph...</div>}>
+            <AIKnowledgeGraph
+              onNodeClick={onNodeClick}
+              onClose={onClose}
+              isFullScreen={isFullScreen}
+              onToggleFullScreen={() => setGraphFullScreen((f) => !f)}
+              theme={theme}
+              vaultPath={vaultPath}
+              fileTree={fileTree}
+              localNodePath={localNodePath}
+              onCreateGroupFromPaths={handleCreateGroupFromPaths}
+              onOpenPathsAsGroup={handleOpenPathsAsGroup}
+            />
+          </React.Suspense>
         </div>
         <div style={{ display: graphMode !== "ai" ? "block" : "none", height: "100%", width: "100%" }}>
-          <GraphView
-            onNodeClick={onNodeClick}
-            onClose={onClose}
-            isFullScreen={isFullScreen}
-            onToggleFullScreen={() => setGraphFullScreen((f) => !f)}
-            theme={theme}
-            vaultPath={vaultPath}
-            localNodePath={localNodePath}
-          />
+          <React.Suspense fallback={<div className="flex h-full w-full items-center justify-center text-sm text-[var(--text-muted)]">Loading Graph...</div>}>
+            <GraphView
+              onNodeClick={onNodeClick}
+              onClose={onClose}
+              isFullScreen={isFullScreen}
+              onToggleFullScreen={() => setGraphFullScreen((f) => !f)}
+              theme={theme}
+              vaultPath={vaultPath}
+              localNodePath={localNodePath}
+            />
+          </React.Suspense>
         </div>
       </div>
     ),
@@ -4928,12 +4985,14 @@ export default function App() {
               height: "100%",
             }}
           >
-            <SpacesPage
-              onClose={() => closeTab(spacesTab.id)}
-              fileTree={fileTree}
-              onOpenNote={(path) => { openFile(path); }}
-              vaultPath={vaultPath || undefined}
-            />
+            <React.Suspense fallback={<div className="flex h-full w-full items-center justify-center text-sm text-[var(--text-muted)]">Loading Spaces...</div>}>
+              <SpacesPage
+                onClose={() => closeTab(spacesTab.id)}
+                fileTree={fileTree}
+                onOpenNote={(path) => { openFile(path); }}
+                vaultPath={vaultPath || undefined}
+              />
+            </React.Suspense>
           </div>
         )}
 
@@ -5043,7 +5102,10 @@ export default function App() {
               setShowBookmarks(true);
             }}
             onGraph={() => {
-              openGraphAsTab();
+              openGraphAsTab("manual");
+            }}
+            onAIGraph={() => {
+              openGraphAsTab("ai");
             }}
             onSettings={() => {
               setSettingsSection("home");
@@ -5097,22 +5159,24 @@ export default function App() {
                   onRemove={removeBookmark}
                 />
               ) : showSearch ? (
-                <SearchModal
-                  onClose={() => {
-                    setShowSearch(false);
-                  }}
-                  onSelect={(path) => {
-                    setShowSearch(false);
-                    openFile(path);
-                  }}
-                  recentFiles={recentFiles}
-                  starredNotes={starredNotes}
-                  fileTree={fileTree}
-                  initialQuery={searchInitialQuery}
-                  initialMode={searchInitialMode}
-                  onQueryChange={setSearchInitialQuery}
-                  onModeChange={setSearchInitialMode}
-                />
+                <React.Suspense fallback={<div className="p-4 text-xs text-[var(--text-muted)]">Loading search...</div>}>
+                  <SearchModal
+                    onClose={() => {
+                      setShowSearch(false);
+                    }}
+                    onSelect={(path) => {
+                      setShowSearch(false);
+                      openFile(path);
+                    }}
+                    recentFiles={recentFiles}
+                    starredNotes={starredNotes}
+                    fileTree={fileTree}
+                    initialQuery={searchInitialQuery}
+                    initialMode={searchInitialMode}
+                    onQueryChange={setSearchInitialQuery}
+                    onModeChange={setSearchInitialMode}
+                  />
+                </React.Suspense>
               ) : (
                 <Sidebar
                   visible={true}
@@ -5493,91 +5557,92 @@ export default function App() {
     </div>
 
       {showCommandPalette && (
-        <CommandPalette
-          commands={[
-            ...commands,
-            ...pluginCommands.map(pc => ({
-              id: pc.id,
-              label: pc.name,
-              action: () => {
-                const activeEditor = ooAppRef.current?.workspace.activeEditor;
-                if (pc.editorCallback && activeEditor?.editor) {
-                  pc.editorCallback(activeEditor.editor, activeEditor);
-                } else if (pc.editorCheckCallback && activeEditor?.editor) {
-                  pc.editorCheckCallback(false, activeEditor.editor, activeEditor);
-                } else if (pc.callback) {
-                  pc.callback();
-                } else if (pc.checkCallback) {
-                  pc.checkCallback(false);
-                }
-              },
-              category: pc.pluginId,
-            })),
-          ]}
-          onClose={() => setShowCommandPalette(false)}
-        />
+        <React.Suspense fallback={null}>
+          <CommandPalette
+            commands={[
+              ...commands,
+              ...pluginCommands.map(pc => ({
+                id: pc.id,
+                label: pc.name,
+                action: () => {
+                  const activeEditor = ooAppRef.current?.workspace.activeEditor;
+                  if (pc.editorCallback && activeEditor?.editor) {
+                    pc.editorCallback(activeEditor.editor, activeEditor);
+                  } else if (pc.editorCheckCallback && activeEditor?.editor) {
+                    pc.editorCheckCallback(false, activeEditor.editor, activeEditor);
+                  } else if (pc.callback) {
+                    pc.callback();
+                  } else if (pc.checkCallback) {
+                    pc.checkCallback(false);
+                  }
+                },
+                category: pc.pluginId,
+              })),
+            ]}
+            onClose={() => setShowCommandPalette(false)}
+          />
+        </React.Suspense>
       )}
 
       {showSettings && (
-        <SettingsPage
-          settings={settings}
-          onSettingsChange={setSettings}
-          onClose={() => {
-            setShowSettings(false);
-            setSettingsSection("home");
-          }}
-          initialSection={settingsSection as any}
-          commands={[
-            ...commands,
-            ...pluginCommands.map(pc => ({
-              id: pc.id,
-              label: pc.name,
-              shortcut: pc.hotkeys?.map((hotkey: any) => hotkey.modifiers?.concat(hotkey.key).join("+")).join(", "),
-              action: () => {},
-              category: pc.pluginId,
-            })),
-          ]}
-          plugins={pluginList}
-          pluginSettingTabs={pluginSettingTabs}
-          onEnablePlugin={async (id) => { await pluginManagerRef.current?.enablePlugin(id); }}
-          onDisablePlugin={async (id) => { await pluginManagerRef.current?.disablePlugin(id); }}
-          onRefreshPlugins={async () => {
-            await pluginManagerRef.current?.discoverPlugins();
-          }}
-          onReloadPlugin={async (id) => { await pluginManagerRef.current?.reloadPlugin(id); }}
-          onUninstallPlugin={async (id) => {
-            const pluginManager = pluginManagerRef.current;
-            if (!pluginManager) return false;
-            return pluginManager.uninstallPlugin(id);
-          }}
-          onInstallPlugin={async (repo, id, version) => {
-            const pm = pluginManagerRef.current;
-            if (!pm) {
-              throw new Error('Plugin manager not initialized. Try restarting the app.');
-            }
-            try {
-              const result = await pm.installFromGithubRepo(repo, id, version);
-              return result;
-            } catch (e: any) {
-              console.error('[App] Plugin install error:', e);
-              throw e;
-            }
-          }}
-          collaborators={displayCollaborators}
-          invitesSent={invitesSent}
-          invitesReceived={invitesReceived}
-          onInviteUser={handleInviteUser}
-          onRemoveCollaborator={handleRemoveCollaborator}
-          onAcceptInvite={handleAcceptInvite}
-          onRejectInvite={handleRejectInvite}
-          currentUserEmail={authManager.getUser()?.email}
-          vaultPath={vaultPath || undefined}
-          onVaultReconstructed={async (newPath) => {
-            await loadVaultData(newPath);
-            setShowSettings(false); // Close settings
-          }}
+        <React.Suspense fallback={null}>
+          <SettingsPage
+            settings={settings}
+            onSettingsChange={setSettings}
+            onClose={() => {
+              setShowSettings(false);
+              setSettingsSection("home");
+            }}
+            initialSection={settingsSection as any}
+            commands={[
+              ...commands,
+              ...pluginCommands.map(pc => ({
+                id: pc.id,
+                label: pc.name,
+                shortcut: pc.hotkeys?.map((hotkey: any) => hotkey.modifiers?.concat(hotkey.key).join("+")).join(", "),
+                action: () => {},
+                category: pc.pluginId,
+              })),
+            ]}
+            plugins={pluginList}
+            pluginSettingTabs={pluginSettingTabs}
+            onEnablePlugin={async (id) => { await pluginManagerRef.current?.enablePlugin(id); }}
+            onDisablePlugin={async (id) => { await pluginManagerRef.current?.disablePlugin(id); }}
+            onRefreshPlugins={async () => {
+              await pluginManagerRef.current?.discoverPlugins();
+            }}
+            onReloadPlugin={async (id) => { await pluginManagerRef.current?.reloadPlugin(id); }}
+            onUninstallPlugin={async (id) => {
+              const pluginManager = pluginManagerRef.current;
+              if (!pluginManager) return false;
+              return pluginManager.uninstallPlugin(id);
+            }}
+            onInstallPlugin={async (repo, id, version) => {
+              const pm = pluginManagerRef.current;
+              if (!pm) {
+                throw new Error('Plugin manager not initialized. Try restarting the app.');
+              }
+              try {
+                const result = await pm.installFromGithubRepo(repo, id, version);
+                return result;
+              } catch (err: any) {
+                console.error('[App] Plugin installation error:', err);
+                throw err;
+              }
+            }}
+            vaultPath={vaultPath}
+            onManageVaults={() => {
+              void handleShowVaultManager();
+            }}
+            previouslyOpenedVaults={previouslyOpenedVaults}
+            onSwitchVault={handleSwitchVault}
+            onVaultReconstructed={async (newPath) => {
+              await loadVaultData(newPath);
+              setShowSettings(false); // Close settings
+            }}
 
-        />
+          />
+        </React.Suspense>
       )}
 
       {permissionModalData && (
@@ -5596,30 +5661,34 @@ export default function App() {
       )}
 
       {showTemplateModal && (
-        <TemplateModal
-          onClose={() => setShowTemplateModal(false)}
-          onInsert={handleTemplateInsert}
-          currentNoteName={activeTab?.name}
-          templatesFolder={settings.templatesFolder}
-          dateFormat={settings.templateDateFormat}
-          timeFormat={settings.templateTimeFormat}
-        />
+        <React.Suspense fallback={null}>
+          <TemplateModal
+            onClose={() => setShowTemplateModal(false)}
+            onInsert={handleTemplateInsert}
+            currentNoteName={activeTab?.name}
+            templatesFolder={settings.templatesFolder}
+            dateFormat={settings.templateDateFormat}
+            timeFormat={settings.templateTimeFormat}
+          />
+        </React.Suspense>
       )}
 
       {bookmarkModalPath && (
-        <BookmarkModal
-          path={bookmarkModalPath}
-          initialTitle={
-            bookmarks.find((bookmark) => bookmark.path === bookmarkModalPath)?.title
-              || getNoteName(bookmarkModalPath)
-          }
-          groups={bookmarkGroups}
-          onClose={(result) => {
-            const path = bookmarkModalPath;
-            setBookmarkModalPath(null);
-            if (result) saveBookmark(path, result.title, result.group);
-          }}
-        />
+        <React.Suspense fallback={null}>
+          <BookmarkModal
+            path={bookmarkModalPath}
+            initialTitle={
+              bookmarks.find((bookmark) => bookmark.path === bookmarkModalPath)?.title
+                || getNoteName(bookmarkModalPath)
+            }
+            groups={bookmarkGroups}
+            onClose={(result) => {
+              const path = bookmarkModalPath;
+              setBookmarkModalPath(null);
+              if (result) saveBookmark(path, result.title, result.group);
+            }}
+          />
+        </React.Suspense>
       )}
 
       {groupModalData && (
@@ -5717,24 +5786,26 @@ export default function App() {
         </div>
       )}
       {showVaultManager && (
-        <VaultManager
-          currentVaultPath={vaultPath}
-          previouslyOpenedVaults={previouslyOpenedVaults}
-          theme={theme}
-          settings={settings}
-          onCreateVault={handleCreateVault}
-          onOpenVault={handleOpenVault}
-          onSwitchVault={handleSwitchVault}
-          onCloseVault={handleCloseVault}
-          onRevealVault={(path) => {
-            void api.showItemInFolder(path);
-          }}
-          onCopyVaultId={handleCopyVaultId}
-          onRenameVault={handleRenameVault}
-          onMoveVault={handleMoveVault}
-          onRemoveVaultFromList={handleRemoveVaultFromList}
-          onClose={() => setShowVaultManager(false)}
-        />
+        <React.Suspense fallback={null}>
+          <VaultManager
+            currentVaultPath={vaultPath}
+            previouslyOpenedVaults={previouslyOpenedVaults}
+            theme={theme}
+            settings={settings}
+            onCreateVault={handleCreateVault}
+            onOpenVault={handleOpenVault}
+            onSwitchVault={handleSwitchVault}
+            onCloseVault={handleCloseVault}
+            onRevealVault={(path) => {
+              void api.showItemInFolder(path);
+            }}
+            onCopyVaultId={handleCopyVaultId}
+            onRenameVault={handleRenameVault}
+            onMoveVault={handleMoveVault}
+            onRemoveVaultFromList={handleRemoveVaultFromList}
+            onClose={() => setShowVaultManager(false)}
+          />
+        </React.Suspense>
       )}
       {toast && (
         <div className="fixed bottom-[var(--space-8)] right-[var(--space-8)] z-[300] flex flex-col gap-[var(--space-2)]">

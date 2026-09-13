@@ -138,7 +138,7 @@ No account. Writing works offline.
 | Local Spaces (index the folder, retrieve with citations) | Nothing. Model caches on first use. |
 | Inline rewrite / Spaces answers from a remote model | Your OpenAI or OpenRouter key in Settings |
 | Sync Spaces across machines | Your own Supabase project (see [To start developing](#to-start-developing-openonyx)) |
-| Live multiplayer editing | In the app, but the collaboration panel currently shows a maintenance notice |
+| Live multiplayer editing | Sign in, create or link a private cloud space, and invite collaborators |
 
 Community plugins go through an Obsidian-compatible runtime. Compatibility is tested; it is not a promise that every plugin is perfect.
 

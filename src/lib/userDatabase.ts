@@ -620,9 +620,9 @@ export async function testConnection(config: UserDatabaseConfig): Promise<{ ok: 
  *
  * This function:
  * 1. Connects to the user's Supabase instance
- * 2. Runs the complete schema migration
- * 3. Creates all required tables, indexes, triggers, RLS policies, and functions
- * 4. Enables the pgvector extension
+ * 2. Verifies that the complete schema migration has been installed
+ * 3. Confirms all required tables, indexes, triggers, RLS policies, and functions are reachable
+ * 4. Reports missing setup so the user can run the provided SQL in Supabase
  *
  * IMPORTANT:
  * - Only schema is installed -- no app data is copied

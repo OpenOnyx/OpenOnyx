@@ -28,6 +28,7 @@ import { bindPreviewMediaFallbacks, sanitizePreviewHtml } from "../../utils/prev
 import { getSmartEmbed, getDisplayDomain, cleanEmbedUrl, toggleUrlInMarkdown } from "../../utils/urlHelper";
 import { runMarkdownPostProcessors } from "../../lib/obsidian-api/markdown";
 import type { AppSettings } from "../settings/SettingsPage";
+import type { NoteComment, PendingComment } from "../../types/comments";
 
 import { initializeInteractiveMermaid } from "../../utils/mermaid-layout-engine";
 
@@ -42,7 +43,18 @@ marked.use({
       const resolvedSrc = resolveVaultImageSrc(href);
       const safeSrc = String(resolvedSrc).replace(/"/g, "&quot;");
       const safeAlt = String(text).replace(/"/g, "&quot;");
-      return `<img src="${safeSrc}" alt="${safeAlt}" ${title ? `title="${String(title).replace(/"/g, "&quot;")}"` : ""} />`;
+      const { width, crop, offsetX, offsetY } = parseImageRenderMeta(title, text);
+      const styleParts: string[] = ["max-width:100%", "height:auto", "box-sizing:border-box"];
+      if (width && width > 0) {
+        styleParts.push(`max-width:${Math.round(width)}px`);
+        styleParts.push("width:100%");
+      }
+      if (crop === "cover") {
+        styleParts.push("aspect-ratio:4 / 3");
+        styleParts.push("object-fit:cover");
+        styleParts.push(`object-position:calc(50% + ${Math.round(offsetX)}px) calc(50% + ${Math.round(offsetY)}px)`);
+      }
+      return `<img src="${safeSrc}" alt="${safeAlt}" ${title ? `title="${String(title).replace(/"/g, "&quot;")}"` : ""} style="${styleParts.join(";")}" />`;
     }
   }
 });
@@ -168,6 +180,9 @@ interface MarkdownPreviewProps {
   settings?: AppSettings;
   onContentChange?: (content: string) => void;
   constrainWidth?: boolean;
+  comments?: NoteComment[];
+  pendingComment?: PendingComment | null;
+  onCommentClick?: (commentId: string) => void;
 }
 
 const linkPreviewClass = "bg-(--bg-elevated) border border-(--border-medium) rounded-lg shadow-none max-w-[400px] max-h-[300px] overflow-hidden flex flex-col animate-fade-in";
@@ -419,7 +434,7 @@ function installHeadingFoldControls(container: HTMLElement): void {
   }
 }
 
-function parseImageRenderMeta(title?: string): {
+function parseImageRenderMeta(title?: string | null, alt?: string | null): {
   width?: number;
   crop: "contain" | "cover";
   offsetX: number;
@@ -430,9 +445,20 @@ function parseImageRenderMeta(title?: string): {
   const cropMatch = raw.match(/(?:^|[\s,])crop=(cover|contain)/i);
   const offsetXMatch = raw.match(/(?:^|[\s,])ox=(-?\d{1,4})/i);
   const offsetYMatch = raw.match(/(?:^|[\s,])oy=(-?\d{1,4})/i);
-  const width = widthMatch
-    ? Math.max(120, Math.min(1400, Number(widthMatch[1])))
+  let width = widthMatch
+    ? Math.max(80, Math.min(1600, Number(widthMatch[1])))
     : undefined;
+  if (!width && alt) {
+    const altPipeMatch = alt.match(/\|(\d{2,4})(?:x\d+)?$/);
+    if (altPipeMatch) {
+      width = Math.max(80, Math.min(1600, Number(altPipeMatch[1])));
+    } else {
+      const altDimMatch = alt.trim().match(/^(\d{2,4})(?:x\d+)?$/);
+      if (altDimMatch) {
+        width = Math.max(80, Math.min(1600, Number(altDimMatch[1])));
+      }
+    }
+  }
   const crop = (cropMatch?.[1] as "contain" | "cover") || "contain";
   const offsetX = offsetXMatch
     ? Math.max(-1200, Math.min(1200, Number(offsetXMatch[1])))
@@ -480,6 +506,131 @@ function protectInlineCode(text: string): {
       value.replace(/\uE001INLINE_CODE_(\d+)\uE001/g, (_, index) => blocks[Number(index)] || ""),
   };
 }
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function getCommentRangeText(source: string, from: number, to: number, fallback: string): string {
+  const ranged = source.slice(Math.max(0, from), Math.max(0, to));
+  return ranged.trim() || fallback.trim();
+}
+
+function getSourceOccurrenceIndex(source: string, phrase: string, from: number): number {
+  if (!phrase) return 0;
+  const before = source.slice(0, Math.max(0, from));
+  const regex = new RegExp(escapeRegExp(phrase), "g");
+  let count = 0;
+  while (regex.exec(before)) count++;
+  return count;
+}
+
+function findNthOccurrence(text: string, phrase: string, occurrenceIndex: number): { index: number; length: number } | null {
+  if (!phrase) return null;
+  let fromIndex = 0;
+  for (let i = 0; i <= occurrenceIndex; i++) {
+    const found = text.indexOf(phrase, fromIndex);
+    if (found === -1) return null;
+    if (i === occurrenceIndex) return { index: found, length: phrase.length };
+    fromIndex = found + phrase.length;
+  }
+  return null;
+}
+
+function findNthOccurrenceInsensitive(text: string, phrase: string, occurrenceIndex: number): { index: number; length: number } | null {
+  return findNthOccurrence(text.toLowerCase(), phrase.toLowerCase(), occurrenceIndex);
+}
+
+function markHtmlTextOccurrence(
+  html: string,
+  phrase: string,
+  occurrenceIndex: number,
+  attrs: Record<string, string>,
+): string {
+  if (!phrase.trim() || typeof window === "undefined" || typeof DOMParser === "undefined") return html;
+
+  const doc = new DOMParser().parseFromString(`<body>${html}</body>`, "text/html");
+  const body = doc.body;
+  const walker = doc.createTreeWalker(body, NodeFilter.SHOW_TEXT);
+  const segments: { node: Text; start: number; end: number }[] = [];
+  let fullText = "";
+
+  while (walker.nextNode()) {
+    const node = walker.currentNode as Text;
+    const parent = node.parentElement;
+    if (!parent || parent.closest(".cm-comment-highlight")) continue;
+    const start = fullText.length;
+    fullText += node.nodeValue || "";
+    segments.push({ node, start, end: fullText.length });
+  }
+
+  const match = findNthOccurrence(fullText, phrase, occurrenceIndex) || findNthOccurrenceInsensitive(fullText, phrase, occurrenceIndex);
+  if (!match) return html;
+
+  const startSegment = segments.find((segment) => match.index >= segment.start && match.index <= segment.end);
+  const endIndex = match.index + match.length;
+  const endSegment = segments.find((segment) => endIndex >= segment.start && endIndex <= segment.end);
+  if (!startSegment || !endSegment) return html;
+
+  const range = doc.createRange();
+  range.setStart(startSegment.node, match.index - startSegment.start);
+  range.setEnd(endSegment.node, endIndex - endSegment.start);
+
+  const mark = doc.createElement("mark");
+  for (const [name, value] of Object.entries(attrs)) {
+    mark.setAttribute(name, value);
+  }
+
+  try {
+    range.surroundContents(mark);
+  } catch {
+    return html;
+  }
+
+  return body.innerHTML;
+}
+
+/**
+ * Wraps only the saved comment ranges in the rendered HTML.
+ */
+function applyCommentHighlightsToHtml(
+  html: string,
+  source: string,
+  comments?: NoteComment[],
+  pendingComment?: PendingComment | null,
+): string {
+  if ((!comments || comments.length === 0) && !pendingComment) return html;
+
+  let result = html;
+
+  if (comments) {
+    for (const c of comments) {
+      if (c.resolved) continue;
+      const phrase = getCommentRangeText(source, c.from, c.to, c.selectedText);
+      const occurrenceIndex = getSourceOccurrenceIndex(source, phrase, c.from);
+      result = markHtmlTextOccurrence(
+        result,
+        phrase,
+        occurrenceIndex,
+        { class: "cm-comment-highlight", "data-comment-id": c.id },
+      );
+    }
+  }
+
+  if (pendingComment) {
+    const phrase = getCommentRangeText(source, pendingComment.from, pendingComment.to, pendingComment.selectedText);
+    const occurrenceIndex = getSourceOccurrenceIndex(source, phrase, pendingComment.from);
+    result = markHtmlTextOccurrence(
+      result,
+      phrase,
+      occurrenceIndex,
+      { class: "cm-comment-highlight cm-comment-pending" },
+    );
+  }
+
+  return result;
+}
+
 export function MarkdownPreview({
   content,
   onLinkClick,
@@ -491,6 +642,9 @@ export function MarkdownPreview({
   settings,
   onContentChange,
   constrainWidth = true,
+  comments,
+  pendingComment,
+  onCommentClick,
 }: MarkdownPreviewProps) {
   const previewRef = useRef<HTMLDivElement>(null);
   const [debouncedContent, setDebouncedContent] = useState("");
@@ -769,6 +923,26 @@ export function MarkdownPreview({
     processed = processed.replace(
       /!\[\[([^\]|#]+)(?:#([^\]|]+))?(?:\|([^\]]+))?\]\]/g,
       (match, noteName, heading, displayText) => {
+        const cleanName = (noteName || "").trim();
+        const isImage = /\.(png|jpe?g|gif|webp|svg|bmp|ico)$/i.test(cleanName);
+        if (isImage) {
+          let width: number | undefined;
+          if (displayText) {
+            const dimMatch = displayText.trim().match(/^(\d+)(?:x\d+)?$/);
+            if (dimMatch) {
+              width = Math.max(80, Math.min(1600, parseInt(dimMatch[1], 10)));
+            }
+          }
+          const styleParts: string[] = ["max-width:100%", "height:auto", "box-sizing:border-box"];
+          if (width && width > 0) {
+            styleParts.push(`max-width:${Math.round(width)}px`);
+            styleParts.push("width:100%");
+          }
+          const resolvedSrc = resolveVaultImageSrc(cleanName);
+          const safeSrc = resolvedSrc.replace(/"/g, "&quot;");
+          const safeAlt = (displayText || cleanName).replace(/"/g, "&quot;");
+          return `<img src="${safeSrc}" alt="${safeAlt}" style="${styleParts.join(";")}" />`;
+        }
         const embedContent = onEmbed ? onEmbed(noteName) : null;
         if (embedContent) {
           return `<div class="embed-container" data-embed="${noteName}">
@@ -809,9 +983,9 @@ export function MarkdownPreview({
     processed = processed.replace(
       /!\[([^\]]*)\]\(([^)\s]+)(?:\s+"([^"]*)")?\)/g,
       (match, alt, src, title) => {
-        const { width, crop, offsetX, offsetY } = parseImageRenderMeta(title);
-        const styleParts: string[] = [];
-        if (width) {
+        const { width, crop, offsetX, offsetY } = parseImageRenderMeta(title, alt);
+        const styleParts: string[] = ["max-width:100%", "height:auto", "box-sizing:border-box"];
+        if (width && width > 0) {
           styleParts.push(`max-width:${Math.round(width)}px`);
           styleParts.push("width:100%");
         }
@@ -823,7 +997,7 @@ export function MarkdownPreview({
         const safeAlt = String(alt).replace(/"/g, "&quot;");
         const resolvedSrc = resolveVaultImageSrc(String(src));
         const safeSrc = resolvedSrc.replace(/"/g, "&quot;");
-        return `<img src="${safeSrc}" alt="${safeAlt}"${styleParts.length ? ` style="${styleParts.join(";")}"` : ""} />`;
+        return `<img src="${safeSrc}" alt="${safeAlt}" style="${styleParts.join(";")}" />`;
       },
     );
 
@@ -894,16 +1068,28 @@ export function MarkdownPreview({
     });
 
     // Sanitize
-    return sanitizePreviewHtml(html);
-  }, [debouncedContent, onEmbed, themeMode, getSmartEmbed, getUrlPreviewMarkup]);
+    const sanitized = sanitizePreviewHtml(html);
 
-  // Handle clicks on wiki-links, tags, and checkboxes
+    // Apply comment highlights to rendered preview
+    return applyCommentHighlightsToHtml(sanitized, debouncedContent, comments, pendingComment);
+  }, [debouncedContent, onEmbed, themeMode, getSmartEmbed, getUrlPreviewMarkup, comments, pendingComment]);
+
+  // Handle clicks on wiki-links, tags, checkboxes, and comment highlights
   useEffect(() => {
     const container = previewRef.current;
     if (!container) return;
 
     const handleClick = (e: Event) => {
       const target = e.target as HTMLElement;
+
+      // Handle comment highlight clicks to open the comment box
+      const commentMark = target.closest(".cm-comment-highlight");
+      if (commentMark) {
+        const commentId = commentMark.getAttribute("data-comment-id");
+        if (commentId && onCommentClick) {
+          onCommentClick(commentId);
+        }
+      }
 
       // Handle image click for fullscreen preview
       if (target.tagName === "IMG" && !target.classList.contains("yt-poster-img") && onImageClick) {
@@ -965,9 +1151,37 @@ export function MarkdownPreview({
       }
     };
 
+    const handleCommentHover = (e: Event) => {
+      const target = e.target as HTMLElement;
+      const commentMark = target.closest(".cm-comment-highlight");
+      const commentId = commentMark?.getAttribute("data-comment-id") || null;
+      if (!commentId) return;
+      window.dispatchEvent(
+        new CustomEvent("openonyx:hover-comment", {
+          detail: { commentId },
+        })
+      );
+    };
+
+    const handleCommentLeave = (e: Event) => {
+      const target = e.target as HTMLElement;
+      if (!target.closest(".cm-comment-highlight")) return;
+      window.dispatchEvent(
+        new CustomEvent("openonyx:hover-comment", {
+          detail: { commentId: null },
+        })
+      );
+    };
+
     container.addEventListener("click", handleClick);
-    return () => container.removeEventListener("click", handleClick);
-  }, [onLinkClick, onCheckboxToggle, onImageClick, onContentChange]);
+    container.addEventListener("mouseover", handleCommentHover);
+    container.addEventListener("mouseout", handleCommentLeave);
+    return () => {
+      container.removeEventListener("click", handleClick);
+      container.removeEventListener("mouseover", handleCommentHover);
+      container.removeEventListener("mouseout", handleCommentLeave);
+    };
+  }, [onLinkClick, onCheckboxToggle, onImageClick, onContentChange, onCommentClick]);
 
   // Handle link hover for preview
   useEffect(() => {

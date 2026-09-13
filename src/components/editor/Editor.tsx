@@ -12,7 +12,26 @@
 
 import React, { useEffect, useRef, useCallback, useState, useMemo } from "react";
 import { createPortal } from "react-dom";
-import { X, Lightbulb, BookOpen, Pen, RefreshCw, Sparkles, ZoomIn, ZoomOut, RotateCcw } from "lucide-react";
+import { X, Lightbulb, BookOpen, Pen, RefreshCw, Sparkles, ZoomIn, ZoomOut, RotateCcw, MessageSquare } from "lucide-react";
+import {
+  commentExtension,
+  setCommentsEffect,
+  setPendingCommentEffect,
+  setActiveCommentEffect,
+  commentStateField,
+} from "./commentExtension";
+import { EditorCommentsLayer } from "./EditorCommentsLayer";
+import {
+  getCommentsSync,
+  loadComments,
+  addComment,
+  deleteComment,
+  updateComment,
+  resolveComment,
+  addReply,
+  subscribeToComments,
+} from "../../utils/commentsStore";
+import type { NoteComment, PendingComment } from "../../types/comments";
 import { Compartment, EditorState, Transaction, StateEffect, StateField, EditorSelection } from "@codemirror/state";
 import {
   EditorView,
@@ -34,7 +53,7 @@ import {
 import { markdown } from "@codemirror/lang-markdown";
 import { closeBrackets } from "@codemirror/autocomplete";
 import { search, highlightSelectionMatches } from "@codemirror/search";
-import { syntaxHighlighting, HighlightStyle } from "@codemirror/language";
+import { syntaxHighlighting, HighlightStyle, syntaxTree } from "@codemirror/language";
 import { tags as t } from "@lezer/highlight";
 import { Tab, ViewMode } from "../../types";
 import { MarkdownPreview } from "./MarkdownPreview";
@@ -177,7 +196,7 @@ function setWritableViewProperty(view: any, key: string, value: unknown): void {
 const resizerClass =
   "resizer relative z-10 w-1 shrink-0 cursor-ew-resize bg-transparent transition-colors duration-100 after:absolute after:inset-y-0 after:left-px after:w-0.5 after:bg-[var(--divider-color)] after:opacity-100 hover:after:left-0.5 hover:after:w-[3px] hover:after:bg-[var(--interactive-accent)] active:after:left-0.5 active:after:w-[3px] active:after:bg-[var(--interactive-accent)]";
 const inlineAiToolbarClass =
-  "inline-ai-toolbar flex min-w-[400px] flex-col overflow-hidden rounded-[var(--radius-md)] border border-[var(--border-medium)] bg-[var(--bg-secondary)] p-0 shadow-none transition-all duration-150";
+  "inline-ai-toolbar flex min-w-[480px] flex-col overflow-hidden rounded-[var(--radius-md)] border border-[var(--border-medium)] bg-[var(--bg-secondary)] p-0 shadow-none transition-all duration-150";
 const inlineAiButtonsRowClass = "flex w-full items-center";
 const inlineAiButtonsRowPromptClass =
   "border-b border-[var(--border-subtle)]";
@@ -664,11 +683,21 @@ function parseMarkdownImage(
     if (src.startsWith("<") && src.endsWith(">")) {
       src = src.slice(1, -1).trim();
     }
-    const { width, crop, offsetX, offsetY } = parseImageMeta(title);
-    return { from, to, alt: alt || "", src, width, crop, offsetX, offsetY };
+    let { width, crop, offsetX, offsetY } = parseImageMeta(title);
+    let cleanAlt = alt || "";
+    if (!width && cleanAlt) {
+      const altPipeMatch = cleanAlt.match(/\|(\d{2,4})(?:x\d+)?$/);
+      if (altPipeMatch) {
+        width = Math.max(120, Math.min(1400, Number(altPipeMatch[1])));
+        cleanAlt = cleanAlt.slice(0, altPipeMatch.index).trim();
+      } else if (/^\d{2,4}$/.test(cleanAlt.trim())) {
+        width = Math.max(120, Math.min(1400, Number(cleanAlt.trim())));
+      }
+    }
+    return { from, to, alt: cleanAlt, src, width, crop, offsetX, offsetY };
   }
 
-  // Wiki embed image: ![[filename.png]] or ![[filename.png|400]]
+  // Wiki embed image: ![[filename.png]] or ![[filename.png|400]] or ![[filename.png|400x300]]
   const wikiMatch = markdown.match(/^!\[\[([^\n\]|]+)(?:\|([^\n\]]+))?\]\]$/);
   if (wikiMatch) {
     const [, rawSrc, rawOpt] = wikiMatch;
@@ -680,8 +709,9 @@ function parseMarkdownImage(
       const parts = rawOpt.split("|");
       for (const part of parts) {
         const trimmed = part.trim();
-        if (/^\d{2,4}$/.test(trimmed)) {
-          width = Number(trimmed);
+        const numMatch = trimmed.match(/^(\d{2,4})(?:x\d+)?$/);
+        if (numMatch) {
+          width = Number(numMatch[1]);
         } else {
           alt = trimmed;
         }
@@ -726,9 +756,16 @@ function applyWidgetImageStyles(
   img: HTMLImageElement,
   image: MarkdownImageMatch,
 ): void {
-  const width = image.width ?? 420;
-  img.style.width = `${width}px`;
-  img.style.maxWidth = "100%";
+  const width = image.width;
+  if (width) {
+    img.style.maxWidth = `min(100%, ${Math.round(width)}px)`;
+    img.style.width = "100%";
+  } else {
+    img.style.maxWidth = "100%";
+    img.style.width = "auto";
+  }
+  img.style.height = "auto";
+  img.style.boxSizing = "border-box";
   if (image.crop === "cover") {
     img.style.objectFit = "cover";
     img.style.aspectRatio = "4 / 3";
@@ -765,13 +802,23 @@ class MarkdownImageWidget extends WidgetType {
     );
   }
 
+  destroy(dom: HTMLElement): void {
+    const ro = (dom as any).__resizeObserver as ResizeObserver | undefined;
+    if (ro) {
+      ro.disconnect();
+      delete (dom as any).__resizeObserver;
+    }
+  }
+
   toDOM(): HTMLElement {
     const root = document.createElement("div");
     root.className = "cm-image-widget";
     root.setAttribute("contenteditable", "false");
     root.dataset.from = String(this.image.from);
     root.dataset.to = String(this.image.to);
-    root.dataset.width = String(this.image.width ?? 420);
+    if (this.image.width) {
+      root.dataset.width = String(this.image.width);
+    }
     root.dataset.crop = this.image.crop;
     root.dataset.ox = String(this.image.offsetX);
     root.dataset.oy = String(this.image.offsetY);
@@ -780,13 +827,28 @@ class MarkdownImageWidget extends WidgetType {
 
     const stage = document.createElement("div");
     stage.className = "cm-image-widget-stage";
+    if (this.image.width) {
+      stage.style.maxWidth = `min(100%, ${Math.round(this.image.width)}px)`;
+      stage.style.width = "100%";
+    } else {
+      stage.style.maxWidth = "100%";
+      stage.style.width = "auto";
+    }
     root.appendChild(stage);
 
     const img = document.createElement("img");
     img.className = "cm-image-widget-image";
     img.src = resolveVaultImageSrc(this.image.src);
     img.alt = this.image.alt || "Image";
+
+    const widthLabel = document.createElement("span");
+    widthLabel.className = "cm-image-widget-width";
+    widthLabel.textContent = this.image.width ? `${Math.round(this.image.width)}px` : "auto";
+
     img.addEventListener("load", () => {
+      if (!this.image.width && widthLabel && img.naturalWidth) {
+        widthLabel.textContent = `${img.naturalWidth}px`;
+      }
       if (this.view) {
         try { this.view.requestMeasure(); } catch { }
       }
@@ -794,14 +856,26 @@ class MarkdownImageWidget extends WidgetType {
     applyWidgetImageStyles(img, this.image);
     stage.appendChild(img);
 
+    try {
+      const ro = new ResizeObserver(() => {
+        if (this.view) {
+          try { this.view.requestMeasure(); } catch { }
+        }
+      });
+      ro.observe(img);
+      (root as any).__resizeObserver = ro;
+    } catch { }
+
     const metaRow = document.createElement("div");
     metaRow.className = "cm-image-widget-meta";
-    metaRow.style.width = `${this.image.width ?? 420}px`;
-    metaRow.style.maxWidth = "100%";
+    if (this.image.width) {
+      metaRow.style.maxWidth = `min(100%, ${Math.round(this.image.width)}px)`;
+      metaRow.style.width = "100%";
+    } else {
+      metaRow.style.maxWidth = "100%";
+      metaRow.style.width = "auto";
+    }
 
-    const widthLabel = document.createElement("span");
-    widthLabel.className = "cm-image-widget-width";
-    widthLabel.textContent = `${this.image.width ?? 420}px`;
     metaRow.appendChild(widthLabel);
 
     const deleteButton = document.createElement("button");
@@ -843,15 +917,14 @@ function imageWidgetPlugin(onOpenLightbox: (src: string, alt: string) => void) {
   };
 
   const getMaxRenderableWidth = (view: EditorView) => {
+    const scroller = view.dom.querySelector(".cm-scroller") as HTMLElement | null;
     const content = view.dom.querySelector(".cm-content") as HTMLElement | null;
-    const scroller = view.dom.querySelector(
-      ".cm-scroller",
-    ) as HTMLElement | null;
-    const raw =
-      (content?.getBoundingClientRect().width ||
-        scroller?.getBoundingClientRect().width ||
-        view.dom.getBoundingClientRect().width) - 24;
-    const safe = Number.isFinite(raw) ? Math.floor(raw) : 1400;
+    const target = content || scroller || view.dom;
+    const computed = window.getComputedStyle(target);
+    const padLeft = parseFloat(computed.paddingLeft) || 0;
+    const padRight = parseFloat(computed.paddingRight) || 0;
+    const raw = target.getBoundingClientRect().width - padLeft - padRight - 8;
+    const safe = Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 1400;
     return Math.max(120, Math.min(1400, safe));
   };
 
@@ -998,7 +1071,8 @@ function imageWidgetPlugin(onOpenLightbox: (src: string, alt: string) => void) {
                 startWidth + resizeDirection * dx,
                 maxWidth,
               );
-              imageEl.style.width = `${nextWidth}px`;
+              imageEl.style.width = "100%";
+              imageEl.style.maxWidth = `min(100%, ${nextWidth}px)`;
               const widthBadge = widget.querySelector(
                 ".cm-image-widget-width",
               ) as HTMLElement | null;
@@ -1006,7 +1080,17 @@ function imageWidgetPlugin(onOpenLightbox: (src: string, alt: string) => void) {
               const metaRow = widget.querySelector(
                 ".cm-image-widget-meta",
               ) as HTMLElement | null;
-              if (metaRow) metaRow.style.width = `${nextWidth}px`;
+              if (metaRow) {
+                metaRow.style.width = "100%";
+                metaRow.style.maxWidth = `min(100%, ${nextWidth}px)`;
+              }
+              const stageEl = widget.querySelector(
+                ".cm-image-widget-stage",
+              ) as HTMLElement | null;
+              if (stageEl) {
+                stageEl.style.width = "100%";
+                stageEl.style.maxWidth = `min(100%, ${nextWidth}px)`;
+              }
               return;
             }
 
@@ -1330,12 +1414,45 @@ class MarkdownCalloutWidget extends WidgetType {
 }
 
 class MarkdownTableWidget extends WidgetType {
-  constructor(private readonly rows: string[], private readonly startLine: number) {
+  constructor(
+    private readonly rows: string[],
+    private readonly startLine: number,
+    private readonly comments?: NoteComment[],
+    private readonly activeCommentId?: string | null,
+  ) {
     super();
   }
 
   eq(other: MarkdownTableWidget): boolean {
-    return this.rows.join("\n") === other.rows.join("\n") && this.startLine === other.startLine;
+    if (this.rows.join("\n") !== other.rows.join("\n") || this.startLine !== other.startLine) {
+      return false;
+    }
+    if (this.activeCommentId !== other.activeCommentId) {
+      return false;
+    }
+    const myComments = this.comments || [];
+    const otherComments = other.comments || [];
+    if (myComments.length !== otherComments.length) {
+      return false;
+    }
+    for (let i = 0; i < myComments.length; i++) {
+      const c1 = myComments[i];
+      const c2 = otherComments[i];
+      if (
+        c1.id !== c2.id ||
+        c1.resolved !== c2.resolved ||
+        c1.from !== c2.from ||
+        c1.to !== c2.to ||
+        c1.selectedText !== c2.selectedText
+      ) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  ignoreEvent(): boolean {
+    return true;
   }
 
   toDOM(view: EditorView): HTMLElement {
@@ -1344,26 +1461,25 @@ class MarkdownTableWidget extends WidgetType {
     wrapper.title = "Edit table";
     
     wrapper.addEventListener("mousedown", (e) => {
-      if ((e.target as HTMLElement).closest(".cm-live-table-controls")) {
-        e.stopPropagation();
-        return;
-      }
-      const target = e.target as HTMLElement;
-      const tr = target.closest("tr");
-      let lineOffset = 0;
-      if (tr && tr.parentElement) {
-        const rows = Array.from(table.querySelectorAll("tr"));
-        const rowIndex = rows.indexOf(tr);
-        if (rowIndex >= 0) {
-          lineOffset = rowIndex;
+      e.stopPropagation();
+    });
+
+    wrapper.addEventListener("click", (e) => {
+      const target = e.target as HTMLElement | null;
+      const highlight = target?.closest(".cm-comment-highlight") as HTMLElement | null;
+      if (highlight) {
+        const commentId = highlight.getAttribute("data-comment-id");
+        if (commentId) {
+          view.dispatch({
+            effects: setActiveCommentEffect.of(commentId),
+          });
+          window.dispatchEvent(
+            new CustomEvent("openonyx:select-comment", {
+              detail: { commentId },
+            })
+          );
         }
       }
-      const targetLineNum = Math.min(this.startLine + lineOffset, this.startLine + this.rows.length - 1);
-      const targetLine = view.state.doc.line(targetLineNum);
-      view.dispatch({
-        selection: { anchor: targetLine.from + Math.min(targetLine.text.length, 2) },
-      });
-      view.focus();
     });
 
     const table = document.createElement("table");
@@ -1404,33 +1520,52 @@ class MarkdownTableWidget extends WidgetType {
       .filter((row) => !row.every((cell) => /^:?-+:?$/.test(cell.trim())))
       .map((row) => normalizeCells(row));
 
+    const getCommentsForRow = (docLineNumber: number, rowCells: string[]) => {
+      if (!this.comments || this.comments.length === 0) return [];
+      return this.comments.filter((c) => {
+        if (c.resolved) return false;
+        let cLine = 0;
+        try {
+          cLine = view.state.doc.lineAt(Math.max(0, Math.min(c.from, view.state.doc.length))).number;
+        } catch {}
+        if (cLine === docLineNumber) return true;
+        if (c.selectedText && rowCells.some((cellText) => cellText.includes(c.selectedText))) {
+          return true;
+        }
+        return false;
+      });
+    };
+
     if (headerRows.length > 0) {
       const thead = document.createElement("thead");
       table.appendChild(thead);
-      for (const row of headerRows) {
+      headerRows.forEach((row, rIdx) => {
         const tr = document.createElement("tr");
         thead.appendChild(tr);
+        const rowComments = getCommentsForRow(this.startLine + rIdx, row);
         for (const cell of row) {
           const th = document.createElement("th");
-          renderTableCellMarkdown(th, cell);
+          renderTableCellMarkdown(th, cell, rowComments, this.activeCommentId);
           tr.appendChild(th);
           setupEditableCell(th, view, saveTable, wrapper);
         }
-      }
+      });
     }
 
     const tbody = document.createElement("tbody");
     table.appendChild(tbody);
-    for (const row of bodyRows) {
+    bodyRows.forEach((row, rIdx) => {
       const tr = document.createElement("tr");
       tbody.appendChild(tr);
+      const docLineForBodyRow = this.startLine + (separatorIndex >= 0 ? separatorIndex + 1 : 0) + rIdx;
+      const rowComments = getCommentsForRow(docLineForBodyRow, row);
       for (const cell of row) {
         const td = document.createElement("td");
-        renderTableCellMarkdown(td, cell);
+        renderTableCellMarkdown(td, cell, rowComments, this.activeCommentId);
         tr.appendChild(td);
         setupEditableCell(td, view, saveTable, wrapper);
       }
-    }
+    });
 
     const controls = document.createElement("div");
     controls.className = "cm-live-table-controls";
@@ -1544,7 +1679,12 @@ function escapeTableHtml(value: string): string {
     .replace(/>/g, "&gt;");
 }
 
-function renderTableCellMarkdown(cell: HTMLElement, source: string) {
+function renderTableCellMarkdown(
+  cell: HTMLElement,
+  source: string,
+  comments?: NoteComment[],
+  activeCommentId?: string | null,
+) {
   let html = escapeTableHtml(source);
   html = html.replace(/`([^`]+)`/g, "<code>$1</code>");
   html = html.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
@@ -1552,6 +1692,22 @@ function renderTableCellMarkdown(cell: HTMLElement, source: string) {
   html = html.replace(/~~([^~]+)~~/g, "<del>$1</del>");
   html = html.replace(/(^|[^\w*])\*([^*]+)\*/g, "$1<em>$2</em>");
   html = html.replace(/(^|[^\w_])_([^_]+)_/g, "$1<em>$2</em>");
+
+  if (comments && comments.length > 0) {
+    for (const c of comments) {
+      if (c.resolved || !c.selectedText?.trim()) continue;
+      const cleanPhrase = c.selectedText.trim();
+      const escaped = cleanPhrase.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const regex = new RegExp(`(?![^<]*>)(${escaped})`, "i");
+      const isActive = c.id === activeCommentId;
+      const highlightClass = `cm-comment-highlight${isActive ? " cm-comment-active" : ""}`;
+      html = html.replace(
+        regex,
+        `<mark class="${highlightClass}" data-comment-id="${c.id}">$1</mark>`,
+      );
+    }
+  }
+
   cell.innerHTML = html;
 }
 
@@ -1651,27 +1807,6 @@ function setupEditableCell(
   cell.contentEditable = "true";
   cell.style.outline = "none";
   const stopProp = (e: Event) => e.stopPropagation();
-
-  cell.addEventListener("focus", () => {
-    const tr = cell.parentElement;
-    const table = tr?.closest("table");
-    let lineOffset = 0;
-    if (tr && table) {
-      const rows = Array.from(table.querySelectorAll("tr"));
-      const rowIndex = rows.indexOf(tr as HTMLTableRowElement);
-      if (rowIndex >= 0) {
-        lineOffset = rowIndex;
-      }
-    }
-    const pos = view.posAtDOM(wrapper);
-    if (pos >= 0) {
-      const startLine = view.state.doc.lineAt(pos).number;
-      const targetLine = view.state.doc.line(Math.min(startLine + lineOffset, view.state.doc.lines));
-      view.dispatch({
-        selection: { anchor: targetLine.from + Math.min(targetLine.text.length, 2) },
-      });
-    }
-  });
 
   cell.addEventListener("keydown", (e) => {
     if (e.key === "Tab") {
@@ -1780,6 +1915,7 @@ function setupEditableCell(
   cell.addEventListener("mousedown", stopProp);
   cell.addEventListener("mouseup", stopProp);
   cell.addEventListener("click", stopProp);
+  cell.addEventListener("paste", stopProp);
 
   cell.addEventListener("input", () => {
     saveTable();
@@ -2178,7 +2314,19 @@ function markdownLivePreviewPlugin() {
       }
 
       update(update: ViewUpdate) {
-        if (update.docChanged || update.selectionSet || update.viewportChanged) {
+        if (
+          update.docChanged ||
+          update.selectionSet ||
+          update.viewportChanged ||
+          update.transactions.some((tr) =>
+            tr.effects.some(
+              (e) =>
+                e.is(setCommentsEffect) ||
+                e.is(setPendingCommentEffect) ||
+                e.is(setActiveCommentEffect),
+            ),
+          )
+        ) {
           this.decorations = this.buildDecorations(update.view);
         }
       }
@@ -2188,6 +2336,9 @@ function markdownLivePreviewPlugin() {
         const state = view.state;
         const doc = state.doc;
         const selection = state.selection;
+        const commentState = view.state.field(commentStateField, false);
+        const comments = commentState?.comments || [];
+        const activeCommentId = commentState?.activeId || null;
 
         // Get the set of lines that have a cursor
         const activeLinesSet = new Set<number>();
@@ -2204,9 +2355,22 @@ function markdownLivePreviewPlugin() {
           const endLineNum = doc.lineAt(to).number;
 
           let inCodeBlock = false;
-          for (let check = 1; check < startLineNum; check++) {
-            if (codeFenceRegex.test(doc.line(check).text)) {
-              inCodeBlock = !inCodeBlock;
+          const initialPos = doc.line(startLineNum).from;
+          try {
+            const treeNode = syntaxTree(state).resolveInner(initialPos, 1);
+            let curr: any = treeNode;
+            while (curr) {
+              if (curr.name === "FencedCode" || curr.name === "CodeBlock") {
+                inCodeBlock = true;
+                break;
+              }
+              curr = curr.parent;
+            }
+          } catch {
+            for (let check = Math.max(1, startLineNum - 100); check < startLineNum; check++) {
+              if (codeFenceRegex.test(doc.line(check).text)) {
+                inCodeBlock = !inCodeBlock;
+              }
             }
           }
 
@@ -2362,34 +2526,10 @@ function markdownLivePreviewPlugin() {
                 tableRows.push(doc.line(tableEnd).text);
               }
 
-              let isTableFocused = false;
-              for (let c = tableStart; c <= tableEnd; c++) {
-                if (activeLinesSet.has(c)) {
-                  isTableFocused = true;
-                  break;
-                }
-              }
-
-              if (isTableFocused) {
-                for (let j = tableStart; j <= tableEnd; j++) {
-                  const subLine = doc.line(j);
-                  const isSep = isTableSeparator(subLine.text);
-                  decorations.push(
-                    Decoration.line({
-                      attributes: {
-                        class: `HyperMD-table-row ${isSep ? 'cm-live-table-source-separator' : 'cm-live-table-source-row'}`,
-                      },
-                    }).range(subLine.from),
-                  );
-                }
-                i = tableEnd;
-                continue;
-              }
-
               // Replace tableStart line content with the rendered MarkdownTableWidget
               decorations.push(
                 Decoration.replace({
-                  widget: new MarkdownTableWidget(tableRows, tableStart),
+                  widget: new MarkdownTableWidget(tableRows, tableStart, comments, activeCommentId),
                 }).range(line.from, line.to),
               );
 
@@ -3718,6 +3858,7 @@ export function Editor({
 
   const editorRef = useRef<HTMLDivElement>(null);
   const previewRef = useRef<HTMLDivElement>(null);
+  const [previewEl, setPreviewEl] = useState<HTMLDivElement | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
   const viewRef = useRef<EditorView | null>(null);
@@ -3734,6 +3875,7 @@ export function Editor({
   // sync effect to avoid replacing the CM document with stale debounced
   // content while the user is actively typing.
   const lastLocalEditTsRef = useRef<number>(0);
+  const handleContextMenuRef = useRef<((e: React.MouseEvent | MouseEvent) => void) | null>(null);
   const [internalShowInsight, setInternalShowInsight] = useState(false);
   const isInsightVisible = showInsight !== undefined ? showInsight : internalShowInsight;
   const toggleInsight = (val: boolean) => {
@@ -3802,8 +3944,6 @@ export function Editor({
   const [isSuggestionIdle, setIsSuggestionIdle] = useState(false);
   const [isSectionPauseReady, setIsSectionPauseReady] = useState(false);
   const [hasSectionEnterTrigger, setHasSectionEnterTrigger] = useState(false);
-  const [, setSectionRetryPending] = useState(false);
-  const [allowForcedSectionMinimum, setAllowForcedSectionMinimum] = useState(false);
   const [hasFlowTrigger, setHasFlowTrigger] = useState(false);
   const [isNearNoteEnd, setIsNearNoteEnd] = useState(false);
 
@@ -3866,6 +4006,26 @@ export function Editor({
       el.removeEventListener("wheel", onWheel);
     };
   }, [imageLightbox, zoomScale]);
+
+  // Global listener to open image lightbox from comments or markdown preview
+  useEffect(() => {
+    const handleOpenLightbox = (e: Event) => {
+      const customEvent = e as CustomEvent<{ src: string; alt?: string }>;
+      if (customEvent.detail?.src) {
+        setImageLightbox({
+          src: customEvent.detail.src,
+          alt: customEvent.detail.alt || "Image preview",
+        });
+        setZoomScale(1);
+        setPanOffset({ x: 0, y: 0 });
+        setIsPanning(false);
+      }
+    };
+    window.addEventListener("openonyx:open-lightbox", handleOpenLightbox as EventListener);
+    return () => {
+      window.removeEventListener("openonyx:open-lightbox", handleOpenLightbox as EventListener);
+    };
+  }, []);
 
   const isSpecialTab = !!specialContent;
 
@@ -3949,6 +4109,10 @@ export function Editor({
     rect: DOMRect;
   } | null>(null);
 
+  const [comments, setComments] = useState<NoteComment[]>([]);
+  const [pendingComment, setPendingComment] = useState<PendingComment | null>(null);
+  const [activeCommentId, setActiveCommentId] = useState<string | null>(null);
+
   useEffect(() => {
     setPendingInlineEdit(null);
     viewRef.current?.dispatch({
@@ -3959,11 +4123,30 @@ export function Editor({
   const handleSelectionChange = useCallback(() => {
     if (isSpecialTab) return;
     const sel = window.getSelection();
+    const selectionAnchor = sel?.anchorNode;
+    const selectionFocus = sel?.focusNode;
+    const selectionElement =
+      selectionAnchor instanceof HTMLElement
+        ? selectionAnchor
+        : selectionAnchor?.parentElement ||
+          (selectionFocus instanceof HTMLElement ? selectionFocus : selectionFocus?.parentElement) ||
+          null;
+    if (selectionElement?.closest(".cm-comments-layer, .cm-comment-popover, .cm-comment-input-box")) {
+      setSelectionRange((prev) => prev === null ? prev : null);
+      return;
+    }
     if (!sel || sel.isCollapsed || !sel.toString().trim()) {
       if (pendingInlineEdit) return;
+      if (pendingComment) return;
       if (isInputFocused) return;
       const activeEl = document.activeElement;
-      if (activeEl && (activeEl.closest(".inline-ai-toolbar") || activeEl.classList.contains("inline-ai-prompt-input"))) {
+      if (
+        activeEl &&
+        (activeEl.closest(".inline-ai-toolbar") ||
+          activeEl.classList.contains("inline-ai-prompt-input") ||
+          activeEl.closest(".cm-comment-input-box") ||
+          activeEl.closest(".cm-comments-layer"))
+      ) {
         return;
       }
       // Only call setState if we actually have a value to clear -- avoids
@@ -3977,7 +4160,13 @@ export function Editor({
       const isInsideEditor = editorRef.current?.contains(range.commonAncestorContainer) || previewRef.current?.contains(range.commonAncestorContainer);
       if (!isInsideEditor) {
         const activeEl = document.activeElement;
-        if (activeEl && (activeEl.closest(".inline-ai-toolbar") || activeEl.classList.contains("inline-ai-prompt-input"))) {
+        if (
+          activeEl &&
+          (activeEl.closest(".inline-ai-toolbar") ||
+            activeEl.classList.contains("inline-ai-prompt-input") ||
+            activeEl.closest(".cm-comment-input-box") ||
+            activeEl.closest(".cm-comments-layer"))
+        ) {
           return;
         }
         setSelectionRange(null);
@@ -4004,6 +4193,37 @@ export function Editor({
             } catch (e) {
               from = cmFrom;
               to = cmTo;
+            }
+          }
+
+          // If selection is inside a live preview table widget, locate the exact row and line
+          const tableWrapper = (
+            (range.commonAncestorContainer as HTMLElement)?.closest?.(".cm-live-table-wrapper") ||
+            range.commonAncestorContainer?.parentElement?.closest?.(".cm-live-table-wrapper")
+          ) as HTMLElement | null;
+          if (tableWrapper) {
+            const tablePos = view.posAtDOM(tableWrapper);
+            if (tablePos >= 0) {
+              const startLine = view.state.doc.lineAt(tablePos).number;
+              const tblRange = getTableRange(view.state.doc, startLine);
+              if (tblRange) {
+                const cell = (
+                  (range.commonAncestorContainer as HTMLElement)?.closest?.("td, th") ||
+                  range.commonAncestorContainer?.parentElement?.closest?.("td, th")
+                ) as HTMLTableCellElement | null;
+                const row = cell?.closest("tr");
+                const isHeader = Boolean(cell?.closest("thead"));
+                const tbody = cell?.closest("tbody");
+                const rowIndex = isHeader ? 0 : (tbody && row ? Array.from(tbody.querySelectorAll("tr")).indexOf(row) : 0);
+                const targetLineNum = Math.min(isHeader ? tblRange.start : (tblRange.start + 2 + Math.max(0, rowIndex)), tblRange.end);
+                const targetLine = view.state.doc.line(targetLineNum);
+                const selectedText = sel.toString().trim();
+                const idx = targetLine.text.indexOf(selectedText);
+                if (idx !== -1) {
+                  from = targetLine.from + idx;
+                  to = from + selectedText.length;
+                }
+              }
             }
           }
 
@@ -4040,7 +4260,7 @@ export function Editor({
     } catch (e) {
       // Ignore transient selection range errors
     }
-  }, [isSpecialTab, isInputFocused, pendingInlineEdit]);
+  }, [isSpecialTab, isInputFocused, pendingInlineEdit, pendingComment]);
 
   const applyPendingInlineEdit = useCallback(() => {
     if (!pendingInlineEdit) return;
@@ -4089,6 +4309,312 @@ export function Editor({
       document.removeEventListener("selectionchange", handleSelectionChange);
     };
   }, [handleSelectionChange]);
+
+  // Comments lifecycle, effects, and action handlers
+  useEffect(() => {
+    if (!activePath) {
+      setComments([]);
+      setPendingComment(null);
+      return;
+    }
+    const initial = getCommentsSync(activePath);
+    setComments(initial);
+    setPendingComment(null);
+    if (viewRef.current) {
+      viewRef.current.dispatch({
+        effects: [
+          setCommentsEffect.of(initial),
+          setPendingCommentEffect.of(null),
+        ],
+      });
+    }
+
+    void loadComments(activePath).then((loaded) => {
+      if (activePathRef.current === activePath) {
+        setComments(loaded);
+        if (viewRef.current) {
+          viewRef.current.dispatch({
+            effects: setCommentsEffect.of(loaded),
+          });
+        }
+      }
+    });
+  }, [activePath]);
+
+  useEffect(() => {
+    const unsub = subscribeToComments((path, updated) => {
+      if (path === activePathRef.current) {
+        setComments(updated);
+        viewRef.current?.dispatch({
+          effects: setCommentsEffect.of(updated),
+        });
+      }
+    });
+
+    const handleSelectComment = (e: Event) => {
+      const custom = e as CustomEvent<{ commentId: string }>;
+      if (custom.detail?.commentId) {
+        setActiveCommentId(custom.detail.commentId);
+      }
+    };
+    window.addEventListener("openonyx:select-comment", handleSelectComment);
+
+    return () => {
+      unsub();
+      window.removeEventListener("openonyx:select-comment", handleSelectComment);
+    };
+  }, []);
+
+  const handleStartAddComment = useCallback(() => {
+    const view = viewRef.current;
+    let from = 0;
+    let to = 0;
+    let text = "";
+
+    const domSel = window.getSelection();
+    let domRange: Range | null = null;
+    if (domSel && domSel.rangeCount > 0) {
+      domRange = domSel.getRangeAt(0);
+    }
+
+    const tableWrapper = (
+      (domRange?.commonAncestorContainer as HTMLElement)?.closest?.(".cm-live-table-wrapper, table") ||
+      domRange?.commonAncestorContainer?.parentElement?.closest?.(".cm-live-table-wrapper, table") ||
+      (document.activeElement as HTMLElement)?.closest?.(".cm-live-table-wrapper, table")
+    ) as HTMLElement | null;
+
+    if (viewMode === "preview") {
+      const rawSelected = domSel ? domSel.toString().trim() : "";
+      text = rawSelected || selectionRange?.text?.trim() || "";
+      if (text) {
+        const docString = view ? view.state.doc.toString() : content;
+        const idx = docString.indexOf(text);
+        if (idx !== -1) {
+          from = idx;
+          to = idx + text.length;
+        } else {
+          const idxLower = docString.toLowerCase().indexOf(text.toLowerCase());
+          if (idxLower !== -1) {
+            from = idxLower;
+            to = idxLower + text.length;
+          } else {
+            from = 0;
+            to = 0;
+          }
+        }
+      }
+    } else if (view && tableWrapper) {
+      const actualWrapper = tableWrapper.closest(".cm-live-table-wrapper") || tableWrapper;
+      const pos = view.posAtDOM(actualWrapper);
+      const doc = view.state.doc;
+      let startLine = 1;
+      try {
+        startLine = doc.lineAt(Math.max(0, Math.min(pos, doc.length))).number;
+      } catch {
+        startLine = 1;
+      }
+      const tblRange = getTableRange(doc, startLine);
+
+      const rawSelected = domSel ? domSel.toString().trim() : "";
+      const cell = (
+        (domRange?.commonAncestorContainer as HTMLElement)?.closest?.("td, th") ||
+        domRange?.commonAncestorContainer?.parentElement?.closest?.("td, th") ||
+        (document.activeElement as HTMLElement)?.closest?.("td, th")
+      ) as HTMLTableCellElement | null;
+
+      text = rawSelected || selectionRange?.text?.trim() || cell?.textContent?.trim() || "Table cell";
+
+      if (tblRange) {
+        const row = cell?.closest("tr");
+        const isHeader = Boolean(cell?.closest("thead"));
+        const tbody = cell?.closest("tbody");
+        const rowIndex = isHeader ? 0 : (tbody && row ? Array.from(tbody.querySelectorAll("tr")).indexOf(row) : 0);
+        const targetLineNum = isHeader ? tblRange.start : (tblRange.start + 2 + Math.max(0, rowIndex));
+        const effectiveLineNum = Math.min(targetLineNum, tblRange.end);
+        const targetLine = doc.line(effectiveLineNum);
+        const lineText = targetLine.text;
+
+        let foundIdx = lineText.indexOf(text);
+        if (foundIdx === -1 && text) {
+          foundIdx = lineText.toLowerCase().indexOf(text.toLowerCase());
+        }
+
+        if (foundIdx !== -1) {
+          from = targetLine.from + foundIdx;
+          to = from + text.length;
+        } else {
+          let found = false;
+          for (let ln = tblRange.start; ln <= tblRange.end; ln++) {
+            const l = doc.line(ln);
+            const idx = l.text.indexOf(text);
+            if (idx !== -1) {
+              from = l.from + idx;
+              to = from + text.length;
+              found = true;
+              break;
+            }
+          }
+          if (!found) {
+            from = targetLine.from;
+            to = targetLine.to;
+          }
+        }
+      } else {
+        const line = doc.lineAt(Math.max(0, Math.min(pos, doc.length)));
+        from = line.from;
+        to = line.to;
+      }
+    } else if (view) {
+      const main = view.state.selection.main;
+      if (!main.empty) {
+        from = main.from;
+        to = main.to;
+        text = view.state.sliceDoc(from, to);
+      } else if (
+        selectionRange &&
+        selectionRange.from <= main.head &&
+        main.head <= selectionRange.to &&
+        selectionRange.text.trim()
+      ) {
+        from = selectionRange.from;
+        to = selectionRange.to;
+        text = selectionRange.text;
+      } else {
+        const pos = main.head;
+        const word = view.state.wordAt(pos);
+        if (word && word.from < word.to && view.state.sliceDoc(word.from, word.to).trim()) {
+          from = word.from;
+          to = word.to;
+          text = view.state.sliceDoc(from, to);
+          view.dispatch({ selection: { anchor: from, head: to } });
+        } else {
+          const line = view.state.doc.lineAt(pos);
+          if (line.text.trim()) {
+            from = line.from;
+            to = line.to;
+            text = line.text;
+            view.dispatch({ selection: { anchor: from, head: to } });
+          } else {
+            from = pos;
+            to = pos;
+            text = line.text || "Comment";
+          }
+        }
+      }
+    } else if (selectionRange) {
+      from = selectionRange.from;
+      to = selectionRange.to;
+      text = selectionRange.text;
+    }
+
+    let targetTop = 20;
+    if (viewMode === "preview") {
+      const previewContainer = previewEl || previewRef.current;
+      if (previewContainer) {
+        const pRect = previewContainer.getBoundingClientRect();
+        if (selectionRange?.rect) {
+          targetTop = Math.max(8, selectionRange.rect.top - pRect.top + previewContainer.scrollTop);
+        } else if (domRange) {
+          const r = domRange.getBoundingClientRect();
+          targetTop = Math.max(8, r.top - pRect.top + previewContainer.scrollTop);
+        }
+      }
+    } else if (view) {
+      const rectToUse = selectionRange?.rect || (domRange ? domRange.getBoundingClientRect() : null);
+      if (rectToUse && (rectToUse.width > 0 || rectToUse.height > 0) && view.scrollDOM) {
+        const sRect = view.scrollDOM.getBoundingClientRect();
+        targetTop = Math.max(8, rectToUse.top - sRect.top + view.scrollDOM.scrollTop);
+      } else {
+        try {
+          const line = view.lineBlockAt(Math.min(from, view.state.doc.length));
+          targetTop = line.top;
+        } catch {
+          targetTop = 20;
+        }
+      }
+    }
+
+    const pending: PendingComment = {
+      id: "pending",
+      from,
+      to,
+      selectedText: text,
+      targetTop,
+    };
+
+    setPendingComment(pending);
+    if (view && from < to) {
+      view.dispatch({
+        effects: setPendingCommentEffect.of({ from, to }),
+      });
+    }
+
+    setSelectionRange(null);
+    window.getSelection()?.removeAllRanges();
+  }, [viewMode, content, selectionRange, previewEl]);
+
+  const handleSaveComment = useCallback(async (commentText: string, image?: string) => {
+    if (!pendingComment || !activePathRef.current) return;
+    const notePath = activePathRef.current;
+    await addComment(notePath, {
+      from: pendingComment.from,
+      to: pendingComment.to,
+      selectedText: pendingComment.selectedText,
+      content: commentText,
+      image: image || pendingComment.image,
+    });
+
+    setPendingComment(null);
+    viewRef.current?.dispatch({
+      effects: setPendingCommentEffect.of(null),
+    });
+  }, [pendingComment]);
+
+  const handleCancelPendingComment = useCallback(() => {
+    setPendingComment(null);
+    viewRef.current?.dispatch({
+      effects: setPendingCommentEffect.of(null),
+    });
+  }, []);
+
+  const handleResolveComment = useCallback(async (commentId: string) => {
+    if (!activePathRef.current) return;
+    await resolveComment(activePathRef.current, commentId);
+  }, []);
+
+  const handleDeleteComment = useCallback(async (commentId: string) => {
+    if (!activePathRef.current) return;
+    await deleteComment(activePathRef.current, commentId);
+  }, []);
+
+  const handleEditComment = useCallback(async (commentId: string, content: string, image?: string) => {
+    if (!activePathRef.current) return;
+    await updateComment(activePathRef.current, commentId, content, image);
+  }, []);
+
+  const handleReplyComment = useCallback(async (commentId: string, content: string, image?: string) => {
+    if (!activePathRef.current) return;
+    await addReply(activePathRef.current, commentId, content, image);
+  }, []);
+
+  // Keyboard shortcut: Ctrl+Shift+M / Cmd+Shift+M to Add Comment
+  useEffect(() => {
+    const handleShortcut = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === "M" || e.key === "m")) {
+        const view = viewRef.current;
+        const sel = window.getSelection();
+        const hasSelection =
+          (view && !view.state.selection.main.empty) ||
+          (Boolean(sel && !sel.isCollapsed && sel.toString().trim()));
+        if (hasSelection) {
+          e.preventDefault();
+          handleStartAddComment();
+        }
+      }
+    };
+    window.addEventListener("keydown", handleShortcut);
+    return () => window.removeEventListener("keydown", handleShortcut);
+  }, [handleStartAddComment]);
 
   const handleInlineAction = async (
     operation: "rewrite" | "expand" | "simplify" | "explain" | "custom",
@@ -4309,8 +4835,6 @@ export function Editor({
     setHasFlowTrigger(false);
     setIsSectionPauseReady(false);
     setHasSectionEnterTrigger(false);
-    setSectionRetryPending(false);
-    setAllowForcedSectionMinimum(false);
     if (flowTriggerDelayTimerRef.current) {
       window.clearTimeout(flowTriggerDelayTimerRef.current);
       flowTriggerDelayTimerRef.current = null;
@@ -4582,7 +5106,7 @@ export function Editor({
   // Handle image paste from clipboard
   const handlePaste = useCallback(
     async (e: ClipboardEvent) => {
-      if (!onImagePaste || !viewRef.current) return;
+      if (!viewRef.current) return;
 
       const items = e.clipboardData?.items;
       if (!items) return;
@@ -4592,12 +5116,28 @@ export function Editor({
           e.preventDefault();
           const file = item.getAsFile();
           if (file) {
-            const imagePath = await onImagePaste(file);
+            let imagePath: string | null = null;
+            if (onImagePaste) {
+              try {
+                imagePath = await onImagePaste(file);
+              } catch (err) {
+                console.error("onImagePaste failed, fallback to data URL:", err);
+              }
+            }
+            if (!imagePath) {
+              imagePath = await new Promise<string>((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(reader.result as string);
+                reader.onerror = reject;
+                reader.readAsDataURL(file);
+              });
+            }
             if (imagePath) {
               // Insert markdown image syntax at cursor
               const view = viewRef.current;
               const pos = view.state.selection.main.head;
-              const imageMarkdown = `![${file.name}](${imagePath})`;
+              const fileName = file.name || "image.png";
+              const imageMarkdown = `![${fileName}](${imagePath})\n`;
               view.dispatch({
                 changes: { from: pos, insert: imageMarkdown },
                 selection: { anchor: pos + imageMarkdown.length },
@@ -4614,7 +5154,7 @@ export function Editor({
   // Handle image drop
   const handleDrop = useCallback(
     async (e: DragEvent) => {
-      if (!onImagePaste || !viewRef.current) return;
+      if (!viewRef.current) return;
 
       const files = e.dataTransfer?.files;
       if (!files) return;
@@ -4622,11 +5162,28 @@ export function Editor({
       for (const file of files) {
         if (file.type.startsWith("image/")) {
           e.preventDefault();
-          const imagePath = await onImagePaste(file);
+          let imagePath: string | null = null;
+          if (onImagePaste) {
+            try {
+              imagePath = await onImagePaste(file);
+            } catch (err) {
+              console.error("onImagePaste failed, fallback to data URL:", err);
+            }
+          }
+          if (!imagePath) {
+            imagePath = await new Promise<string>((resolve, reject) => {
+              const reader = new FileReader();
+              reader.onload = () => resolve(reader.result as string);
+              reader.onerror = reject;
+              reader.readAsDataURL(file);
+            });
+          }
           if (imagePath) {
             const view = viewRef.current;
-            const pos = view.state.selection.main.head;
-            const imageMarkdown = `![${file.name}](${imagePath})`;
+            const coords = { x: e.clientX, y: e.clientY };
+            const pos = view.posAtCoords(coords) ?? view.state.selection.main.head;
+            const fileName = file.name || "image.png";
+            const imageMarkdown = `![${fileName}](${imagePath})\n`;
             view.dispatch({
               changes: { from: pos, insert: imageMarkdown },
               selection: { anchor: pos + imageMarkdown.length },
@@ -4653,6 +5210,64 @@ export function Editor({
       editor.removeEventListener("drop", handleDrop as any);
     };
   }, [handlePaste, handleDrop]);
+
+  // Read mode image paste listener
+  useEffect(() => {
+    const previewElTarget = previewRef.current || previewEl;
+    if (!previewElTarget || viewMode !== "preview") return;
+
+    const handlePreviewPaste = async (e: ClipboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (
+        target?.closest(".cm-comment-input-box") ||
+        target?.closest("input") ||
+        target?.closest("textarea")
+      ) {
+        return;
+      }
+
+      const items = e.clipboardData?.items;
+      if (!items) return;
+
+      for (const item of items) {
+        if (item.type.startsWith("image/")) {
+          e.preventDefault();
+          const file = item.getAsFile();
+          if (file) {
+            let imagePath: string | null = null;
+            if (onImagePaste) {
+              try {
+                imagePath = await onImagePaste(file);
+              } catch {}
+            }
+            if (!imagePath) {
+              imagePath = await new Promise<string>((resolve) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(reader.result as string);
+                reader.readAsDataURL(file);
+              });
+            }
+            if (imagePath) {
+              const fileName = file.name || "image.png";
+              const imageMarkdown = `\n\n![${fileName}](${imagePath})\n`;
+              onContentChange(content + imageMarkdown, true, activePathRef.current || undefined);
+            }
+          }
+          break;
+        }
+      }
+    };
+
+    previewElTarget.addEventListener("paste", handlePreviewPaste);
+    return () => {
+      previewElTarget.removeEventListener("paste", handlePreviewPaste);
+    };
+  }, [viewMode, previewEl, content, onImagePaste, onContentChange]);
+
+  const handlePasteRef = useRef(handlePaste);
+  handlePasteRef.current = handlePaste;
+  const handleDropRef = useRef(handleDrop);
+  handleDropRef.current = handleDrop;
 
   // Keep contentRef in sync
   useEffect(() => {
@@ -4826,14 +5441,6 @@ export function Editor({
 
               markActiveTyping();
               markSectionPauseReady();
-              setSectionRetryPending((pending) => {
-                if (pending) {
-                  setAllowForcedSectionMinimum(true);
-                  return false;
-                }
-                setAllowForcedSectionMinimum(false);
-                return pending;
-              });
               const pressedEnter = didPressEnter(update);
               if (didCompleteSentenceOrParagraph(update)) {
                 markFlowTrigger();
@@ -4856,6 +5463,32 @@ export function Editor({
           }
         }),
         EditorView.domEventHandlers({
+          paste(event, _view) {
+            const items = event.clipboardData?.items;
+            if (!items) return false;
+            for (const item of items) {
+              if (item.type.startsWith("image/")) {
+                void handlePasteRef.current(event);
+                return true;
+              }
+            }
+            return false;
+          },
+          drop(event, _view) {
+            const files = event.dataTransfer?.files;
+            if (!files) return false;
+            for (const file of files) {
+              if (file.type.startsWith("image/")) {
+                void handleDropRef.current(event);
+                return true;
+              }
+            }
+            return false;
+          },
+          contextmenu(event, _view) {
+            handleContextMenuRef.current?.(event);
+            return true;
+          },
           click(event, view) {
             const target = event.target as HTMLElement | null;
             const button = target?.closest<HTMLButtonElement>("[data-table-action][data-table-line]");
@@ -4881,8 +5514,12 @@ export function Editor({
             caretColor: "var(--editor-caret)",
           },
           ".cm-scroller": {
+            position: "relative",
             overflowY: "auto",
             overflowX: "hidden",
+            boxSizing: "border-box",
+            width: "100%",
+            maxWidth: "100%",
             "--font-family": "var(--font-sans, Inter, system-ui, sans-serif)",
             "--font-mono": "var(--font-mono, monospace)",
             fontFamily: "var(--font-family)",
@@ -4890,7 +5527,10 @@ export function Editor({
           },
           ".cm-content": {
             padding: "20px 40px",
+            boxSizing: "border-box",
+            width: "100%",
             maxWidth: "var(--reading-view-width)",
+            minWidth: "0",
             margin: "0 auto",
             caretColor: "var(--editor-caret)",
             lineHeight: "1.3 !important",
@@ -4898,8 +5538,63 @@ export function Editor({
           ".cm-line": {
             padding: "0 2px",
             borderRadius: "4px",
+            width: "100%",
+            maxWidth: "100%",
+            boxSizing: "border-box",
+            overflowWrap: "anywhere",
+            wordBreak: "break-word",
             caretColor: "var(--editor-caret)",
             lineHeight: "1.3 !important",
+          },
+          ".cm-image-widget": {
+            display: "block",
+            position: "relative",
+            width: "100%",
+            maxWidth: "100%",
+            boxSizing: "border-box",
+            margin: "8px 0",
+            clear: "both",
+          },
+          ".cm-image-widget-stage": {
+            display: "block",
+            position: "relative",
+            maxWidth: "100%",
+            boxSizing: "border-box",
+            overflow: "hidden",
+            borderRadius: "var(--radius-md, 6px)",
+          },
+          ".cm-image-widget-image": {
+            display: "block",
+            maxWidth: "100% !important",
+            height: "auto !important",
+            boxSizing: "border-box",
+            borderRadius: "var(--radius-md, 6px)",
+            userSelect: "none",
+          },
+          ".cm-image-widget-meta": {
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            maxWidth: "100%",
+            boxSizing: "border-box",
+            gap: "8px",
+            marginTop: "4px",
+            fontSize: "11px",
+            color: "var(--text-muted)",
+          },
+          ".cm-image-widget-delete": {
+            background: "none",
+            border: "none",
+            color: "var(--text-muted)",
+            cursor: "pointer",
+            fontSize: "11px",
+            padding: "2px 6px",
+            borderRadius: "var(--radius-sm, 4px)",
+            transition: "all 0.15s ease",
+          },
+          ".cm-image-widget-delete:hover": {
+            color: "var(--text-danger, #ef4444)",
+            background: "var(--bg-hover)",
           },
           ".cm-line[class*='cm-heading-'] span": {
             fontFamily: "var(--font-family) !important",
@@ -5229,6 +5924,7 @@ export function Editor({
             borderRadius: "2px",
           },
         }),
+        commentExtension(),
       ],
     });
 
@@ -5238,6 +5934,11 @@ export function Editor({
     });
 
     viewRef.current = view;
+    if (comments.length > 0) {
+      view.dispatch({
+        effects: setCommentsEffect.of(comments),
+      });
+    }
     const obsidianEditor = new ObsidianEditor(view);
     obsidianEditorRef.current = obsidianEditor;
     syncObsidianEditorContext();
@@ -5248,7 +5949,12 @@ export function Editor({
         workspace.setActiveLeaf(mainLeaf);
       }
     };
-    editorRef.current?.addEventListener('focusin', handleEditorFocusIn);
+    const editorEl = editorRef.current;
+    editorEl?.addEventListener('focusin', handleEditorFocusIn);
+    const handleNativeContextMenu = (e: MouseEvent) => {
+      handleContextMenuRef.current?.(e);
+    };
+    view.dom.addEventListener('contextmenu', handleNativeContextMenu);
     if (initialScroll > 0) {
       setTimeout(() => {
         if (view.scrollDOM) {
@@ -5269,6 +5975,8 @@ export function Editor({
     }
 
     return () => {
+      view.dom.removeEventListener('contextmenu', handleNativeContextMenu);
+      editorEl?.removeEventListener('focusin', handleEditorFocusIn);
       const obsidianApp = (window as any).__oo_app;
       if (obsidianApp?.workspace?.activeEditor?.editor === obsidianEditor) {
         obsidianApp.workspace.activeEditor = null;
@@ -5845,10 +6553,109 @@ export function Editor({
     };
   }, [activeTabId, tabs, isSpecialTab]);
 
-  const handleContextMenu = useCallback((e: React.MouseEvent) => {
+  const handleContextMenu = useCallback((e: React.MouseEvent | MouseEvent) => {
+    const mouseEvt = ('nativeEvent' in e ? (e as React.MouseEvent).nativeEvent : e) as MouseEvent;
+    if ((mouseEvt as any)?.__oo_context_handled || (e as any)?.__oo_context_handled) return;
+    (mouseEvt as any).__oo_context_handled = true;
+    (e as any).__oo_context_handled = true;
     e.preventDefault();
-    const app = (window as any).__oo_app;
-    if (!app) return;
+
+    const cmView = viewRef.current;
+    const clientX = typeof mouseEvt?.clientX === 'number' && !isNaN(mouseEvt.clientX) ? mouseEvt.clientX : 100;
+    const clientY = typeof mouseEvt?.clientY === 'number' && !isNaN(mouseEvt.clientY) ? mouseEvt.clientY : 100;
+
+    // If there is no selection or right-clicked outside existing selection, select word or position
+    const targetEl = mouseEvt.target as HTMLElement | null;
+    const tableEl = targetEl?.closest?.(".cm-live-table-wrapper, table, .cm-live-table");
+
+    if (cmView && viewMode !== "preview") {
+      if (tableEl) {
+        // Inside a table widget: preserve or establish DOM selection without resetting CodeMirror
+        const sel = window.getSelection();
+        if (sel && !sel.isCollapsed && sel.toString().trim() && tableEl.contains(sel.anchorNode)) {
+          const range = sel.getRangeAt(0);
+          setSelectionRange({
+            rect: range.getBoundingClientRect(),
+            text: sel.toString(),
+            from: 0,
+            to: 0,
+          });
+        } else {
+          // Attempt to select word under right-click in the table cell
+          let range: Range | null = null;
+          if (document.caretRangeFromPoint) {
+            range = document.caretRangeFromPoint(clientX, clientY);
+          } else if ((document as any).caretPositionFromPoint) {
+            const pos = (document as any).caretPositionFromPoint(clientX, clientY);
+            if (pos && pos.offsetNode) {
+              range = document.createRange();
+              range.setStart(pos.offsetNode, pos.offset);
+              range.setEnd(pos.offsetNode, pos.offset);
+            }
+          }
+          if (range && range.startContainer.nodeType === Node.TEXT_NODE) {
+            const text = range.startContainer.textContent || "";
+            let start = range.startOffset;
+            let end = range.startOffset;
+            while (start > 0 && /\w/.test(text[start - 1])) start--;
+            while (end < text.length && /\w/.test(text[end])) end++;
+            if (start < end) {
+              const wordRange = document.createRange();
+              wordRange.setStart(range.startContainer, start);
+              wordRange.setEnd(range.startContainer, end);
+              const domSel = window.getSelection();
+              if (domSel) {
+                domSel.removeAllRanges();
+                domSel.addRange(wordRange);
+                setSelectionRange({
+                  rect: wordRange.getBoundingClientRect(),
+                  text: text.slice(start, end),
+                  from: 0,
+                  to: 0,
+                });
+              }
+            } else {
+              const cell = targetEl?.closest("td, th") as HTMLTableCellElement | null;
+              if (cell) {
+                setSelectionRange({
+                  rect: cell.getBoundingClientRect(),
+                  text: cell.textContent?.trim() || "",
+                  from: 0,
+                  to: 0,
+                });
+              }
+            }
+          } else {
+            const cell = targetEl?.closest("td, th") as HTMLTableCellElement | null;
+            if (cell) {
+              setSelectionRange({
+                rect: cell.getBoundingClientRect(),
+                text: cell.textContent?.trim() || "",
+                from: 0,
+                to: 0,
+              });
+            }
+          }
+        }
+      } else {
+        const state = cmView.state;
+        const main = state.selection.main;
+        const clickPos = cmView.posAtCoords({ x: clientX, y: clientY });
+        const isInsideSelection = !main.empty && clickPos !== null && clickPos >= main.from && clickPos <= main.to;
+        if (!isInsideSelection && clickPos !== null) {
+          const word = state.wordAt(clickPos);
+          if (word && word.from < word.to && state.sliceDoc(word.from, word.to).trim()) {
+            cmView.dispatch({
+              selection: { anchor: word.from, head: word.to }
+            });
+          } else {
+            cmView.dispatch({
+              selection: { anchor: clickPos, head: clickPos }
+            });
+          }
+        }
+      }
+    }
 
     const getSettings = () => {
       try {
@@ -6035,6 +6842,17 @@ export function Editor({
 
     const menu = new Menu();
 
+    // Prominently add "Add Comment" at the top of the context menu
+    menu.addItem((item: any) =>
+      item
+        .setTitle('Add Comment')
+        .setIcon('message-square')
+        .onClick(() => {
+          handleStartAddComment();
+        })
+    );
+    menu.addSeparator();
+
     const findLinkOrEmbedAtCursor = (lineText: string, posInLine: number) => {
       const mdLinkRegex = /\[([^\]]*)\]\((https?:\/\/[^\s)]+)\)/g;
       let match;
@@ -6087,7 +6905,6 @@ export function Editor({
       return null;
     };
 
-    const cmView = viewRef.current;
     let detected = null;
     let targetFrom = 0;
     let targetTo = 0;
@@ -6208,10 +7025,12 @@ export function Editor({
       }
     }
 
-    const selection = viewRef.current?.state.sliceDoc(
-      viewRef.current.state.selection.main.from,
-      viewRef.current.state.selection.main.to
-    ) || '';
+    const selection = (viewMode === "preview"
+      ? (window.getSelection()?.toString() || selectionRange?.text || '')
+      : (viewRef.current?.state.sliceDoc(
+          viewRef.current.state.selection.main.from,
+          viewRef.current.state.selection.main.to
+        ) || ''));
     const searchTitle = selection
       ? `Search for "${selection.length > 20 ? selection.substring(0, 20) + '...' : selection}"`
       : 'Search for selection';
@@ -6278,19 +7097,59 @@ export function Editor({
     menu.addItem((item: any) => item.setTitle('Copy').setIcon('copy').onClick(() => { document.execCommand('copy'); }));
     menu.addItem((item: any) => item.setTitle('Paste').setIcon('clipboard').onClick(async () => {
       try {
+        if (navigator.clipboard?.read) {
+          const clipboardItems = await navigator.clipboard.read();
+          for (const item of clipboardItems) {
+            const imageType = item.types.find((t) => t.startsWith("image/"));
+            if (imageType) {
+              const blob = await item.getType(imageType);
+              const file = new File([blob], "image.png", { type: imageType });
+              let imagePath: string | null = null;
+              if (onImagePaste) {
+                try {
+                  imagePath = await onImagePaste(file);
+                } catch {}
+              }
+              if (!imagePath) {
+                imagePath = await new Promise<string>((resolve) => {
+                  const reader = new FileReader();
+                  reader.onload = () => resolve(reader.result as string);
+                  reader.readAsDataURL(blob);
+                });
+              }
+              if (imagePath) {
+                const imageMarkdown = `![image](${imagePath})\n`;
+                if (viewMode === "preview") {
+                  onContentChange(content + `\n\n${imageMarkdown}`, true, activePathRef.current || undefined);
+                } else if (viewRef.current) {
+                  const main = viewRef.current.state.selection.main;
+                  viewRef.current.dispatch({
+                    changes: { from: main.from, to: main.to, insert: imageMarkdown },
+                    selection: { anchor: main.from + imageMarkdown.length },
+                  });
+                }
+                return;
+              }
+            }
+          }
+        }
         const text = await navigator.clipboard.readText();
-        if (viewRef.current) {
+        if (viewRef.current && text) {
           const main = viewRef.current.state.selection.main;
           viewRef.current.dispatch({ changes: { from: main.from, to: main.to, insert: text }, selection: { anchor: main.from + text.length } });
+        } else if (viewMode === "preview" && text) {
+          onContentChange(content + `\n${text}`, true, activePathRef.current || undefined);
         }
       } catch (err) { }
     }));
     menu.addItem((item: any) => item.setTitle('Paste as plain text').setIcon('clipboard-type').onClick(async () => {
       try {
         const text = await navigator.clipboard.readText();
-        if (viewRef.current) {
+        if (viewRef.current && text) {
           const main = viewRef.current.state.selection.main;
           viewRef.current.dispatch({ changes: { from: main.from, to: main.to, insert: text }, selection: { anchor: main.from + text.length } });
+        } else if (viewMode === "preview" && text) {
+          onContentChange(content + `\n${text}`, true, activePathRef.current || undefined);
         }
       } catch (err) { }
     }));
@@ -6302,74 +7161,86 @@ export function Editor({
     }));
 
     // Sync real editor state to the API mock before triggering event
-    const activeLeaf = app.workspace.activeLeaf;
-    if (activeLeaf?.view?.getViewType?.() === 'markdown' && viewRef.current) {
-      // Ensure this leaf is considered the active one during the event trigger
-      if (activeLeaf.view) {
-        const view = activeLeaf.view;
-        let editorDescriptor: PropertyDescriptor | undefined;
-        for (let target: any = view; target && !editorDescriptor; target = Object.getPrototypeOf(target)) {
-          editorDescriptor = Object.getOwnPropertyDescriptor(target, 'editor');
+    try {
+      const app = (window as any).__oo_app;
+      const activeLeaf = app?.workspace?.activeLeaf;
+      if (activeLeaf?.view?.getViewType?.() === 'markdown' && viewRef.current) {
+        // Ensure this leaf is considered the active one during the event trigger
+        if (activeLeaf.view) {
+          const view = activeLeaf.view;
+          let editorDescriptor: PropertyDescriptor | undefined;
+          for (let target: any = view; target && !editorDescriptor; target = Object.getPrototypeOf(target)) {
+            editorDescriptor = Object.getOwnPropertyDescriptor(target, 'editor');
+          }
+          // Excalidraw subclasses the Markdown-compatible view surface but
+          // exposes a getter-only editor property. Its own editor bridge must
+          // remain untouched by the host Markdown context-menu bridge.
+          if (editorDescriptor && !editorDescriptor.writable && !editorDescriptor.set) {
+            menu.showAtMouseEvent(mouseEvt);
+            return;
+          }
+          const currentCmView = viewRef.current;
+          const state = currentCmView.state;
+
+          // Sync the file info
+          const activeTab = tabs.find(t => t.id === activeTabId);
+          if (activeTab) {
+            setWritableViewProperty(activeLeaf.view, 'file', new TFile(activeTab.path));
+          }
+
+          // Initialize editor mocks if needed
+          const editor = view.editor || {};
+          view.editor = editor;
+
+          // Update the mock methods with real data from CodeMirror 6
+          editor.getValue = () => state.doc.toString();
+          editor.getSelection = () => state.sliceDoc(state.selection.main.from, state.selection.main.to);
+          editor.somethingSelected = () => !state.selection.main.empty;
+          editor.getCursor = () => {
+            const pos = state.selection.main.head;
+            const line = state.doc.lineAt(pos);
+            return { line: line.number - 1, ch: pos - line.from };
+          };
+          editor.replaceSelection = (text: string) => {
+            const main = state.selection.main;
+            currentCmView.dispatch({
+              changes: { from: main.from, to: main.to, insert: text },
+              selection: { anchor: main.from + text.length }
+            });
+          };
+
+          // Add more standard Obsidian editor methods for compatibility
+          editor.getLine = (n: number) => state.doc.line(n + 1).text;
+          editor.lineCount = () => state.doc.lines;
+          editor.getDoc = () => editor;
+          editor.cm = editor;
+
+          // Ensure sourceMode shim is present as expected by many plugins
+          try {
+            if (view.sourceMode) {
+              view.sourceMode.cmEditor = editor;
+            }
+          } catch { }
+
+          console.log(`[Editor] Triggering editor-menu for ${activeTab?.path}. Selection: "${editor.getSelection()}"`);
+          if (typeof app?.workspace?.trigger === 'function') {
+            app.workspace.trigger('editor-menu', menu, editor, view);
+          }
         }
-        // Excalidraw subclasses the Markdown-compatible view surface but
-        // exposes a getter-only editor property. Its own editor bridge must
-        // remain untouched by the host Markdown context-menu bridge.
-        if (editorDescriptor && !editorDescriptor.writable && !editorDescriptor.set) {
-          menu.showAtMouseEvent(e.nativeEvent);
-          return;
-        }
-        const cmView = viewRef.current;
-        const state = cmView.state;
-
-        // Sync the file info
-        const activeTab = tabs.find(t => t.id === activeTabId);
-        if (activeTab) {
-          setWritableViewProperty(activeLeaf.view, 'file', new TFile(activeTab.path));
-        }
-
-        // Initialize editor mocks if needed
-        const editor = view.editor || {};
-        view.editor = editor;
-
-        // Update the mock methods with real data from CodeMirror 6
-        editor.getValue = () => state.doc.toString();
-        editor.getSelection = () => state.sliceDoc(state.selection.main.from, state.selection.main.to);
-        editor.somethingSelected = () => !state.selection.main.empty;
-        editor.getCursor = () => {
-          const pos = state.selection.main.head;
-          const line = state.doc.lineAt(pos);
-          return { line: line.number - 1, ch: pos - line.from };
-        };
-        editor.replaceSelection = (text: string) => {
-          const main = state.selection.main;
-          cmView.dispatch({
-            changes: { from: main.from, to: main.to, insert: text },
-            selection: { anchor: main.from + text.length }
-          });
-        };
-
-        // Add more standard Obsidian editor methods for compatibility
-        editor.getLine = (n: number) => state.doc.line(n + 1).text;
-        editor.lineCount = () => state.doc.lines;
-        editor.getDoc = () => editor;
-        editor.cm = editor;
-
-        // Ensure sourceMode shim is present as expected by many plugins
-        view.sourceMode = view.sourceMode || {};
-        view.sourceMode.cmEditor = editor;
-
-        console.log(`[Editor] Triggering editor-menu for ${activeTab?.path}. Selection: "${editor.getSelection()}"`);
-        app.workspace.trigger('editor-menu', menu, editor, view);
       }
+    } catch (err) {
+      console.warn('[Editor] Failed to sync editor mock for plugins:', err);
     }
 
-    menu.showAtMouseEvent(e.nativeEvent);
-  }, [activeTabId, tabs]);
+    menu.showAtMouseEvent(mouseEvt);
+  }, [activeTabId, tabs, handleStartAddComment, viewMode, selectionRange]);
+
+  handleContextMenuRef.current = handleContextMenu;
 
   const getClampedToolbarCoords = () => {
     if (!selectionRange) return { top: 0, left: 0 };
     const toolbarHeight = showPromptInput ? 84 : 40;
-    const toolbarWidth = 400;
+    const toolbarWidth = 480;
 
     const y = selectionRange.rect.top < (showPromptInput ? 110 : 70)
       ? selectionRange.rect.bottom + 8
@@ -6428,7 +7299,7 @@ export function Editor({
         containerRef.current || document.body
       )}
 
-      {selectionRange && !pendingInlineEdit && !isInlineQuerying && !explanation && createPortal(
+      {selectionRange && !pendingInlineEdit && !isInlineQuerying && !explanation && !pendingComment && createPortal(
         <div
           className={inlineAiToolbarClass}
           style={{
@@ -6436,6 +7307,7 @@ export function Editor({
             ...getClampedToolbarCoords(),
             zIndex: 5000,
           }}
+          onContextMenu={handleContextMenu}
           onMouseDown={(e) => {
             const target = e.target as HTMLElement;
             if (
@@ -6614,6 +7486,23 @@ export function Editor({
               onClose={() => setIsSearchOpen(false)}
             />
 
+            {/* Notion-style Comments Layer */}
+            <EditorCommentsLayer
+              view={viewRef.current}
+              comments={comments}
+              pendingComment={pendingComment}
+              activeCommentId={activeCommentId}
+              onSaveComment={handleSaveComment}
+              onCancelPending={handleCancelPendingComment}
+              onSelectComment={(id) => setActiveCommentId(id)}
+              onResolveComment={handleResolveComment}
+              onDeleteComment={handleDeleteComment}
+              onEditComment={handleEditComment}
+              onReplyComment={handleReplyComment}
+              containerEl={viewMode === "preview" ? (previewEl || previewRef.current) : (viewRef.current?.scrollDOM || null)}
+              isReadMode={viewMode === "preview"}
+            />
+
             <div
               ref={editorRef}
               onContextMenu={handleContextMenu}
@@ -6621,7 +7510,7 @@ export function Editor({
                 flex: viewMode === "split" ? `0 0 ${editorWidth}%` : 1,
                 minWidth: 0,
                 height: "100%",
-                overflow: "auto",
+                overflow: "hidden",
                 display:
                   viewMode === "editor" || viewMode === "split"
                     ? "block"
@@ -6636,9 +7525,15 @@ export function Editor({
 
             {(viewMode === "preview" || viewMode === "split") && (
               <div
-                ref={previewRef}
+                ref={(el) => {
+                  (previewRef as any).current = el;
+                  if (previewEl !== el) {
+                    setPreviewEl(el);
+                  }
+                }}
                 onContextMenu={handleContextMenu}
                 style={{
+                  position: "relative",
                   flex:
                     viewMode === "split"
                       ? `0 0 calc(${100 - editorWidth}% - 4px)`
@@ -6659,6 +7554,9 @@ export function Editor({
                   onImageClick={handleOpenImageLightbox}
                   theme={theme}
                   settings={settings}
+                  comments={comments}
+                  pendingComment={pendingComment}
+                  onCommentClick={(id) => setActiveCommentId(id)}
                   onContentChange={(nextContent) => onContentChange(nextContent, true, activePathRef.current || undefined)}
                 />
               </div>

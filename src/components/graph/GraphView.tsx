@@ -406,6 +406,8 @@ export function GraphView({
   const workerRef = useRef<Worker | null>(null);
   const initDoneRef = useRef(false);
   const prevThemeRef = useRef<Theme>(theme);
+  const initialCenteredRef = useRef(false);
+  const hasMeasuredValidRectRef = useRef(false);
 
   const [showSettingsPanel, setShowSettingsPanel] = useState(false);
   const [simulating, setSimulating] = useState(false);
@@ -674,6 +676,10 @@ export function GraphView({
         const posArray = new Float32Array(positions);
         renderer.updatePositionsFromArray(ids, posArray);
         setAlpha(a);
+        if (!initialCenteredRef.current && ids.length > 0) {
+          initialCenteredRef.current = true;
+          renderer.centerView(true);
+        }
       } else if (type === "end") {
         setSimulating(false);
         setAlpha(0);
@@ -779,9 +785,11 @@ export function GraphView({
 
         if (!savedPositions || Object.keys(savedPositions).length === 0 || hasUnplacedNodes) {
           setSimulating(true);
+          renderer.centerView(true);
           worker.postMessage({ type: "start" });
         } else {
-          setTimeout(() => renderer.centerView(), 100);
+          renderer.centerView(true);
+          setTimeout(() => renderer.centerView(), 50);
         }
       })
       .catch(console.error);
@@ -797,6 +805,10 @@ export function GraphView({
         const rect = container.getBoundingClientRect();
         if (rect.width > 10 && rect.height > 10) {
           renderer.resize(rect.width, rect.height);
+          if (!hasMeasuredValidRectRef.current) {
+            hasMeasuredValidRectRef.current = true;
+            renderer.centerView(true);
+          }
         }
       }, 16); // ~60fps throttle
     };
@@ -1130,7 +1142,7 @@ export function GraphView({
           )}
 
           <div className="graph-tools-group">
-            <button className="graph-btn" onClick={centerView} title="Center view">
+            <button className="graph-btn" onClick={centerView} title="Zoom to fit (Center view)">
               <Target size={14} />
             </button>
             <button

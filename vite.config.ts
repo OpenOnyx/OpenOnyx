@@ -17,6 +17,36 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     emptyOutDir: true,
+    chunkSizeWarningLimit: 1200,
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes('node_modules')) {
+            if (id.includes('@xenova') || id.includes('onnxruntime')) {
+              return 'vendor-transformers';
+            }
+            if (id.includes('@codemirror') || id.includes('@lezer') || id.includes('codemirror') || id.includes('@replit/codemirror-vim')) {
+              return 'vendor-codemirror';
+            }
+            if (id.includes('d3') || id.includes('cytoscape') || id.includes('dagre')) {
+              return 'vendor-d3';
+            }
+            if (id.includes('mermaid')) {
+              return 'vendor-mermaid';
+            }
+            if (id.includes('katex')) {
+              return 'vendor-katex';
+            }
+            if (id.includes('yjs') || id.includes('y-') || id.includes('lib0')) {
+              return 'vendor-yjs';
+            }
+            if (id.includes('react') || id.includes('react-dom')) {
+              return 'vendor-react';
+            }
+          }
+        },
+      },
+    },
   },
   optimizeDeps: {
     include: ['d3-force', 'd3', 'mermaid', 'react-colorful'],

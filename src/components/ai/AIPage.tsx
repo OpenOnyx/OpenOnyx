@@ -25,6 +25,7 @@ import {
   Save,
   Eye,
   Zap,
+  Network,
 } from "lucide-react";
 import {
   loadStore,
@@ -532,6 +533,14 @@ export function AIPage({
               <span>{suggestions.length + missingLinks.length + unwrittenInsights.length} signals</span>
             </div>
           )}
+          <button
+            className={tm.iconBtn}
+            onClick={() => window.dispatchEvent(new CustomEvent("oo:open-ai-graph"))}
+            title="Open AI Knowledge Graph (Center View)"
+            aria-label="Open AI Knowledge Graph"
+          >
+            <Network size={16} />
+          </button>
           {onToggleFullScreen && (
             <button className={tm.iconBtn} onClick={onToggleFullScreen} aria-label={isFullScreen ? "Exit full screen" : "Enter full screen"}>
               {isFullScreen ? <Minimize size={16} /> : <Maximize size={16} />}
@@ -584,7 +593,7 @@ export function AIPage({
                 <Link size={28} style={{ opacity: 0.15 }} />
                 <p>Open a note to see similar notes suggested here.</p>
               </div>
-            ) : suggestions.length > 0 ? (
+            ) : (
               <div className={ai.suggestionsList}>
                 <div className={ai.suggestionHero}>
                   <div>
@@ -614,38 +623,39 @@ export function AIPage({
                   </div>
                 </div>
 
-                {/* ── Strong Matches ─── */}
-                {(() => {
-                  const strong = suggestions.filter((s) => s.group === "strong");
-                  const broader = suggestions.filter((s) => s.group === "broader");
-                  return (
-                    <>
-                      {strong.length > 0 && (
-                        <div className={ai.suggestionGroup}>
-                          <div className={ai.suggestionGroupLabel}>
-                            <span className={`${ai.dot} ${ai.dotStrong}`} />
-                            Strong Matches
+                {suggestions.length > 0 ? (
+                  (() => {
+                    const strong = suggestions.filter((s) => s.group === "strong");
+                    const broader = suggestions.filter((s) => s.group === "broader");
+                    return (
+                      <>
+                        {strong.length > 0 && (
+                          <div className={ai.suggestionGroup}>
+                            <div className={ai.suggestionGroupLabel}>
+                              <span className={`${ai.dot} ${ai.dotStrong}`} />
+                              Strong Matches
+                            </div>
+                            {strong.map((s) => renderEnrichedSuggestion(s, linkTypeSelector, setLinkTypeSelector, handleAcceptSuggestion, handleRejectSuggestion, onOpenNote))}
                           </div>
-                          {strong.map((s) => renderEnrichedSuggestion(s, linkTypeSelector, setLinkTypeSelector, handleAcceptSuggestion, handleRejectSuggestion, onOpenNote))}
-                        </div>
-                      )}
-                      {broader.length > 0 && (
-                        <div className={ai.suggestionGroup}>
-                          <div className={ai.suggestionGroupLabel}>
-                            <span className={`${ai.dot} ${ai.dotBroader}`} />
-                            Broader Connections
+                        )}
+                        {broader.length > 0 && (
+                          <div className={ai.suggestionGroup}>
+                            <div className={ai.suggestionGroupLabel}>
+                              <span className={`${ai.dot} ${ai.dotBroader}`} />
+                              Broader Connections
+                            </div>
+                            {broader.map((s) => renderEnrichedSuggestion(s, linkTypeSelector, setLinkTypeSelector, handleAcceptSuggestion, handleRejectSuggestion, onOpenNote))}
                           </div>
-                          {broader.map((s) => renderEnrichedSuggestion(s, linkTypeSelector, setLinkTypeSelector, handleAcceptSuggestion, handleRejectSuggestion, onOpenNote))}
-                        </div>
-                      )}
-                    </>
-                  );
-                })()}
-              </div>
-            ) : (
-              <div className={ai.empty}>
-                <p>No similar notes found for "{getNoteName(activeNotePath)}".</p>
-                <p className={ai.sectionHint}>Similarity updates automatically when notes are saved.</p>
+                        )}
+                      </>
+                    );
+                  })()
+                ) : (
+                  <div className={ai.empty}>
+                    <p>No similar notes found for "{getNoteName(activeNotePath)}".</p>
+                    <p className={ai.sectionHint}>Lower sensitivity to see broader matches, or save notes to update.</p>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -725,6 +735,14 @@ export function AIPage({
                     <CircleDot size={12} style={{ opacity: 0.5 }} />
                     <span>Note Clusters</span>
                     <span className={ai.sectionBadge}>{clusters.length}</span>
+                    <button
+                      type="button"
+                      className={`${panelBtnGhostClass} ${ai.compactBtn} ml-auto`}
+                      onClick={() => window.dispatchEvent(new CustomEvent("oo:open-ai-graph"))}
+                      title="Open AI Knowledge Graph in Center View"
+                    >
+                      <Network size={10} /> AI Graph
+                    </button>
                   </div>
                   {clusters.length === 0 ? (
                     <p className={ai.sectionHint}>No strong clusters detected yet.</p>

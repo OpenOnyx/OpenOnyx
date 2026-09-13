@@ -9,7 +9,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import {
   Cloud, CloudUpload, Users, UserPlus, Check, X, RefreshCw,
   FolderOpen, Loader, AlertCircle, Send, ChevronDown, ChevronUp,
-  Lock, Unlock, KeyRound,
+  Lock, Unlock, KeyRound, Activity,
 } from 'lucide-react';
 import {
   collaborationEngine,
@@ -17,6 +17,7 @@ import {
   type CollabStatus,
 } from '../../lib/collaborationEngine';
 import { authManager } from '../../lib/auth';
+import { syncEngine, type SyncStatus } from '../../lib/syncEngine';
 import { getAPI } from '../../utils/api';
 
 interface CollaborationPanelProps {
@@ -64,6 +65,7 @@ export function CollaborationPanel({
   const [authLoading, setAuthLoading] = useState(authManager.getState().isLoading);
   const [isInitialLoading, setIsInitialLoading] = useState(true);
   const [collabStatus, setCollabStatus] = useState<CollabStatus>({ state: 'idle' });
+  const [syncStatus, setSyncStatus] = useState<SyncStatus | null>(null);
   const [cloudSpace, setCloudSpace] = useState<CloudSpace | null>(null);
   const [invitesIn, setInvitesIn] = useState<SpaceInvite[]>([]);
   const [invitesOut, setInvitesOut] = useState<SpaceInvite[]>([]);
@@ -101,6 +103,11 @@ export function CollaborationPanel({
   // Status listener
   useEffect(() => {
     const unsub = collaborationEngine.onStatusChange(setCollabStatus);
+    return unsub;
+  }, []);
+
+  useEffect(() => {
+    const unsub = syncEngine.onStatusChange(setSyncStatus);
     return unsub;
   }, []);
 
@@ -295,26 +302,46 @@ export function CollaborationPanel({
     }
   };
 
+  const handleRepairConnection = async () => {
+    setError(null);
+    try {
+      await collaborationEngine.repairActiveConnection();
+      await syncEngine.syncLocalFilesystemToDB(true);
+      await syncEngine.sync();
+      await loadSpaceData(false);
+      setIsCollabActive(true);
+    } catch (err: any) {
+      setError(err.message || 'Failed to repair collaboration connection');
+    }
+  };
+
   const toggleSection = (section: string) => {
     setExpandedSection(prev => prev === section ? null : section);
   };
 
-  // ── Maintenance state ────────────────────────────────────────────────────
+  const collabStateLabel =
+    collabStatus.state === 'ready' ? 'Realtime ready' :
+    collabStatus.state === 'syncing' ? 'Realtime syncing' :
+    collabStatus.state === 'creating' ? 'Creating cloud space' :
+    collabStatus.state === 'bootstrapping' ? 'Reconstructing vault' :
+    collabStatus.state === 'error' ? 'Realtime error' :
+    cloudSpace ? 'Realtime idle' : 'Not linked';
 
-  const MAINTENANCE_MODE = false;
-  if (MAINTENANCE_MODE) {
-    return (
-      <div className={settingCenteredCardClass}>
-        <div className="flex flex-col items-center gap-3 text-center">
-          <AlertCircle size={32} strokeWidth={1.5} className="text-yellow-500" />
-          <div className="text-sm font-medium text-[var(--text-primary)]">Collaboration Under Maintenance</div>
-          <div className="text-[12.5px] text-[var(--text-muted)] max-w-[280px] leading-relaxed">
-            We found a few issues with real-time collaboration and are working to resolve them. It will be fully back soon.
-          </div>
-        </div>
-      </div>
-    );
-  }
+  const syncStateLabel =
+    syncStatus?.state === 'syncing' ? 'Syncing changes' :
+    syncStatus?.state === 'error' ? 'Sync error' :
+    syncStatus?.state === 'idle' && syncStatus.lastSync ? `Last sync ${new Date(syncStatus.lastSync).toLocaleTimeString()}` :
+    'Waiting for sync';
+
+  const diagnostics = [
+    { label: 'Space', value: cloudSpace ? cloudSpace.title : 'Not linked' },
+    { label: 'Realtime', value: collabStateLabel },
+    { label: 'Sync', value: syncStateLabel },
+    { label: 'Encryption', value: cloudSpace ? (isUnlocked ? 'Unlocked locally' : 'Locked locally') : 'Not active' },
+    { label: 'Collaborators', value: String(collaborators.length) },
+    { label: 'Invites', value: `${invitesIn.length} incoming / ${invitesOut.filter(inv => inv.status === 'pending').length} pending` },
+    { label: 'Vault', value: vaultPath || 'No vault open' },
+  ];
 
   // ── Loading state ────────────────────────────────────────────────────────
 
@@ -382,13 +409,6 @@ export function CollaborationPanel({
 
   return (
     <div className="collaboration-panel-container">
-      <div className="flex items-start gap-2.5 px-3.5 py-2.5 bg-yellow-500/[0.08] border border-yellow-500/20 rounded-md text-yellow-500 text-[12.5px] mb-4">
-        <AlertCircle size={14} className="shrink-0 mt-0.5" />
-        <span className="flex-1 leading-relaxed">
-          We found a few issues with real-time collaboration and are working to resolve them. It will be fully back soon.
-        </span>
-      </div>
-
       {error && (
         <div className="flex items-center gap-2 px-3.5 py-2.5 bg-red-500/[0.08] border border-red-500/20 rounded-md text-red-500 text-[12.5px] mb-4">
           <AlertCircle size={14} className="shrink-0" />
@@ -503,6 +523,42 @@ export function CollaborationPanel({
 
       {cloudSpace && (
         <>
+          <h3 className={settingGroupHeaderClass}>Collaboration Diagnostics</h3>
+          <div className="mb-6 rounded-md border border-[var(--border-subtle)] bg-[var(--bg-secondary)]">
+            <div className="flex items-center justify-between border-b border-[var(--border-subtle)] px-4 py-3">
+              <div className="flex min-w-0 items-center gap-2">
+                <Activity size={15} className="shrink-0 text-[var(--color-accent)]" />
+                <span className="truncate text-[13px] font-medium text-[var(--text-primary)]">Live system status</span>
+              </div>
+              <div className="flex shrink-0 items-center gap-2">
+                <button className={`${settingBtnSecondaryClass} flex items-center gap-1.5`} onClick={() => loadSpaceData(false)} title="Refresh collaboration diagnostics">
+                  <RefreshCw size={12} /> Refresh
+                </button>
+                <button className={`${settingBtnPrimaryClass} flex items-center gap-1.5`} onClick={handleRepairConnection} title="Reconnect realtime and run a full sync repair">
+                  <Activity size={12} /> Repair
+                </button>
+              </div>
+            </div>
+            <div className="grid grid-cols-1 gap-px bg-[var(--border-subtle)] sm:grid-cols-2">
+              {diagnostics.map((item) => (
+                <div key={item.label} className="min-w-0 bg-[var(--bg-secondary)] px-4 py-3">
+                  <div className="mb-1 text-[10.5px] font-semibold uppercase tracking-[0.05em] text-[var(--text-muted)]">{item.label}</div>
+                  <div className="truncate text-[12.5px] text-[var(--text-primary)]" title={item.value}>{item.value}</div>
+                </div>
+              ))}
+            </div>
+            {collabStatus.state === 'error' && (
+              <div className="border-t border-red-500/20 bg-red-500/[0.08] px-4 py-3 text-[12.5px] text-red-500">
+                {collabStatus.message}
+              </div>
+            )}
+            {syncStatus?.state === 'error' && (
+              <div className="border-t border-red-500/20 bg-red-500/[0.08] px-4 py-3 text-[12.5px] text-red-500">
+                {syncStatus.error || 'Sync failed. Try refreshing after checking your connection.'}
+              </div>
+            )}
+          </div>
+
           <h3 className={settingGroupHeaderClass}>Cloud Space Status</h3>
           <div className={settingCardClass}>
             <div className={settingInfoClass}>

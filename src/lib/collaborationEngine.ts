@@ -1598,6 +1598,18 @@ class CollaborationEngine {
     this.scheduleRealtimeReconnect(this._activeSpaceId, 0);
   }
 
+  async repairActiveConnection(): Promise<void> {
+    if (!this._activeSpaceId) {
+      throw new Error('No active collaboration space is linked to this vault.');
+    }
+    if (!authManager.getUserId()) {
+      throw new Error('Sign in before repairing collaboration.');
+    }
+    this.setCollabPaused(false);
+    this.clearRealtimeReconnect();
+    await this.subscribeToSpace(this._activeSpaceId);
+  }
+
   private static readonly MAX_RECONNECT_ATTEMPTS = 10;
 
   private scheduleRealtimeReconnect(spaceId: string, overrideDelay?: number) {

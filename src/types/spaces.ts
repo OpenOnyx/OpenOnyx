@@ -77,7 +77,12 @@ export interface SpaceChatMessage {
   id: string;
   role: "user" | "assistant";
   content: string;
-  sources?: string[];
+  sources?: Array<string | {
+    noteTitle: string;
+    notePath?: string;
+    chunkText?: string;
+    similarity?: number;
+  }>;
   timestamp: number;
 }
 

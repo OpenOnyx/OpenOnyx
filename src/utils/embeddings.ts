@@ -12,26 +12,49 @@
  *  - Suggestion tracking with temporal weighting
  */
 
-// @ts-ignore — Transformers.js types
-import { pipeline, env, type FeatureExtractionPipeline } from "@xenova/transformers";
 import { readData, writeData, listData, deleteData, createDebouncedWriter } from "./disk-store";
 
-// Allow local cached models alongside remote downloads so offline models work after first load
-env.allowLocalModels = true;
-env.allowRemoteModels = true;
-if ("useBrowserCache" in env) {
-  (env as any).useBrowserCache = true;
+type FeatureExtractionPipeline = any;
+
+export function configureTransformersEnv(env: any) {
+  env.allowLocalModels = true;
+  env.allowRemoteModels = true;
+  if ("useBrowserCache" in env) {
+    (env as any).useBrowserCache = true;
+  }
+
+  // Electron/Browser compatibility fixes for @xenova/transformers v2.
+  // Force the WASM backend and disable Node.js-specific backends.
+  if (env.backends?.onnx?.wasm) {
+    const wasm = env.backends.onnx.wasm as {
+      proxy?: boolean;
+      numThreads?: number;
+      wasmPaths?: string;
+    };
+    wasm.proxy = false;
+    wasm.numThreads = 1;
+    if (typeof window !== "undefined" && typeof process !== "undefined" && process.env.NODE_ENV !== "test") {
+      wasm.wasmPaths = "/wasm/";
+    } else {
+      wasm.wasmPaths = `https://cdn.jsdelivr.net/npm/@xenova/transformers@${env.version}/dist/`;
+    }
+  }
 }
 
-// Electron/Browser compatibility fixes for @xenova/transformers v2.
-// Force the WASM backend and disable Node.js-specific backends.
-if (env.backends?.onnx?.wasm) {
-  const wasm = env.backends.onnx.wasm as {
-    proxy?: boolean;
-    wasmPaths?: string;
-  };
-  wasm.proxy = false;
-  wasm.wasmPaths = `https://cdn.jsdelivr.net/npm/@xenova/transformers@${env.version}/dist/`;
+let _transformers: typeof import("@xenova/transformers") | null = null;
+
+if (process.env.NODE_ENV === "test") {
+  const mod = await import("@xenova/transformers");
+  configureTransformersEnv(mod.env);
+  _transformers = mod;
+}
+
+async function getTransformers() {
+  if (_transformers) return _transformers;
+  const mod = await import("@xenova/transformers");
+  configureTransformersEnv(mod.env);
+  _transformers = mod;
+  return mod;
 }
 
 // Fetch interceptor to cache Transformers.js model files locally in Electron
@@ -215,6 +238,7 @@ async function getEmbedder(): Promise<FeatureExtractionPipeline> {
       _onProgress?.(10, "Loading analysis engine...");
       
       // Explicitly catch pipeline errors
+      const { pipeline } = await getTransformers();
       const p = await pipeline("feature-extraction", MODEL_ID).catch(err => {
         console.warn("[Embeddings] Pipeline creation failed; using local fallback analysis for this session:", err);
         throw err;
@@ -710,6 +734,29 @@ export function removeEmbeddingsByPrefix(
   }
 
   return paths.length;
+}
+
+/**
+ * Prune embeddings for notes that no longer exist in the vault.
+ */
+export function pruneMissingEmbeddings(
+  store: EmbeddingStore,
+  validPaths: Set<string> | string[],
+): number {
+  const validSet = validPaths instanceof Set ? validPaths : new Set(validPaths);
+  const toRemove: string[] = [];
+
+  for (const path of store.entries.keys()) {
+    if (!validSet.has(path)) {
+      toRemove.push(path);
+    }
+  }
+
+  for (const path of toRemove) {
+    removeEmbedding(store, path);
+  }
+
+  return toRemove.length;
 }
 
 // ── Similarity search ────────────────────────────────────────────────────────

@@ -5,6 +5,7 @@ import { Reveal } from "../components/Reveal";
 import { ProductStory } from "../components/product/ProductStory";
 import { Workspace } from "../components/product/Workspace";
 import { FEATURES, PRODUCT, THEATER } from "../data/facts";
+import { paletteHotkeyLabel } from "../lib/hotkey";
 import { usePointerDepth, useStaggerIn } from "../lib/motion";
 import { usePageMeta } from "../lib/meta";
 
@@ -38,7 +39,7 @@ export function Home() {
               Download
             </Link>
             <button type="button" className="btn" onClick={() => window.dispatchEvent(new Event("openonyx:palette"))}>
-              Open ⌘K
+              Open {paletteHotkeyLabel()}
             </button>
           </div>
         </div>

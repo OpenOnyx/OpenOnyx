@@ -16,7 +16,7 @@ describe("callout rendering", () => {
     expect(noteHtml).toContain("You can keep using Obsidian on the same folder.");
 
     const cautionHtml = buildMarkdownPdfHtml({
-      markdown: "> [!CAUTION]\n> The collaboration panel currently shows a maintenance notice.",
+      markdown: "> [!CAUTION]\n> Always back up your vault before testing sync.",
       title: "Caution Test",
       notePath: "Caution.md",
     });
@@ -24,7 +24,7 @@ describe("callout rendering", () => {
     expect(cautionHtml).toContain("docs-note");
     expect(cautionHtml).toContain("is-caution");
     expect(cautionHtml).toContain("CAUTION");
-    expect(cautionHtml).toContain("The collaboration panel currently shows a maintenance notice.");
+    expect(cautionHtml).toContain("Always back up your vault before testing sync.");
   });
 
   it("supports custom title in callout header", () => {
@@ -56,7 +56,7 @@ describe("callout rendering", () => {
     const raw = `> [!DANGER]
 > You can keep using Obsidian on the same folder. The files do not belong to either app
 > [!NOTE]
-> The collaboration panel currently shows a maintenance notice: real-time multiplayer editing has`;
+> Always back up your vault before testing sync: real-time multiplayer editing has`;
     const html = buildMarkdownPdfHtml({
       markdown: raw,
       title: "Consecutive Test",

@@ -366,6 +366,7 @@ export function createMockAPI(): ElectronAPI {
     },
 
     getFileTree: async () => buildFileTree(),
+    onVaultFileChanges: () => () => {},
 
     // Search
     search: async (query: string) => {
