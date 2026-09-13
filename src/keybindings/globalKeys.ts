@@ -15,6 +15,7 @@ let initialized = false;
 let enabled = true;
 let leaderPending = false;
 let leaderTimer: number | null = null;
+let currentVimMode = "normal";
 
 const LEADER_EVENT_MAP: Record<LeaderKey, string> = {
   f: "oo:fuzzy-search",
@@ -27,6 +28,21 @@ const LEADER_EVENT_MAP: Record<LeaderKey, string> = {
   "/": "oo:global-search",
   p: "oo:command-palette",
 };
+
+export function setVimMode(mode: string): void {
+  currentVimMode = mode ? mode.toLowerCase() : "normal";
+}
+
+export function getVimMode(): string {
+  return currentVimMode;
+}
+
+function handleVimModeChange(event: Event): void {
+  const customEvent = event as CustomEvent<{ mode?: string }>;
+  if (customEvent.detail?.mode) {
+    setVimMode(customEvent.detail.mode);
+  }
+}
 
 function clearLeaderState(): void {
   leaderPending = false;
@@ -83,6 +99,12 @@ function onGlobalKeydown(event: KeyboardEvent): void {
     !event.ctrlKey &&
     !event.metaKey
   ) {
+    const target = event.target as Element | null;
+    const withinCodeMirror = !!(target as HTMLElement | null)?.closest(".cm-editor");
+    if (withinCodeMirror && currentVimMode === "insert") {
+      return;
+    }
+
     event.preventDefault();
     leaderPending = true;
     if (leaderTimer !== null) {
@@ -115,6 +137,7 @@ export function initGlobalKeybindings(): void {
   if (initialized) return;
 
   window.addEventListener("keydown", onGlobalKeydown);
+  window.addEventListener("oo:vim-mode-change", handleVimModeChange);
   initialized = true;
 }
 
@@ -122,5 +145,6 @@ export function setGlobalKeybindingsEnabled(nextEnabled: boolean): void {
   enabled = nextEnabled;
   if (!enabled) {
     clearLeaderState();
+    setVimMode("normal");
   }
 }
