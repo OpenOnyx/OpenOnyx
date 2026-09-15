@@ -274,6 +274,7 @@ export function createMockAPI(): ElectronAPI {
     showItemInFolder: async () => {},
     renamePath: async (_oldPath: string, newPath: string) => {
       mockVaultPath = newPath;
+      return { success: true as const };
     },
     getSystemPath: async (name: string) => name === "documents" ? "/documents" : "/",
 

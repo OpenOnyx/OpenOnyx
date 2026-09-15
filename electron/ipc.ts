@@ -24,6 +24,7 @@ export function registerIpcHandlers(
   onVaultPathChange?: (vaultPath: string) => void,
   getPreviousPaths?: () => string[],
   removePreviousPath?: (vaultPath: string) => string[],
+  renameVaultPath?: (oldPath: string, newPath: string) => string[],
 ): void {
   seedApprovedVaultPaths([
     fsManager.getVaultPath?.(),
@@ -237,7 +238,7 @@ export function registerIpcHandlers(
   ipcMain.handle('desktop:renamePath', async (_event, oldPath: string, newPath: string) => {
     if (!oldPath || !newPath) throw new Error('Missing path');
     if (!isApprovedVaultPath(oldPath)) {
-      throw new Error('Source vault is not approved');
+      throw new Error('Source path is not an approved vault');
     }
     const resolvedOld = nodePath.resolve(oldPath);
     const resolvedNew = nodePath.resolve(newPath);
@@ -248,6 +249,10 @@ export function registerIpcHandlers(
     }
     await fs.rename(resolvedOld, resolvedNew);
     approveVaultPath(resolvedNew);
+    if (renameVaultPath) {
+      renameVaultPath(resolvedOld, resolvedNew);
+    }
+    return { success: true };
   });
 
   // ── File Operations ───────────────────────────────

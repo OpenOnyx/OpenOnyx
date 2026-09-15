@@ -40,7 +40,7 @@ const electronAPI = {
   showItemInFolder: (targetPath: string): Promise<void> =>
     ipcRenderer.invoke('desktop:showItemInFolder', targetPath),
 
-  renamePath: (oldPath: string, newPath: string): Promise<void> =>
+  renamePath: (oldPath: string, newPath: string): Promise<{ success: true }> =>
     ipcRenderer.invoke('desktop:renamePath', oldPath, newPath),
 
   getSystemPath: (name: string): Promise<string> =>

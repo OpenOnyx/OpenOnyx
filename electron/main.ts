@@ -117,6 +117,22 @@ function removePreviousVaultPath(vaultPath: string): string[] {
   return previousVaultPaths;
 }
 
+function renameVaultPath(oldPath: string, newPath: string): string[] {
+  const normalizedOldPath = normalizeVaultPath(oldPath);
+  const normalizedNewPath = normalizeVaultPath(newPath);
+  const state = readVaultHistoryState();
+  const previousVaultPaths = state.previousVaultPaths.map((entry) =>
+    entry === normalizedOldPath ? normalizedNewPath : entry,
+  );
+  writeVaultHistoryState({
+    currentVaultPath: state.currentVaultPath === normalizedOldPath
+      ? normalizedNewPath
+      : state.currentVaultPath,
+    previousVaultPaths,
+  });
+  return previousVaultPaths;
+}
+
 function restoreLastVault(fsManager: FileSystemManager): void {
   const state = readVaultHistoryState();
   const lastVaultPath = state.currentVaultPath;
@@ -641,6 +657,7 @@ app.whenReady().then(() => {
     rememberVaultPath,
     getPreviousVaultPaths,
     removePreviousVaultPath,
+    renameVaultPath,
   );
 
   // Handle vault directory selection dialog
