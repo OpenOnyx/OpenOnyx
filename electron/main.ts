@@ -500,8 +500,8 @@ app.whenReady().then(() => {
   protocol.handle('vault', async (request) => {
     try {
       const url = new URL(request.url);
-      let relativePath = decodeURIComponent(url.pathname);
-      if (relativePath.startsWith('/')) relativePath = relativePath.slice(1);
+      const rawPath = (url.host && url.host !== 'local' ? url.host : '') + url.pathname;
+      const relativePath = decodeURIComponent(rawPath).replace(/^\/+/, '');
 
       const vaultPath = fsManager?.getVaultPath();
       if (!vaultPath) {
@@ -516,7 +516,7 @@ app.whenReady().then(() => {
         // Fallback: search for file by basename in vault
         const fileName = path.basename(relativePath);
         const found = findFileInVault(vaultPath, fileName);
-        if (found && fs.existsSync(found)) {
+        if (found && fs.existsSync(found) && isInsideRoot(vaultPath, found)) {
           targetPath = found;
         } else {
           return new Response('File not found', { status: 404 });

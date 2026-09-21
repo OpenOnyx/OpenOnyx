@@ -234,13 +234,27 @@ export function registerIpcHandlers(
   });
 
   ipcMain.handle('desktop:openPath', async (_event, targetPath: string) => {
-    return shell.openPath(resolveInsideCurrentVault(targetPath));
+    if (typeof targetPath !== 'string' || !targetPath.trim()) {
+      throw new Error('Target path must be a non-empty string');
+    }
+    const resolved = resolveInsideCurrentVault(targetPath);
+    if (!nodeFs.existsSync(resolved)) {
+      throw new Error('Target file does not exist');
+    }
+    return shell.openPath(resolved);
   });
   ipcMain.handle('desktop:openExternal', async (_event, url: string) => {
     await shell.openExternal(allowedExternalUrl(url));
   });
   ipcMain.handle('desktop:showItemInFolder', (_event, targetPath: string) => {
-    shell.showItemInFolder(resolveInsideCurrentVault(targetPath));
+    if (typeof targetPath !== 'string' || !targetPath.trim()) {
+      throw new Error('Target path must be a non-empty string');
+    }
+    const resolved = resolveInsideCurrentVault(targetPath);
+    if (!nodeFs.existsSync(resolved)) {
+      throw new Error('Target file does not exist');
+    }
+    shell.showItemInFolder(resolved);
   });
   ipcMain.handle('desktop:getPath', (_event, name: Parameters<typeof app.getPath>[0]) => app.getPath(name));
 

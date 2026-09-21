@@ -9,7 +9,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
-import { resolveInsideRoot, sanitizeAttachmentFileName } from './pathSafety.js';
+import { isInsideRoot, resolveInsideRoot, sanitizeAttachmentFileName } from './pathSafety.js';
 
 export interface FileEntry {
   name: string;
@@ -87,7 +87,11 @@ export class FileSystemManager {
 
       const relativePath = path.join(dirPath, entry.name).replace(/\\/g, '/');
       const absolutePath = path.join(absoluteDir, entry.name);
-      
+
+      if (this.vaultPath && !isInsideRoot(this.vaultPath, absolutePath)) {
+        continue;
+      }
+
       try {
         const stats = await fs.promises.stat(absolutePath);
         result.push({
@@ -114,7 +118,7 @@ export class FileSystemManager {
   /** Get full file tree recursively */
   async getFileTree(dirPath: string = ''): Promise<FileEntry[]> {
     const entries = await this.listFiles(dirPath);
-    
+
     for (const entry of entries) {
       if (entry.isDirectory) {
         entry.children = await this.getFileTree(entry.path);
@@ -383,9 +387,9 @@ export class FileSystemManager {
 
     for (const entry of entries) {
       if (entry.name.startsWith('.') || entry.name === 'node_modules') continue;
-      
+
       const relativePath = (dirPath ? path.join(dirPath, entry.name) : entry.name).replace(/\\/g, '/');
-      
+
       if (entry.isDirectory()) {
         const subFiles = await this.getAllMarkdownFiles(relativePath);
         files.push(...subFiles);
@@ -450,12 +454,17 @@ export class FileSystemManager {
 
   // ── .openonyx/ Data Directory Operations ──────
 
-  /** Ensure .openonyx/ directory structure exists */
+  /** Ensure .openonyx/ directory structure exists safely */
   private ensureDataDir(subDir?: string): string {
     if (!this.vaultPath) throw new Error('No vault path set');
-    const dataDir = subDir
-      ? path.join(this.vaultPath, '.openonyx', subDir)
-      : path.join(this.vaultPath, '.openonyx');
+    const baseDataDir = resolveInsideRoot(this.vaultPath, '.openonyx');
+    if (!subDir || !subDir.trim()) {
+      if (!fs.existsSync(baseDataDir)) {
+        fs.mkdirSync(baseDataDir, { recursive: true });
+      }
+      return baseDataDir;
+    }
+    const dataDir = resolveInsideRoot(baseDataDir, subDir);
     if (!fs.existsSync(dataDir)) {
       fs.mkdirSync(dataDir, { recursive: true });
     }
@@ -465,9 +474,8 @@ export class FileSystemManager {
   /** Read a JSON file from .openonyx/ */
   async readDataFile(relativePath: string): Promise<string | null> {
     try {
-      const dir = this.ensureDataDir();
-      const filePath = path.join(dir, relativePath);
-      if (filePath !== dir && !filePath.startsWith(dir + path.sep)) throw new Error('Path traversal detected');
+      const baseDataDir = this.ensureDataDir();
+      const filePath = resolveInsideRoot(baseDataDir, relativePath);
       if (!fs.existsSync(filePath)) return null;
       return await fs.promises.readFile(filePath, 'utf-8');
     } catch {
@@ -477,9 +485,8 @@ export class FileSystemManager {
 
   /** Write a JSON file to .openonyx/ */
   async writeDataFile(relativePath: string, content: string): Promise<void> {
-    const dir = this.ensureDataDir();
-    const filePath = path.join(dir, relativePath);
-    if (filePath !== dir && !filePath.startsWith(dir + path.sep)) throw new Error('Path traversal detected');
+    const baseDataDir = this.ensureDataDir();
+    const filePath = resolveInsideRoot(baseDataDir, relativePath);
     const fileDir = path.dirname(filePath);
     if (!fs.existsSync(fileDir)) {
       fs.mkdirSync(fileDir, { recursive: true });
@@ -490,17 +497,16 @@ export class FileSystemManager {
   /** Delete a file from .openonyx/ */
   async deleteDataFile(relativePath: string): Promise<void> {
     try {
-      const dir = this.ensureDataDir();
-      const filePath = path.join(dir, relativePath);
-      if (filePath !== dir && !filePath.startsWith(dir + path.sep)) return;
+      const baseDataDir = this.ensureDataDir();
+      const filePath = resolveInsideRoot(baseDataDir, relativePath);
       if (fs.existsSync(filePath)) {
         await fs.promises.unlink(filePath);
       }
     } catch { /* silent */ }
   }
 
-  /** List files in a .openonyx/ subdirectory */
-  async listDataDir(subDir: string): Promise<string[]> {
+  /** List files in .openonyx/ or a subdirectory */
+  async listData(subDir: string = ''): Promise<string[]> {
     try {
       const dir = this.ensureDataDir(subDir);
       if (!fs.existsSync(dir)) return [];
@@ -509,6 +515,11 @@ export class FileSystemManager {
     } catch {
       return [];
     }
+  }
+
+  /** List files in a .openonyx/ subdirectory (alias for listData) */
+  async listDataDir(subDir: string = ''): Promise<string[]> {
+    return this.listData(subDir);
   }
 
   /** Hash file content for deduplication (SHA-256) */
