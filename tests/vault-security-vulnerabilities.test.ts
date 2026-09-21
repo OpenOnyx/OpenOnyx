@@ -65,11 +65,16 @@ describe("vault security vulnerabilities unit suite", () => {
 
   describe("vault:// protocol safety", () => {
     it("approves vault-confined relative paths and rejects traversal", () => {
-      const root = path.resolve("/tmp/vault");
+      const root = process.platform === "win32" ? path.resolve("C:/tmp/vault") : path.resolve("/tmp/vault");
       expect(isSafeVaultProtocolPath(root, "attachments/img.png")).toBe(true);
       expect(isSafeVaultProtocolPath(root, "notes/sub/doc.md")).toBe(true);
       expect(isSafeVaultProtocolPath(root, "../../etc/passwd")).toBe(false);
       expect(isSafeVaultProtocolPath(root, "C:/Windows/System32/calc.exe")).toBe(false);
+      if (process.platform === "win32") {
+        expect(isSafeVaultProtocolPath(root, "D:/OtherDrive/secret.txt")).toBe(false);
+      } else {
+        expect(isSafeVaultProtocolPath(root, "/etc/shadow")).toBe(false);
+      }
     });
   });
 
@@ -108,6 +113,27 @@ describe("vault security vulnerabilities unit suite", () => {
       const openPathHandler = handlers.get("desktop:openPath")!;
 
       await expect(openPathHandler({}, "nonexistent.md")).rejects.toThrow("Target file does not exist");
+      expect(electronMocks.openPath).not.toHaveBeenCalled();
+    });
+
+    it("rejects opening symlinks that point outside the vault", async () => {
+      const { vaultDir, fsManager } = makeVault();
+      const handlers = createIpcHandlers(fsManager);
+      const openPathHandler = handlers.get("desktop:openPath")!;
+
+      const secretFile = path.join(os.tmpdir(), `secret-sym-${Date.now()}.txt`);
+      fs.writeFileSync(secretFile, "confidential");
+      tmpDirs.push(secretFile);
+
+      const symlinkPath = path.join(vaultDir, "stolen-open.txt");
+      try {
+        fs.symlinkSync(secretFile, symlinkPath);
+      } catch {
+        // Skip on Windows if permissions insufficient
+        return;
+      }
+
+      await expect(openPathHandler({}, "stolen-open.txt")).rejects.toThrow("Path is outside the active vault");
       expect(electronMocks.openPath).not.toHaveBeenCalled();
     });
 
@@ -153,7 +179,7 @@ describe("vault security vulnerabilities unit suite", () => {
     });
 
     it("keeps .openonyx data storage confined to the vault data folder and handles listData/listDataDir safely", async () => {
-      const { fsManager } = makeVault();
+      const { vaultDir, fsManager } = makeVault();
       await fsManager.writeDataFile("settings.json", '{"theme":"dark"}');
       await fsManager.writeDataFile("cache/embeddings.json", '{"key":"value"}');
 
@@ -170,9 +196,17 @@ describe("vault security vulnerabilities unit suite", () => {
       const cacheFilesDir = await fsManager.listDataDir("cache");
       expect(cacheFilesDir).toContain("embeddings.json");
 
-      // Traversal attempts in subDir should return empty array safely
+      // Listing nonexistent directory returns empty array without creating it
+      const nonexistentListing = await fsManager.listData("nonexistent/subfolder");
+      expect(nonexistentListing).toEqual([]);
+      expect(fs.existsSync(path.join(vaultDir, ".openonyx", "nonexistent"))).toBe(false);
+
+      // Traversal attempts in subDir should return empty array safely without creating folders outside
       const traversalList = await fsManager.listData("../../");
       expect(traversalList).toEqual([]);
+
+      const traversalList2 = await fsManager.listData("../..");
+      expect(traversalList2).toEqual([]);
 
       await expect(fsManager.writeDataFile("../outside.json", "data")).rejects.toThrow("Path traversal detected");
       const outsideAttempt = await fsManager.readDataFile("../outside.json");

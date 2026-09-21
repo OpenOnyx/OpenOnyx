@@ -14,7 +14,7 @@ import { FileSystemManager } from './fileSystem.js';
 import { SearchEngine } from './search.js';
 import { allowedExternalUrl } from './externalUrl.js';
 import { fetchPublicHttp } from './outboundUrl.js';
-import { isInsideRoot } from './pathSafety.js';
+import { getRealPath, isInsideRoot } from './pathSafety.js';
 import { approveVaultPath, isApprovedVaultPath, seedApprovedVaultPaths } from './vaultAccess.js';
 
 export function registerIpcHandlers(
@@ -153,6 +153,9 @@ export function registerIpcHandlers(
     if (!vaultPath) return;
 
     const walk = (absoluteDir: string) => {
+      if (!isInsideRoot(vaultPath, absoluteDir)) return;
+      const realDir = getRealPath(absoluteDir);
+      if (!isInsideRoot(vaultPath, realDir)) return;
       watchDirectory(absoluteDir);
       let entries: nodeFs.Dirent[] = [];
       try {
@@ -161,9 +164,17 @@ export function registerIpcHandlers(
         return;
       }
       for (const entry of entries) {
-        if (!entry.isDirectory()) continue;
         if (entry.name.startsWith('.') || entry.name === 'node_modules') continue;
-        walk(nodePath.join(absoluteDir, entry.name));
+        const entryPath = nodePath.join(absoluteDir, entry.name);
+        if (!isInsideRoot(vaultPath, entryPath)) continue;
+        try {
+          const stats = nodeFs.statSync(entryPath);
+          if (stats.isDirectory()) {
+            walk(entryPath);
+          }
+        } catch {
+          // ignore stat errors
+        }
       }
     };
 
@@ -177,6 +188,10 @@ export function registerIpcHandlers(
       ? nodePath.resolve(targetPath)
       : fsManager.getAbsolutePath(targetPath);
     if (!isInsideRoot(vaultPath, resolved)) {
+      throw new Error('Path is outside the active vault');
+    }
+    const realTarget = getRealPath(resolved);
+    if (!isInsideRoot(vaultPath, realTarget)) {
       throw new Error('Path is outside the active vault');
     }
     return resolved;
