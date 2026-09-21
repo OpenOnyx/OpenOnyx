@@ -1,5 +1,6 @@
 import React from "react";
 import type { AppSettings } from "../SettingsPage";
+import { FONT_FAMILY_PRESETS, normalizeFontFamily } from "../../../types/settings";
 import { PreferenceCard, SegmentedControl, SliderControl, CustomToggle } from "./PreferenceCard";
 
 interface LiveTypographyStudioProps {
@@ -11,6 +12,12 @@ interface LiveTypographyStudioProps {
 }
 
 export function LiveTypographyStudio({ settings, onUpdateSetting }: LiveTypographyStudioProps) {
+  const selectedFont = normalizeFontFamily(settings.fontFamily);
+  const selectedFontPreset = FONT_FAMILY_PRESETS.find(
+    (preset) => preset.value === selectedFont,
+  );
+  const selectedFontLabel = selectedFontPreset?.label ?? "Custom font";
+
   return (
     <div className="flex flex-col gap-8">
       {/* Header */}
@@ -30,7 +37,7 @@ export function LiveTypographyStudio({ settings, onUpdateSetting }: LiveTypograp
             Live Editor Preview
           </span>
           <span className="rounded-md bg-[var(--bg-tertiary)] px-2.5 py-1 font-mono text-xs font-semibold text-[var(--text-secondary)] border border-[var(--border-subtle)]">
-            {settings.fontFamily.split(",")[0]} • {settings.fontSize}px • {settings.readingViewWidth}px
+            {selectedFontLabel} • {settings.fontSize}px • {settings.readingViewWidth}px
           </span>
         </div>
 
@@ -39,7 +46,7 @@ export function LiveTypographyStudio({ settings, onUpdateSetting }: LiveTypograp
             className="mx-auto transition-all duration-150"
             style={{
               maxWidth: settings.readableLineLength ? `${settings.readingViewWidth}px` : "100%",
-              fontFamily: settings.fontFamily,
+              fontFamily: selectedFont,
               fontSize: `${settings.fontSize}px`,
               lineHeight: settings.lineHeight,
             }}
@@ -86,15 +93,16 @@ export function LiveTypographyStudio({ settings, onUpdateSetting }: LiveTypograp
           description="Base font applied to writing views and reading panes."
         >
           <select
-            value={settings.fontFamily}
+            value={selectedFont}
             onChange={(e) => onUpdateSetting("fontFamily", e.target.value)}
             className="h-8 rounded-lg border border-[var(--border-medium)] bg-[var(--bg-tertiary)] px-3 text-xs font-semibold text-[var(--text-primary)] outline-none"
           >
-            <option value="Inter, system-ui, sans-serif">Inter (Sans)</option>
-            <option value="'SF Pro Display', system-ui, sans-serif">SF Pro (System)</option>
-            <option value="'Segoe UI', system-ui, sans-serif">Segoe UI</option>
-            <option value="Georgia, serif">Georgia (Serif)</option>
-            <option value="'JetBrains Mono', monospace">JetBrains Mono (Code)</option>
+            {!selectedFontPreset && <option value={selectedFont}>Custom font</option>}
+            {FONT_FAMILY_PRESETS.map((preset) => (
+              <option key={preset.id} value={preset.value}>
+                {preset.label}
+              </option>
+            ))}
           </select>
         </PreferenceCard>
 

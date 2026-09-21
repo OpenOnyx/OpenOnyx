@@ -11,17 +11,10 @@ interface LiveThemeStudioProps {
 }
 
 const THEME_PRESETS = [
-  { id: "dark", label: "Dark", bg: "#121212", text: "#f3f4f6" },
+  { id: "openonyx", label: "Dark", bg: "#0d0d0d", text: "#e8e8e5" },
+  { id: "dark", label: "Grey", bg: "#121212", text: "#d8d8e4" },
+  { id: "dark-plus", label: "Dark+", bg: "#070707", text: "#eeeeee" },
   { id: "light", label: "Light", bg: "#ffffff", text: "#111827" },
-  { id: "system", label: "System", bg: "#1e1e2e", text: "#93c5fd" },
-  { id: "dark-plus", label: "Dark+", bg: "#1e1e1e", text: "#60a5fa" },
-  { id: "blue-night", label: "Blue Night", bg: "#0f172a", text: "#38bdf8" },
-  { id: "oceanic", label: "Oceanic", bg: "#0f2027", text: "#2dd4bf" },
-  { id: "ember-night", label: "Ember Night", bg: "#1c1917", text: "#fb923c" },
-  { id: "aurora-grove", label: "Aurora Grove", bg: "#064e3b", text: "#34d399" },
-  { id: "paper-sage", label: "Paper Sage", bg: "#f4f7f4", text: "#059669" },
-  { id: "rose-quartz", label: "Rose Quartz", bg: "#fdf2f8", text: "#f472b6" },
-  { id: "custom", label: "Custom", bg: "#18181b", text: "#ffffff" },
 ];
 
 const MAX_WALLPAPER_WIDTH = 1920;

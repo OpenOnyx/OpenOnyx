@@ -10,35 +10,23 @@ import path from 'path-browserify';
 import util from 'util';
 import { StringDecoder } from 'string_decoder';
 
-// Ensure global Buffer and process versions exist for sandboxed renderer / bundler checks
+// Keep the renderer global browser-safe. Plugin code receives its own Node-like
+// `process` below; advertising Node on `window.process` makes browser libraries
+// such as ONNX Runtime select backends that cannot run in the renderer.
 try {
   if (typeof window !== 'undefined') {
     const win = window as any;
     if (!win.Buffer) win.Buffer = Buffer;
-    if (!win.process) {
-      win.process = { versions: { electron: '32.0.0', node: '22.0.0' }, platform: 'linux', env: {} };
-    } else {
-      try {
-        if (!win.process.versions) {
-          win.process.versions = { electron: '32.0.0', node: '22.0.0' };
-        } else if (!win.process.versions.electron) {
-          Object.defineProperty(win.process.versions, 'electron', {
-            value: '32.0.0',
-            writable: true,
-            configurable: true,
-          });
-        }
-      } catch {
-        // Versions object is read-only in Node/Vitest
-      }
-      try {
-        if (!win.process.platform) win.process.platform = 'linux';
-        if (!win.process.env) win.process.env = {};
-        if (!win.process.nextTick) win.process.nextTick = (fn: (...args: any[]) => void, ...args: any[]) => setTimeout(() => fn(...args), 0);
-      } catch {
-        // Read-only in Node/Vitest
-      }
-    }
+    const currentProcess = win.process || {};
+    const { node: _nodeVersion, ...browserVersions } = currentProcess.versions || {};
+    win.process = {
+      ...currentProcess,
+      versions: { ...browserVersions, electron: browserVersions.electron || '32.0.0' },
+      release: { ...(currentProcess.release || {}), name: 'browser' },
+      platform: currentProcess.platform || 'linux',
+      env: currentProcess.env || {},
+      nextTick: currentProcess.nextTick || ((fn: (...args: any[]) => void, ...args: any[]) => setTimeout(() => fn(...args), 0)),
+    };
   }
 } catch {
   // Ignore

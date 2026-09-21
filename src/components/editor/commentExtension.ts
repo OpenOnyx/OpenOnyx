@@ -1,6 +1,7 @@
 import { StateEffect, StateField, Extension } from "@codemirror/state";
 import { EditorView, Decoration, DecorationSet } from "@codemirror/view";
 import type { NoteComment } from "../../types/comments";
+import { normalizeCommentAnchors } from "../../utils/comment-anchors";
 
 export interface PendingCommentRange {
   from: number;
@@ -117,7 +118,7 @@ export const commentStateField = StateField.define<CommentExtensionState>({
 
     for (const e of tr.effects) {
       if (e.is(setCommentsEffect)) {
-        comments = e.value;
+        comments = normalizeCommentAnchors(e.value, tr.newDoc.toString());
         needsRebuild = true;
       } else if (e.is(setPendingCommentEffect)) {
         pending = e.value;

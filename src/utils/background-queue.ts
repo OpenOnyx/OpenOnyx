@@ -14,6 +14,7 @@
 
 import {
   areEmbeddingsAvailable,
+  EMBEDDING_SCHEMA_VERSION,
   loadStoreAsync,
   embedNote,
   refreshEmbeddingMetadataIfUnchanged,
@@ -357,6 +358,7 @@ export async function initializeVault(
     const existing = store.entries.get(note.path);
     const hasStoredSignal = existing?.vector?.some((value) => Math.abs(value) > 1e-8);
     const isUnchanged = existing &&
+                        existing.schemaVersion === EMBEDDING_SCHEMA_VERSION &&
                         existing.modifiedAt === note.modifiedAt &&
                         existing.size === note.size &&
                         (hasStoredSignal || note.size < 5);

@@ -18,6 +18,8 @@ import {
   setPendingCommentEffect,
   commentStateField,
 } from "../src/components/editor/commentExtension";
+import { resolveCommentSourceRange } from "../src/utils/comment-anchors";
+import { applyCommentHighlightsToHtml } from "../src/components/editor/MarkdownPreview";
 
 // Mock disk-store so tests don't touch real files
 vi.mock("../src/utils/disk-store", () => {
@@ -173,6 +175,35 @@ describe("Comments System", () => {
       const fieldVal = tr.state.field(commentStateField);
       expect(fieldVal.pending).toEqual({ from: 0, to: 10 });
       expect(fieldVal.decorations.size).toBe(1);
+    });
+  });
+
+  describe("Comment mode parity", () => {
+    it("re-anchors a reading-mode selection inside formatted Markdown", () => {
+      const source = "A **distributed systems** note with context.";
+      const range = resolveCommentSourceRange(source, 0, 0, "distributed systems");
+
+      expect(source.slice(range.from, range.to)).toBe("distributed systems");
+      expect(range.from).toBeGreaterThan(0);
+    });
+
+    it("highlights a reading-mode selection across Markdown elements", () => {
+      const source = "Plain **bold text** ending";
+      const html = "<p>Plain <strong>bold text</strong> ending</p>";
+      const highlighted = applyCommentHighlightsToHtml(html, source, [{
+        id: "formatted-comment",
+        notePath: "note.md",
+        from: 0,
+        to: source.length,
+        selectedText: "Plain bold text ending",
+        content: "Cross-format comment",
+        author: { name: "Tester" },
+        createdAt: 1,
+      }], null, "formatted-comment");
+
+      expect(highlighted.match(/data-comment-id="formatted-comment"/g)).toHaveLength(3);
+      expect(highlighted).toContain("cm-comment-active");
+      expect(highlighted).toContain("<strong>");
     });
   });
 
@@ -503,5 +534,4 @@ describe("Comments System", () => {
     });
   });
 });
-
 

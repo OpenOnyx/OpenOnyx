@@ -93,6 +93,7 @@ export interface Command {
 export type ViewMode = "editor" | "preview" | "split";
 export type Theme =
   | "dark"
+  | "openonyx"
   | "light"
   | "oceanic"
   | "dark-plus"

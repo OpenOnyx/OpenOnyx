@@ -32,6 +32,7 @@ import {
   subscribeToComments,
 } from "../../utils/commentsStore";
 import type { NoteComment, PendingComment } from "../../types/comments";
+import { normalizeCommentAnchors, resolveCommentSourceRange } from "../../utils/comment-anchors";
 import { Compartment, EditorState, Transaction, StateEffect, StateField, EditorSelection } from "@codemirror/state";
 import {
   EditorView,
@@ -4111,7 +4112,18 @@ export function Editor({
 
   const [comments, setComments] = useState<NoteComment[]>([]);
   const [pendingComment, setPendingComment] = useState<PendingComment | null>(null);
+  const [pendingCommentSurface, setPendingCommentSurface] = useState<"editor" | "preview" | null>(null);
   const [activeCommentId, setActiveCommentId] = useState<string | null>(null);
+  const anchoredComments = useMemo(
+    () => normalizeCommentAnchors(comments, content),
+    [comments, content],
+  );
+  const handleSelectComment = useCallback((commentId: string) => {
+    setActiveCommentId(commentId);
+    viewRef.current?.dispatch({
+      effects: setActiveCommentEffect.of(commentId),
+    });
+  }, []);
 
   useEffect(() => {
     setPendingInlineEdit(null);
@@ -4315,11 +4327,13 @@ export function Editor({
     if (!activePath) {
       setComments([]);
       setPendingComment(null);
+      setPendingCommentSurface(null);
       return;
     }
     const initial = getCommentsSync(activePath);
     setComments(initial);
     setPendingComment(null);
+    setPendingCommentSurface(null);
     if (viewRef.current) {
       viewRef.current.dispatch({
         effects: [
@@ -4351,21 +4365,21 @@ export function Editor({
       }
     });
 
-    const handleSelectComment = (e: Event) => {
+    const handleSelectCommentEvent = (e: Event) => {
       const custom = e as CustomEvent<{ commentId: string }>;
       if (custom.detail?.commentId) {
-        setActiveCommentId(custom.detail.commentId);
+        handleSelectComment(custom.detail.commentId);
       }
     };
-    window.addEventListener("openonyx:select-comment", handleSelectComment);
+    window.addEventListener("openonyx:select-comment", handleSelectCommentEvent);
 
     return () => {
       unsub();
-      window.removeEventListener("openonyx:select-comment", handleSelectComment);
+      window.removeEventListener("openonyx:select-comment", handleSelectCommentEvent);
     };
-  }, []);
+  }, [handleSelectComment]);
 
-  const handleStartAddComment = useCallback(() => {
+  const handleStartAddComment = useCallback((requestedSurface?: "editor" | "preview") => {
     const view = viewRef.current;
     let from = 0;
     let to = 0;
@@ -4376,6 +4390,11 @@ export function Editor({
     if (domSel && domSel.rangeCount > 0) {
       domRange = domSel.getRangeAt(0);
     }
+    const selectionIsInPreview = Boolean(
+      domRange && previewRef.current?.contains(domRange.commonAncestorContainer),
+    );
+    const targetSurface = requestedSurface
+      || (viewMode === "preview" || (viewMode === "split" && selectionIsInPreview) ? "preview" : "editor");
 
     const tableWrapper = (
       (domRange?.commonAncestorContainer as HTMLElement)?.closest?.(".cm-live-table-wrapper, table") ||
@@ -4383,7 +4402,7 @@ export function Editor({
       (document.activeElement as HTMLElement)?.closest?.(".cm-live-table-wrapper, table")
     ) as HTMLElement | null;
 
-    if (viewMode === "preview") {
+    if (targetSurface === "preview") {
       const rawSelected = domSel ? domSel.toString().trim() : "";
       text = rawSelected || selectionRange?.text?.trim() || "";
       if (text) {
@@ -4508,7 +4527,7 @@ export function Editor({
     }
 
     let targetTop = 20;
-    if (viewMode === "preview") {
+    if (targetSurface === "preview") {
       const previewContainer = previewEl || previewRef.current;
       if (previewContainer) {
         const pRect = previewContainer.getBoundingClientRect();
@@ -4534,18 +4553,21 @@ export function Editor({
       }
     }
 
+    const source = view ? view.state.doc.toString() : content;
+    const anchoredRange = resolveCommentSourceRange(source, from, to, text);
     const pending: PendingComment = {
       id: "pending",
-      from,
-      to,
+      from: anchoredRange.from,
+      to: anchoredRange.to,
       selectedText: text,
       targetTop,
     };
 
     setPendingComment(pending);
-    if (view && from < to) {
+    setPendingCommentSurface(targetSurface);
+    if (view && anchoredRange.from < anchoredRange.to) {
       view.dispatch({
-        effects: setPendingCommentEffect.of({ from, to }),
+        effects: setPendingCommentEffect.of(anchoredRange),
       });
     }
 
@@ -4565,6 +4587,7 @@ export function Editor({
     });
 
     setPendingComment(null);
+    setPendingCommentSurface(null);
     viewRef.current?.dispatch({
       effects: setPendingCommentEffect.of(null),
     });
@@ -4572,6 +4595,7 @@ export function Editor({
 
   const handleCancelPendingComment = useCallback(() => {
     setPendingComment(null);
+    setPendingCommentSurface(null);
     viewRef.current?.dispatch({
       effects: setPendingCommentEffect.of(null),
     });
@@ -6566,9 +6590,12 @@ export function Editor({
 
     // If there is no selection or right-clicked outside existing selection, select word or position
     const targetEl = mouseEvt.target as HTMLElement | null;
+    const contextSurface: "editor" | "preview" = previewRef.current?.contains(targetEl)
+      ? "preview"
+      : "editor";
     const tableEl = targetEl?.closest?.(".cm-live-table-wrapper, table, .cm-live-table");
 
-    if (cmView && viewMode !== "preview") {
+    if (cmView && contextSurface === "editor") {
       if (tableEl) {
         // Inside a table widget: preserve or establish DOM selection without resetting CodeMirror
         const sel = window.getSelection();
@@ -6848,7 +6875,7 @@ export function Editor({
         .setTitle('Add Comment')
         .setIcon('message-square')
         .onClick(() => {
-          handleStartAddComment();
+          handleStartAddComment(contextSurface);
         })
     );
     menu.addSeparator();
@@ -7025,7 +7052,7 @@ export function Editor({
       }
     }
 
-    const selection = (viewMode === "preview"
+    const selection = (contextSurface === "preview"
       ? (window.getSelection()?.toString() || selectionRange?.text || '')
       : (viewRef.current?.state.sliceDoc(
           viewRef.current.state.selection.main.from,
@@ -7486,22 +7513,41 @@ export function Editor({
               onClose={() => setIsSearchOpen(false)}
             />
 
-            {/* Notion-style Comments Layer */}
-            <EditorCommentsLayer
-              view={viewRef.current}
-              comments={comments}
-              pendingComment={pendingComment}
-              activeCommentId={activeCommentId}
-              onSaveComment={handleSaveComment}
-              onCancelPending={handleCancelPendingComment}
-              onSelectComment={(id) => setActiveCommentId(id)}
-              onResolveComment={handleResolveComment}
-              onDeleteComment={handleDeleteComment}
-              onEditComment={handleEditComment}
-              onReplyComment={handleReplyComment}
-              containerEl={viewMode === "preview" ? (previewEl || previewRef.current) : (viewRef.current?.scrollDOM || null)}
-              isReadMode={viewMode === "preview"}
-            />
+            {(viewMode === "editor" || viewMode === "split") && (
+              <EditorCommentsLayer
+                view={viewRef.current}
+                comments={anchoredComments}
+                pendingComment={pendingCommentSurface === "editor" ? pendingComment : null}
+                activeCommentId={activeCommentId}
+                onSaveComment={handleSaveComment}
+                onCancelPending={handleCancelPendingComment}
+                onSelectComment={handleSelectComment}
+                onResolveComment={handleResolveComment}
+                onDeleteComment={handleDeleteComment}
+                onEditComment={handleEditComment}
+                onReplyComment={handleReplyComment}
+                containerEl={viewRef.current?.scrollDOM || null}
+                isReadMode={false}
+              />
+            )}
+
+            {(viewMode === "preview" || viewMode === "split") && (
+              <EditorCommentsLayer
+                view={viewRef.current}
+                comments={anchoredComments}
+                pendingComment={pendingCommentSurface === "preview" ? pendingComment : null}
+                activeCommentId={activeCommentId}
+                onSaveComment={handleSaveComment}
+                onCancelPending={handleCancelPendingComment}
+                onSelectComment={handleSelectComment}
+                onResolveComment={handleResolveComment}
+                onDeleteComment={handleDeleteComment}
+                onEditComment={handleEditComment}
+                onReplyComment={handleReplyComment}
+                containerEl={previewEl || previewRef.current}
+                isReadMode
+              />
+            )}
 
             <div
               ref={editorRef}
@@ -7554,9 +7600,10 @@ export function Editor({
                   onImageClick={handleOpenImageLightbox}
                   theme={theme}
                   settings={settings}
-                  comments={comments}
+                  comments={anchoredComments}
                   pendingComment={pendingComment}
-                  onCommentClick={(id) => setActiveCommentId(id)}
+                  activeCommentId={activeCommentId}
+                  onCommentClick={handleSelectComment}
                   onContentChange={(nextContent) => onContentChange(nextContent, true, activePathRef.current || undefined)}
                 />
               </div>

@@ -160,6 +160,7 @@ export interface AISettings {
 
 const LEGACY_STORAGE_KEY = "openonyx-ai-settings";
 const DISK_SETTINGS_PATH = "ai-settings.json";
+export const AI_SETTINGS_CHANGED_EVENT = "ai-settings-changed";
 
 let _settingsCache: AISettings | null = null;
 let _loadPromise: Promise<AISettings> | null = null;
@@ -172,6 +173,12 @@ const DEFAULT_SETTINGS: AISettings = {
   customBaseUrl: "",
   customModelId: "",
 };
+
+function notifySettingsChanged(): void {
+  if (typeof window === "undefined") return;
+  // Keep credentials in the module cache; never expose API keys in DOM events.
+  window.dispatchEvent(new Event(AI_SETTINGS_CHANGED_EVENT));
+}
 
 export function loadSettings(): AISettings {
   if (_settingsCache) {
@@ -215,6 +222,7 @@ export async function loadSettingsAsync(): Promise<AISettings> {
     if (diskData) {
       const result: AISettings = { ...DEFAULT_SETTINGS, ...diskData };
       _settingsCache = result;
+      notifySettingsChanged();
       try {
         if (typeof localStorage !== "undefined") {
           localStorage.removeItem(LEGACY_STORAGE_KEY);
@@ -234,6 +242,7 @@ export async function loadSettingsAsync(): Promise<AISettings> {
           await writeData(DISK_SETTINGS_PATH, result);
           localStorage.removeItem(LEGACY_STORAGE_KEY);
           console.log("[AISettings] Migrated AI settings from localStorage to .openonyx/ai-settings.json");
+          notifySettingsChanged();
           return result;
         }
       }
@@ -250,6 +259,7 @@ export async function loadSettingsAsync(): Promise<AISettings> {
 export function saveSettings(settings: AISettings): void {
   _settingsCache = { ...DEFAULT_SETTINGS, ...settings };
   void writeData(DISK_SETTINGS_PATH, _settingsCache);
+  notifySettingsChanged();
 
   // Guarantee plaintext API keys are NEVER left in localStorage
   try {

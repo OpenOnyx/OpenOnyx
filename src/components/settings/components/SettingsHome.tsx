@@ -44,10 +44,10 @@ export function SettingsHome({ settings, onUpdateSetting, onNavigate }: Settings
               value={settings.theme}
               onChange={(v) => onUpdateSetting("theme", v as AppSettings["theme"])}
               options={[
-                { value: "dark", label: "Dark" },
+                { value: "openonyx", label: "Dark" },
+                { value: "dark", label: "Grey" },
+                { value: "dark-plus", label: "Dark+" },
                 { value: "light", label: "Light" },
-                { value: "system", label: "System" },
-                { value: "custom", label: "Custom" },
               ]}
             />
           </div>
