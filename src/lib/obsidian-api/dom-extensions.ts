@@ -694,7 +694,8 @@ if (!(window as any).process) {
     env: { NODE_ENV: 'production' },
     platform: navigator.platform?.includes('Win') ? 'win32' : navigator.platform?.includes('Mac') ? 'darwin' : 'linux',
     type: 'renderer',
-    versions: { electron: '20.0.0', node: '16.0.0' },
+    versions: { electron: '20.0.0' },
+    release: { name: 'browser' },
   };
 }
 

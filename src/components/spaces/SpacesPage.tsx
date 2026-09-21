@@ -965,7 +965,6 @@ export function SpacesPage({ onClose, fileTree, onOpenNote, vaultPath }: SpacesP
       saveSettings(next);
       return next;
     });
-    window.dispatchEvent(new Event("ai-settings-changed"));
     setModelPickerOpen(false);
   }, []);
 
@@ -982,7 +981,6 @@ export function SpacesPage({ onClose, fileTree, onOpenNote, vaultPath }: SpacesP
       saveSettings(next);
       return next;
     });
-    window.dispatchEvent(new Event("ai-settings-changed"));
   }, []);
 
   const handleApplyCustomOpenRouterModel = useCallback(() => {
@@ -1000,7 +998,6 @@ export function SpacesPage({ onClose, fileTree, onOpenNote, vaultPath }: SpacesP
       saveSettings(next);
       return next;
     });
-    window.dispatchEvent(new Event("ai-settings-changed"));
     setModelPickerOpen(false);
   }, [customOpenRouterModel]);
 

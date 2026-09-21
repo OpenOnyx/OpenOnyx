@@ -647,9 +647,13 @@ export class PluginManager {
   window.process = window.process || {};
   window.process.versions = window.process.versions || {};
   if (!window.process.versions.electron) window.process.versions.electron = '32.0.0';
-  if (!window.process.versions.node) window.process.versions.node = '22.0.0';
   if (!window.process.platform) window.process.platform = 'linux';
-  var process = window.process;
+  // Give plugin code Node-compatible metadata without leaking it to browser
+  // dependencies running in the renderer global.
+  var process = Object.assign({}, window.process, {
+    versions: Object.assign({}, window.process.versions, { node: '22.0.0' }),
+    release: Object.assign({}, window.process.release, { name: 'node' })
+  });
   // Blob scripts do not consistently resolve window properties as bare
   // identifiers. Obsidian exposes these names to plugins as globals.
   var activeWindow = window.activeWindow || window;

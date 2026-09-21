@@ -629,7 +629,7 @@ body.is-dragging svg {
 .markdown-preview-view blockquote,
 .readme-content blockquote {
   border-left: var(--blockquote-border-thickness, 3px) solid var(--blockquote-border-color, var(--interactive-accent, #3b82f6)) !important;
-  background-color: var(--bg-secondary) !important;
+  background-color: var(--blockquote-background, var(--bg-secondary)) !important;
   color: var(--text-secondary) !important;
   padding: 0.5rem 1rem !important;
   margin: 1rem 0 !important;
@@ -2682,4 +2682,161 @@ mark.cm-comment-highlight.cm-comment-pending {
 
 .cm-comment-rich-editor li {
   margin: 0.125rem 0;
+}
+
+@keyframes aiPanelItemIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes aiTabDescriptionIn {
+  from {
+    opacity: 0;
+    transform: translateY(-2px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.ai-panel-item {
+  animation: aiPanelItemIn 170ms ease-out both;
+}
+
+.ai-tab-description {
+  animation: aiTabDescriptionIn 160ms ease-out both;
+}
+
+/* Compact documentation typography for Vault Intelligence answers. */
+.vault-ai-answer.markdown-rendered {
+  font-size: 13px !important;
+  line-height: 1.72 !important;
+}
+
+/* Inline source references: compact, tactile, and visually distinct from body text. */
+.ai-citation-marker {
+  vertical-align: baseline;
+  white-space: nowrap;
+}
+
+.ai-citation-marker::before {
+  content: "";
+  width: 4px;
+  height: 4px;
+  margin-right: 5px;
+  border-radius: 999px;
+  background: var(--interactive-accent, currentColor);
+  opacity: 0.7;
+}
+
+.vault-ai-answer.markdown-rendered h1 {
+  margin: 0 0 0.85rem !important;
+  font-size: 1.45em !important;
+  font-weight: 650 !important;
+  line-height: 1.3 !important;
+  letter-spacing: -0.015em;
+}
+
+.vault-ai-answer.markdown-rendered h2 {
+  margin: 1.25rem 0 0.55rem !important;
+  font-size: 1.25em !important;
+  font-weight: 650 !important;
+  line-height: 1.35 !important;
+  letter-spacing: -0.01em;
+}
+
+.vault-ai-answer.markdown-rendered h3 {
+  margin: 1rem 0 0.45rem !important;
+  font-size: 1.08em !important;
+  font-weight: 650 !important;
+  line-height: 1.4 !important;
+}
+
+.vault-ai-answer.markdown-rendered p {
+  margin: 0.7rem 0 !important;
+}
+
+.vault-ai-answer.markdown-rendered ul,
+.vault-ai-answer.markdown-rendered ol {
+  margin: 0.7rem 0 !important;
+  padding-left: 1.35rem !important;
+}
+
+.vault-ai-answer.markdown-rendered li {
+  margin: 0.3rem 0 !important;
+  padding-left: 0.15rem;
+}
+
+.vault-ai-answer.markdown-rendered li::marker {
+  color: var(--text-muted);
+}
+
+.vault-ai-answer.markdown-rendered blockquote {
+  margin: 0.9rem 0 !important;
+  border-left: 2px solid var(--border-medium) !important;
+  background: transparent !important;
+  padding: 0.1rem 0 0.1rem 0.8rem !important;
+  color: var(--text-secondary) !important;
+  font-style: normal !important;
+}
+
+.vault-ai-answer.markdown-rendered code {
+  border-radius: 4px !important;
+  background: var(--bg-active) !important;
+  color: var(--text-primary) !important;
+  font-size: 0.9em !important;
+}
+
+.vault-ai-answer.markdown-rendered pre {
+  margin: 0.9rem 0 !important;
+  border: 1px solid var(--border-subtle) !important;
+  border-radius: 6px !important;
+  background: var(--bg-primary) !important;
+  padding: 0.75rem !important;
+}
+
+.vault-ai-answer.markdown-rendered pre code {
+  background: transparent !important;
+  padding: 0 !important;
+}
+
+/* Denser readable Markdown for source cards and citation previews. */
+.vault-ai-source.markdown-rendered {
+  font-size: 12px !important;
+  line-height: 1.55 !important;
+}
+
+.vault-ai-source.markdown-rendered h1,
+.vault-ai-source.markdown-rendered h2,
+.vault-ai-source.markdown-rendered h3,
+.vault-ai-source.markdown-rendered h4 {
+  margin: 0.45rem 0 0.3rem !important;
+  font-size: 1em !important;
+  font-weight: 650 !important;
+  line-height: 1.4 !important;
+}
+
+.vault-ai-source.markdown-rendered p,
+.vault-ai-source.markdown-rendered ul,
+.vault-ai-source.markdown-rendered ol {
+  margin-top: 0.35rem !important;
+  margin-bottom: 0.35rem !important;
+}
+
+.vault-ai-source.markdown-rendered li {
+  margin-top: 0.15rem !important;
+  margin-bottom: 0.15rem !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ai-panel-item,
+  .ai-tab-description {
+    animation: none;
+    transition: none !important;
+  }
 }

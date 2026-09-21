@@ -39,7 +39,7 @@ import { OutgoingLinksPanel } from "./components/panels/OutgoingLinksPanel";
 import { PropertiesPanel } from "./components/panels/PropertiesPanel";
 import { UnlinkedMentionsPanel } from "./components/panels/UnlinkedMentionsPanel";
 import type { AppSettings } from "./types/settings";
-import { DEFAULT_SETTINGS } from "./types/settings";
+import { DEFAULT_SETTINGS, normalizeFontFamily } from "./types/settings";
 
 const GraphView = React.lazy(() => import("./components/graph/GraphView").then((m) => ({ default: m.GraphView })));
 const AIKnowledgeGraph = React.lazy(() => import("./components/graph/AIKnowledgeGraph").then((m) => ({ default: m.AIKnowledgeGraph })));
@@ -340,16 +340,9 @@ const CUSTOM_THEME_VARIABLES = [
 
 const APP_THEME_VALUES = new Set<AppSettings["theme"]>([
   "dark",
+  "openonyx",
   "light",
-  "oceanic",
   "dark-plus",
-  "blue-night",
-  "ember-night",
-  "aurora-grove",
-  "paper-sage",
-  "rose-quartz",
-  "system",
-  "custom",
 ]);
 
 const isCanvasFile = (path: string) => path.toLowerCase().endsWith(".canvas");
@@ -585,8 +578,14 @@ export default function App() {
         const parsed = JSON.parse(saved);
         if (parsed.theme === "peach-white") parsed.theme = "light";
         if (parsed.theme === "parchment") parsed.theme = "light";
+        // Retire the former experimental palettes while keeping existing
+        // settings valid. The new OpenOnyx palette is the default dark theme.
+        if (["system", "oceanic", "blue-night", "ember-night", "aurora-grove", "paper-sage", "rose-quartz", "custom"].includes(parsed.theme)) {
+          parsed.theme = "openonyx";
+        }
         if (!APP_THEME_VALUES.has(parsed.theme)) parsed.theme = DEFAULT_SETTINGS.theme;
         if (parsed.accentColor === "#8b5cf6") parsed.accentColor = DEFAULT_SETTINGS.accentColor;
+        parsed.fontFamily = normalizeFontFamily(parsed.fontFamily);
         return { ...DEFAULT_SETTINGS, ...parsed };
       }
     } catch (e) {
@@ -2463,6 +2462,14 @@ export default function App() {
     if (path.startsWith(".trash/") || path.startsWith(".openonyx/")) return;
     if (!areEmbeddingsAvailable()) return;
 
+    const noteLabel = path.split("/").pop()?.replace(/\.md$/i, "") || path;
+    setQueueStatus({
+      isRunning: true,
+      processed: 0,
+      total: 1,
+      progress: 5,
+      message: `Indexing ${noteLabel}…`,
+    });
     try {
       const source = typeof content === "string" ? content : (await api.readFile(path)) || "";
       const store = loadStore();
@@ -2474,8 +2481,30 @@ export default function App() {
           }),
         );
       }
+      const completedMessage = `Indexed ${noteLabel}`;
+      setQueueStatus({
+        isRunning: false,
+        processed: 1,
+        total: 1,
+        progress: 100,
+        message: completedMessage,
+      });
+      window.setTimeout(() => {
+        setQueueStatus((current) => current?.message === completedMessage ? null : current);
+      }, 3000);
     } catch (err) {
       console.warn("[Auto-index] Failed:", err);
+      const failedMessage = `Indexing failed for ${noteLabel}`;
+      setQueueStatus({
+        isRunning: false,
+        processed: 0,
+        total: 1,
+        progress: 0,
+        message: failedMessage,
+      });
+      window.setTimeout(() => {
+        setQueueStatus((current) => current?.message === failedMessage ? null : current);
+      }, 3000);
     }
   }, []);
 

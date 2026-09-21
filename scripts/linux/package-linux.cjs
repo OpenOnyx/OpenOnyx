@@ -10,6 +10,18 @@ const scratchDir = path.join(root, "scratch");
 
 const pkg = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
 const version = pkg.version;
+const debDepends = [
+  "libgtk-3-0",
+  "libnotify4",
+  "libnss3",
+  "libxss1",
+  "libxtst6",
+  "xdg-utils",
+  "libatspi2.0-0",
+  "libuuid1",
+  "libsecret-1-0",
+  "libasound2 | libasound2t64"
+];
 
 function getDirectorySize(dir) {
   let size = 0;
@@ -58,6 +70,7 @@ async function buildDeb() {
   fs.rmSync(debPkgDir, { recursive: true, force: true });
   fs.mkdirSync(path.join(debPkgDir, "DEBIAN"), { recursive: true });
   fs.mkdirSync(path.join(debPkgDir, "opt/OpenOnyx"), { recursive: true });
+  fs.mkdirSync(path.join(debPkgDir, "usr/bin"), { recursive: true });
   fs.mkdirSync(path.join(debPkgDir, "usr/share/applications"), { recursive: true });
 
   // Copy files
@@ -68,6 +81,7 @@ async function buildDeb() {
     path.join(root, "packaging/aur/openonyx/openonyx.desktop"),
     path.join(debPkgDir, "usr/share/applications/openonyx.desktop")
   );
+  fs.symlinkSync("/opt/OpenOnyx/openonyx", path.join(debPkgDir, "usr/bin/openonyx"));
 
   // Write control file
   const control = `Package: openonyx
@@ -76,7 +90,7 @@ Section: utils
 Priority: optional
 Architecture: amd64
 Maintainer: OpenOnyx <openonyx@gmail.com>
-Depends: gtk3, libnss3, libasound2, libxss1, libxtst6, libsecret-1-0, xdg-utils
+Depends: ${debDepends.join(", ")}
 Description: A local-first knowledge management tool with graph-based note linking
 `;
   fs.writeFileSync(path.join(debPkgDir, "DEBIAN/control"), control);

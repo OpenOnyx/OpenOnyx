@@ -16,11 +16,50 @@ import { readData, writeData, listData, deleteData, createDebouncedWriter } from
 
 type FeatureExtractionPipeline = any;
 
+export function resolveTransformersWasmPath(
+  transformersVersion: string,
+  pageHref: string | undefined = typeof window !== "undefined" ? window.location.href : undefined,
+  isTest: boolean = typeof process !== "undefined" && process.env.NODE_ENV === "test",
+): string {
+  if (pageHref && !isTest) {
+    // Relative to index.html so this works for both Vite's HTTP server and a
+    // packaged Electron app loaded from dist/index.html via file://.
+    return new URL("./wasm/", pageHref).href;
+  }
+
+  return `https://cdn.jsdelivr.net/npm/@xenova/transformers@${transformersVersion}/dist/`;
+}
+
+export function getRemoteEmbeddingModelSubpath(url: string): string | null {
+  try {
+    const parsed = new URL(url, typeof window !== "undefined" ? window.location.href : undefined);
+    if (parsed.hostname !== "huggingface.co" && parsed.hostname !== "www.huggingface.co") {
+      return null;
+    }
+
+    const marker = "/Xenova/all-MiniLM-L6-v2/";
+    const index = parsed.pathname.indexOf(marker);
+    if (index === -1) return null;
+    let subpath = parsed.pathname.substring(index + marker.length);
+    if (subpath.startsWith("resolve/main/")) {
+      subpath = subpath.substring("resolve/main/".length);
+    }
+    return subpath || null;
+  } catch {
+    return null;
+  }
+}
+
 export function configureTransformersEnv(env: any) {
-  env.allowLocalModels = true;
+  // Model downloads are cached by the Electron fetch interceptor below.
+  // Transformers.js's separate local-model lookup targets /models/...; Vite's
+  // SPA fallback answers that missing URL with index.html and JSON parsing fails.
+  env.allowLocalModels = false;
   env.allowRemoteModels = true;
   if ("useBrowserCache" in env) {
-    (env as any).useBrowserCache = true;
+    // Electron uses the vault-backed cache below. Keeping the browser Cache API
+    // enabled creates a second cache that can retain SPA fallback HTML forever.
+    (env as any).useBrowserCache = false;
   }
 
   // Electron/Browser compatibility fixes for @xenova/transformers v2.
@@ -33,11 +72,7 @@ export function configureTransformersEnv(env: any) {
     };
     wasm.proxy = false;
     wasm.numThreads = 1;
-    if (typeof window !== "undefined" && typeof process !== "undefined" && process.env.NODE_ENV !== "test") {
-      wasm.wasmPaths = "/wasm/";
-    } else {
-      wasm.wasmPaths = `https://cdn.jsdelivr.net/npm/@xenova/transformers@${env.version}/dist/`;
-    }
+    wasm.wasmPaths = resolveTransformersWasmPath(env.version);
   }
 }
 
@@ -66,20 +101,9 @@ if (
 ) {
   const originalFetch = window.fetch;
 
-  const getModelSubpath = (url: string): string | null => {
-    const marker = "Xenova/all-MiniLM-L6-v2/";
-    const index = url.indexOf(marker);
-    if (index === -1) return null;
-    let sub = url.substring(index + marker.length);
-    if (sub.startsWith("resolve/main/")) {
-      sub = sub.substring("resolve/main/".length);
-    }
-    return sub;
-  };
-
   window.fetch = async function (input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
     const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : (input as Request).url;
-    const subpath = getModelSubpath(url);
+    const subpath = getRemoteEmbeddingModelSubpath(url);
 
     if (subpath) {
       const localPath = `.openonyx/models/Xenova/all-MiniLM-L6-v2/${subpath}`;
@@ -89,10 +113,15 @@ if (
           if (subpath.endsWith(".json")) {
             const content = await (window as any).electronAPI.readFile(localPath);
             if (content !== null) {
-              return new Response(content, {
-                status: 200,
-                headers: { "Content-Type": "application/json" }
-              });
+              try {
+                JSON.parse(content);
+                return new Response(content, {
+                  status: 200,
+                  headers: { "Content-Type": "application/json" }
+                });
+              } catch {
+                console.warn(`[Embeddings Cache] Ignoring invalid cached JSON file ${localPath}`);
+              }
             }
           } else if (subpath.endsWith(".onnx")) {
             const content = await (window as any).electronAPI.readBinary(localPath);
@@ -121,9 +150,12 @@ if (
           const clone = response.clone();
           if (subpath.endsWith(".json")) {
             clone.text().then(text => {
+              JSON.parse(text);
               (window as any).electronAPI.writeFile(localPath, text).catch((err: any) => {
                 console.warn(`[Embeddings Cache] Failed to cache JSON file ${localPath}:`, err);
               });
+            }).catch((err: any) => {
+              console.warn(`[Embeddings Cache] Skipped invalid JSON response for ${localPath}:`, err);
             });
           } else if (subpath.endsWith(".onnx")) {
             clone.arrayBuffer().then(buffer => {
@@ -148,6 +180,11 @@ if (
 
 const MODEL_ID = "Xenova/all-MiniLM-L6-v2";
 const EMBEDDING_DIM = 384;
+export const EMBEDDING_SCHEMA_VERSION = 2;
+export const EMBEDDING_CHUNK_SIZE = 1200;
+export const EMBEDDING_UPDATED_EVENT = "openonyx:embedding-updated";
+const EMBEDDING_CHUNK_OVERLAP = 120;
+const MAX_STORED_SEGMENT_VECTORS = 8;
 
 let _pipeline: FeatureExtractionPipeline | null = null;
 let _loadingPromise: Promise<FeatureExtractionPipeline> | null = null;
@@ -275,8 +312,8 @@ function stripMarkdown(text: string): string {
     .replace(/^---[\s\S]*?---\s*/m, "")        // YAML frontmatter
     .replace(/\[\[([^\]|]+)(?:\|[^\]]+)?\]\]/g, "$1") // wiki links
     .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")    // markdown links
-    .replace(/```[\s\S]*?```/g, "")             // code blocks
-    .replace(/`[^`]+`/g, "")                    // inline code
+    .replace(/^```[^\n]*$/gm, "")               // code fences (retain code content)
+    .replace(/`([^`]+)`/g, "$1")                 // inline code content
     .replace(/^#{1,6}\s+/gm, "")               // headings
     .replace(/\*{1,3}([^*]+)\*{1,3}/g, "$1")   // bold/italic
     .replace(/<[^>]+>/g, "")                    // HTML
@@ -285,6 +322,41 @@ function stripMarkdown(text: string): string {
     .replace(/^>\s*/gm, "")                     // blockquotes
     .replace(/\s+/g, " ")
     .trim();
+}
+
+/**
+ * Split the complete note into overlapping model-sized chunks. Long notes are
+ * never truncated; every part contributes to the note vector and search
+ * segments below.
+ */
+export function chunkTextForEmbedding(
+  text: string | null | undefined,
+  maxChars = EMBEDDING_CHUNK_SIZE,
+  overlapChars = EMBEDDING_CHUNK_OVERLAP,
+): string[] {
+  const clean = stripMarkdown(typeof text === "string" ? text : "");
+  if (clean.length < 5) return [];
+  if (clean.length <= maxChars) return [clean];
+
+  const chunks: string[] = [];
+  let start = 0;
+  while (start < clean.length) {
+    let end = Math.min(clean.length, start + maxChars);
+    if (end < clean.length) {
+      const boundary = clean.lastIndexOf(" ", end);
+      if (boundary > start + Math.floor(maxChars * 0.65)) end = boundary;
+    }
+
+    const chunk = clean.slice(start, end).trim();
+    if (chunk) chunks.push(chunk);
+    if (end >= clean.length) break;
+
+    const nextStart = Math.max(start + 1, end - Math.min(overlapChars, Math.floor(maxChars / 3)));
+    start = nextStart;
+    while (start < clean.length && clean[start] === " ") start++;
+  }
+
+  return chunks;
 }
 
 // ── Hashing ──────────────────────────────────────────────────────────────────
@@ -365,8 +437,39 @@ function hasVectorSignal(vector: number[] | undefined): boolean {
   return Array.isArray(vector) && vector.some((value) => Math.abs(value) > 1e-8);
 }
 
-export async function embedText(text: string | null | undefined): Promise<number[]> {
-  const clean = stripMarkdown(typeof text === "string" ? text : "").substring(0, 1500);
+function notifyEmbeddingUpdated(path: string): void {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new CustomEvent(EMBEDDING_UPDATED_EVENT, { detail: { path } }));
+}
+
+function normalizeVector(vector: number[]): number[] {
+  let squaredMagnitude = 0;
+  for (const value of vector) squaredMagnitude += value * value;
+  const magnitude = Math.sqrt(squaredMagnitude);
+  return magnitude > 0 ? vector.map((value) => value / magnitude) : vector;
+}
+
+function averageVectors(vectors: number[][]): number[] {
+  if (vectors.length === 0) return new Array(EMBEDDING_DIM).fill(0);
+  const result = new Array(vectors[0].length).fill(0);
+  for (const vector of vectors) {
+    for (let index = 0; index < result.length; index++) {
+      result[index] += vector[index] || 0;
+    }
+  }
+  return normalizeVector(result);
+}
+
+function coalesceSegmentVectors(vectors: number[][]): number[][] {
+  if (vectors.length <= MAX_STORED_SEGMENT_VECTORS) return vectors;
+  return Array.from({ length: MAX_STORED_SEGMENT_VECTORS }, (_, index) => {
+    const start = Math.floor(index * vectors.length / MAX_STORED_SEGMENT_VECTORS);
+    const end = Math.max(start + 1, Math.floor((index + 1) * vectors.length / MAX_STORED_SEGMENT_VECTORS));
+    return averageVectors(vectors.slice(start, end));
+  });
+}
+
+async function embedCleanChunk(clean: string): Promise<number[]> {
   if (clean.length < 5) {
     return new Array(EMBEDDING_DIM).fill(0);
   }
@@ -387,6 +490,56 @@ export async function embedText(text: string | null | undefined): Promise<number
   }
 }
 
+const yieldToRenderer = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
+
+/** Embed several note chunks per model call, yielding between batches so the
+ * renderer remains responsive while a large vault is being indexed. */
+async function embedCleanChunks(cleanChunks: string[]): Promise<number[][]> {
+  if (cleanChunks.length === 0) return [];
+  if (_disabledReason) return cleanChunks.map((chunk) => lexicalEmbedText(chunk));
+
+  const vectors: number[][] = [];
+  const batchSize = 8;
+  for (let start = 0; start < cleanChunks.length; start += batchSize) {
+    const batch = cleanChunks.slice(start, start + batchSize);
+    try {
+      const embedder = await getEmbedder();
+      const output = await embedder(batch, { pooling: "mean", normalize: true });
+      const data = output?.data ? Array.from(output.data as Float32Array) : [];
+      if (data.length !== batch.length * EMBEDDING_DIM) throw new Error("Unexpected embedding batch shape");
+      for (let index = 0; index < batch.length; index++) {
+        vectors.push(data.slice(index * EMBEDDING_DIM, (index + 1) * EMBEDDING_DIM));
+      }
+    } catch {
+      // Keep a partial model failure useful instead of discarding the whole
+      // note. Individual fallback calls preserve the existing lexical path.
+      for (const chunk of batch) vectors.push(await embedCleanChunk(chunk));
+    }
+    await yieldToRenderer();
+  }
+  return vectors;
+}
+
+async function embedTextWithSegments(
+  text: string | null | undefined,
+): Promise<{ vector: number[]; segmentVectors: number[][] }> {
+  const chunks = chunkTextForEmbedding(text);
+  if (chunks.length === 0) {
+    return { vector: new Array(EMBEDDING_DIM).fill(0), segmentVectors: [] };
+  }
+
+  const chunkVectors = await embedCleanChunks(chunks);
+
+  return {
+    vector: averageVectors(chunkVectors),
+    segmentVectors: coalesceSegmentVectors(chunkVectors),
+  };
+}
+
+export async function embedText(text: string | null | undefined): Promise<number[]> {
+  return (await embedTextWithSegments(text)).vector;
+}
+
 // ── Cosine similarity ────────────────────────────────────────────────────────
 
 function cosineSimilarity(a: number[], b: number[]): number {
@@ -402,6 +555,8 @@ export interface StoredEmbedding {
   path: string;
   hash: string;
   vector: number[];
+  segmentVectors?: number[][];
+  schemaVersion?: number;
   updatedAt: number;
   modifiedAt?: number;
   size?: number;
@@ -551,12 +706,15 @@ export function seedLexicalEmbeddings(files: Record<string, string>): number {
   for (const [path, content] of Object.entries(files)) {
     if (!path.toLowerCase().endsWith(".md")) continue;
     const source = typeof content === "string" ? content : "";
-    const clean = stripMarkdown(source).substring(0, 1500);
-    const vector = clean.length < 5 ? new Array(EMBEDDING_DIM).fill(0) : lexicalEmbedText(clean);
+    const chunks = chunkTextForEmbedding(source);
+    const chunkVectors = chunks.map(lexicalEmbedText);
+    const vector = averageVectors(chunkVectors);
     _memoryStore.entries.set(path, {
       path,
       hash: simpleHash(source),
       vector,
+      segmentVectors: coalesceSegmentVectors(chunkVectors),
+      schemaVersion: EMBEDDING_SCHEMA_VERSION,
       updatedAt: Date.now(),
       modifiedAt: Date.now(),
       size: source.length,
@@ -579,16 +737,18 @@ export async function embedNote(
   const hash = simpleHash(source);
   const existing = store.entries.get(path);
 
-  if (existing && existing.hash === hash) {
+  if (existing && existing.hash === hash && existing.schemaVersion === EMBEDDING_SCHEMA_VERSION) {
     const cleanLength = stripMarkdown(source).length;
     if (cleanLength < 5 || hasVectorSignal(existing.vector)) return false;
   }
 
-  const vector = await embedText(source);
+  const { vector, segmentVectors } = await embedTextWithSegments(source);
   const entry: StoredEmbedding = {
     path,
     hash,
     vector,
+    segmentVectors,
+    schemaVersion: EMBEDDING_SCHEMA_VERSION,
     updatedAt: Date.now(),
     modifiedAt: modifiedAt ?? Date.now(),
     size: size ?? source.length,
@@ -598,6 +758,7 @@ export async function embedNote(
 
   // Persist to disk (debounced)
   persistEntry(entry);
+  notifyEmbeddingUpdated(path);
 
   return true;
 }
@@ -615,7 +776,11 @@ export function refreshEmbeddingMetadataIfUnchanged(
   size?: number,
 ): boolean {
   const existing = store.entries.get(path);
-  if (!existing || existing.hash !== simpleHash(content)) return false;
+  if (
+    !existing
+    || existing.hash !== simpleHash(content)
+    || existing.schemaVersion !== EMBEDDING_SCHEMA_VERSION
+  ) return false;
 
   const nextModifiedAt = modifiedAt ?? existing.modifiedAt;
   const nextSize = size ?? existing.size;
@@ -651,6 +816,7 @@ export function removeEmbedding(store: EmbeddingStore, path: string): void {
     index[p] = { hash: e.hash, updatedAt: e.updatedAt };
   }
   _debouncedWrite("embeddings/_index.json", index);
+  notifyEmbeddingUpdated(path);
 }
 
 /**
@@ -681,6 +847,7 @@ export function renameEmbeddingPath(
   _memoryStore.entries.set(newPath, updated);
 
   persistEntry(updated);
+  notifyEmbeddingUpdated(newPath);
   return true;
 }
 
@@ -802,12 +969,22 @@ export async function searchByQuery(
   query: string,
   maxResults = 8,
 ): Promise<SimilarNote[]> {
+  // There is nothing to compare against, so avoid starting the heavyweight
+  // model (and potentially logging a backend warning) on a brand-new vault.
+  if (store.entries.size === 0) return [];
+
   const queryVec = await embedText(query);
   const results: SimilarNote[] = [];
 
   for (const [path, entry] of store.entries) {
     if (entry.vector.length !== queryVec.length) continue;
-    const sim = cosineSimilarity(queryVec, entry.vector);
+    const vectors = entry.segmentVectors?.length ? entry.segmentVectors : [entry.vector];
+    const sim = Math.max(
+      cosineSimilarity(queryVec, entry.vector),
+      ...vectors
+        .filter((vector) => vector.length === queryVec.length)
+        .map((vector) => cosineSimilarity(queryVec, vector)),
+    );
     if (sim > 0.15) {
       results.push({ path, similarity: sim });
     }

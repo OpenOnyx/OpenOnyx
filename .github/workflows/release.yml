@@ -10,6 +10,16 @@ on:
         description: "Tag to release, for example v1.0.0"
         required: true
         type: string
+      platform:
+        description: "Platform to build"
+        required: true
+        default: "all"
+        type: choice
+        options:
+          - all
+          - linux
+          - windows
+          - macos
 
 permissions:
   contents: write
@@ -55,24 +65,27 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.release_tag || github.ref }}
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.sha || github.ref }}
 
       - name: Setup Node
+        if: ${{ github.event_name != 'workflow_dispatch' || github.event.inputs.platform == 'all' || github.event.inputs.platform == matrix.platform.name }}
         uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
 
       - name: Install Linux package tools
-        if: runner.os == 'Linux'
+        if: ${{ runner.os == 'Linux' && (github.event_name != 'workflow_dispatch' || github.event.inputs.platform == 'all' || github.event.inputs.platform == matrix.platform.name) }}
         run: |
           sudo apt-get update
           sudo apt-get install -y libcrypt1 rpm libarchive-tools
 
       - name: Install dependencies
+        if: ${{ github.event_name != 'workflow_dispatch' || github.event.inputs.platform == 'all' || github.event.inputs.platform == matrix.platform.name }}
         run: npm ci
 
       - name: Check release icons
+        if: ${{ github.event_name != 'workflow_dispatch' || github.event.inputs.platform == 'all' || github.event.inputs.platform == matrix.platform.name }}
         shell: bash
         run: |
           test -f build/icon.png
@@ -80,7 +93,7 @@ jobs:
           test -f build/icon.icns
 
       - name: Configure macOS code signing and notarization
-        if: runner.os == 'macOS'
+        if: ${{ runner.os == 'macOS' && (github.event_name != 'workflow_dispatch' || github.event.inputs.platform == 'all' || github.event.inputs.platform == matrix.platform.name) }}
         shell: bash
         env:
           CSC_LINK: ${{ secrets.CSC_LINK }}
@@ -103,7 +116,7 @@ jobs:
           fi
 
       - name: Configure Windows code signing
-        if: runner.os == 'Windows'
+        if: ${{ runner.os == 'Windows' && (github.event_name != 'workflow_dispatch' || github.event.inputs.platform == 'all' || github.event.inputs.platform == matrix.platform.name) }}
         shell: bash
         env:
           WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
@@ -118,9 +131,11 @@ jobs:
           fi
 
       - name: Build installers
+        if: ${{ github.event_name != 'workflow_dispatch' || github.event.inputs.platform == 'all' || github.event.inputs.platform == matrix.platform.name }}
         run: npm run ${{ matrix.platform.script }}
 
       - name: Verify release artifacts
+        if: ${{ github.event_name != 'workflow_dispatch' || github.event.inputs.platform == 'all' || github.event.inputs.platform == matrix.platform.name }}
         shell: bash
         env:
           RELEASE_PLATFORM: ${{ matrix.platform.name }}
@@ -163,7 +178,7 @@ jobs:
           done | sort
 
       - name: Prepare release notes
-        if: matrix.platform.name == 'linux'
+        if: ${{ matrix.platform.name == 'linux' && (github.event_name != 'workflow_dispatch' || github.event.inputs.platform == 'all' || github.event.inputs.platform == matrix.platform.name) }}
         shell: bash
         run: |
           set -euo pipefail
@@ -177,6 +192,7 @@ jobs:
           test -s release-notes.md
 
       - name: Publish release assets
+        if: ${{ github.event_name != 'workflow_dispatch' || github.event.inputs.platform == 'all' || github.event.inputs.platform == matrix.platform.name }}
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.event.inputs.release_tag || github.ref_name }}

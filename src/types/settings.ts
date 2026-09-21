@@ -1,5 +1,6 @@
 export type ThemeSetting =
   | "dark"
+  | "openonyx"
   | "light"
   | "oceanic"
   | "dark-plus"
@@ -111,10 +112,70 @@ export interface AppSettings {
   pluginAutoUpdates: boolean;
 }
 
+const INTER_FONT = {
+  id: "inter",
+  label: "Inter — Neutral",
+  value: "Inter, system-ui, sans-serif",
+} as const;
+
+const SPACE_GROTESK_FONT = {
+  id: "space-grotesk",
+  label: "Space Grotesk — Geometric",
+  value: '"Space Grotesk", Inter, system-ui, sans-serif',
+} as const;
+
+const ATKINSON_FONT = {
+  id: "atkinson",
+  label: "Atkinson — Accessible",
+  value: '"Atkinson Hyperlegible", Inter, system-ui, sans-serif',
+} as const;
+
+const LORA_FONT = {
+  id: "lora",
+  label: "Lora — Editorial",
+  value: 'Lora, Georgia, "Times New Roman", serif',
+} as const;
+
+const GEORGIA_FONT = {
+  id: "georgia",
+  label: "Georgia — Classic",
+  value: 'Georgia, "Times New Roman", serif',
+} as const;
+
+const JETBRAINS_MONO_FONT = {
+  id: "jetbrains-mono",
+  label: "JetBrains Mono — Technical",
+  value: '"JetBrains Mono", "Cascadia Code", "SFMono-Regular", Consolas, monospace',
+} as const;
+
+export const FONT_FAMILY_PRESETS = [
+  INTER_FONT,
+  SPACE_GROTESK_FONT,
+  ATKINSON_FONT,
+  LORA_FONT,
+  GEORGIA_FONT,
+  JETBRAINS_MONO_FONT,
+] as const;
+
+const LEGACY_FONT_FAMILIES: Record<string, string> = {
+  "'SF Pro Display', system-ui, sans-serif": INTER_FONT.value,
+  "'Segoe UI', system-ui, sans-serif": INTER_FONT.value,
+  "Georgia, serif": GEORGIA_FONT.value,
+  "'JetBrains Mono', monospace": JETBRAINS_MONO_FONT.value,
+};
+
+export function normalizeFontFamily(value: unknown): string {
+  if (typeof value !== "string" || !value.trim()) {
+    return INTER_FONT.value;
+  }
+
+  return LEGACY_FONT_FAMILIES[value] ?? value;
+}
+
 export const DEFAULT_SETTINGS: AppSettings = {
-  theme: "dark",
+  theme: "openonyx",
   accentColor: "#2563eb",
-  fontFamily: "Inter, system-ui, sans-serif",
+  fontFamily: INTER_FONT.value,
   customBgPrimary: "#151515",
   customTextPrimary: "#e6e6e6",
   customThemeType: "dark",

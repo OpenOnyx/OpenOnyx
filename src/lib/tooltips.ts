@@ -116,7 +116,7 @@ function uninstallNativeTooltipBlocker(tooltipWindow: TooltipWindow) {
 }
 
 function removeLegacyTooltipElements() {
-  document.querySelectorAll(".app-tooltip, .titlebar-tooltip, [role='tooltip']").forEach((element) => {
+  document.querySelectorAll(".app-tooltip, .titlebar-tooltip").forEach((element) => {
     if (element.id !== "openonyx-tooltip") element.remove();
   });
 }
@@ -229,7 +229,7 @@ export function installGlobalTooltips(): () => void {
   const tooltipWindow = window as TooltipWindow;
   tooltipWindow.__openOnyxTooltipCleanup?.();
   installNativeTooltipBlocker(tooltipWindow);
-  document.querySelectorAll(".app-tooltip, .titlebar-tooltip, [role='tooltip']").forEach((element) => element.remove());
+  document.querySelectorAll(".app-tooltip, .titlebar-tooltip").forEach((element) => element.remove());
   tooltipEl = null;
 
   const migrateNativeTooltip = (element: Element) => {

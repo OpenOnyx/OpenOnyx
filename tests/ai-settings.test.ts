@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  AI_SETTINGS_CHANGED_EVENT,
   DEFAULT_MODEL_ID,
   DEFAULT_PROVIDER,
   getBaseUrl,
@@ -58,6 +59,24 @@ describe("AI settings", () => {
     // Verify saved to disk store (.openonyx/ai-settings.json)
     const diskData = await readData<any>("ai-settings.json");
     expect(diskData?.apiKey).toBe("sk-test-secret-123");
+  });
+
+  it("broadcasts the active model and does not promote a stale custom-model draft", () => {
+    const listener = vi.fn();
+    window.addEventListener(AI_SETTINGS_CHANGED_EVENT, listener);
+    saveSettings({
+      apiKey: "sk-active",
+      modelId: "nvidia/nemotron-3-super-120b-a12b:free",
+      customModelId: "mistralai/mistral-small-3.2-24b-instruct",
+      webGrounding: false,
+      provider: "openrouter",
+      customBaseUrl: "",
+    });
+
+    expect(loadAIConfig()?.modelId).toBe("nvidia/nemotron-3-super-120b-a12b:free");
+    expect(listener).toHaveBeenCalledOnce();
+    expect((listener.mock.calls[0][0] as CustomEvent).detail).toBeUndefined();
+    window.removeEventListener(AI_SETTINGS_CHANGED_EVENT, listener);
   });
 
   it("migrates legacy localStorage value once to disk and deletes it from localStorage", async () => {

@@ -27,7 +27,6 @@ export function AIIntelligenceDashboard() {
       saveSettings(next);
       return next;
     });
-    window.dispatchEvent(new Event("ai-settings-changed"));
   };
 
   const activeProvider = AI_PROVIDER_PRESETS.find((p) => p.id === aiSettings.provider) || AI_PROVIDER_PRESETS[0];

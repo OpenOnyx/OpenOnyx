@@ -29,6 +29,7 @@ import { getSmartEmbed, getDisplayDomain, cleanEmbedUrl, toggleUrlInMarkdown } f
 import { runMarkdownPostProcessors } from "../../lib/obsidian-api/markdown";
 import type { AppSettings } from "../settings/SettingsPage";
 import type { NoteComment, PendingComment } from "../../types/comments";
+import { getCommentDisplayText } from "../../utils/comment-anchors";
 
 import { initializeInteractiveMermaid } from "../../utils/mermaid-layout-engine";
 
@@ -182,6 +183,7 @@ interface MarkdownPreviewProps {
   constrainWidth?: boolean;
   comments?: NoteComment[];
   pendingComment?: PendingComment | null;
+  activeCommentId?: string | null;
   onCommentClick?: (commentId: string) => void;
 }
 
@@ -513,13 +515,13 @@ function escapeRegExp(value: string): string {
 
 function getCommentRangeText(source: string, from: number, to: number, fallback: string): string {
   const ranged = source.slice(Math.max(0, from), Math.max(0, to));
-  return ranged.trim() || fallback.trim();
+  return getCommentDisplayText(fallback) || getCommentDisplayText(ranged);
 }
 
 function getSourceOccurrenceIndex(source: string, phrase: string, from: number): number {
   if (!phrase) return 0;
-  const before = source.slice(0, Math.max(0, from));
-  const regex = new RegExp(escapeRegExp(phrase), "g");
+  const before = getCommentDisplayText(source.slice(0, Math.max(0, from))).toLowerCase();
+  const regex = new RegExp(escapeRegExp(phrase.toLowerCase()), "g");
   let count = 0;
   while (regex.exec(before)) count++;
   return count;
@@ -552,39 +554,47 @@ function markHtmlTextOccurrence(
   const doc = new DOMParser().parseFromString(`<body>${html}</body>`, "text/html");
   const body = doc.body;
   const walker = doc.createTreeWalker(body, NodeFilter.SHOW_TEXT);
-  const segments: { node: Text; start: number; end: number }[] = [];
+  const segments: { node: Text; start: number; end: number; wrappable: boolean }[] = [];
   let fullText = "";
 
   while (walker.nextNode()) {
     const node = walker.currentNode as Text;
     const parent = node.parentElement;
-    if (!parent || parent.closest(".cm-comment-highlight")) continue;
+    if (!parent) continue;
     const start = fullText.length;
     fullText += node.nodeValue || "";
-    segments.push({ node, start, end: fullText.length });
+    segments.push({
+      node,
+      start,
+      end: fullText.length,
+      wrappable: !parent.closest(".cm-comment-highlight"),
+    });
   }
 
   const match = findNthOccurrence(fullText, phrase, occurrenceIndex) || findNthOccurrenceInsensitive(fullText, phrase, occurrenceIndex);
   if (!match) return html;
 
-  const startSegment = segments.find((segment) => match.index >= segment.start && match.index <= segment.end);
   const endIndex = match.index + match.length;
-  const endSegment = segments.find((segment) => endIndex >= segment.start && endIndex <= segment.end);
-  if (!startSegment || !endSegment) return html;
+  const matchedSegments = segments.filter(
+    (segment) => segment.wrappable && match.index < segment.end && endIndex > segment.start,
+  );
+  if (matchedSegments.length === 0) return html;
 
-  const range = doc.createRange();
-  range.setStart(startSegment.node, match.index - startSegment.start);
-  range.setEnd(endSegment.node, endIndex - endSegment.start);
-
-  const mark = doc.createElement("mark");
-  for (const [name, value] of Object.entries(attrs)) {
-    mark.setAttribute(name, value);
-  }
-
-  try {
+  // Wrap each text-node fragment independently. Range.surroundContents throws
+  // when a selection crosses elements such as <strong>, <code>, or <a>.
+  for (let index = matchedSegments.length - 1; index >= 0; index--) {
+    const segment = matchedSegments[index];
+    const startOffset = Math.max(0, match.index - segment.start);
+    const endOffset = Math.min(segment.node.length, endIndex - segment.start);
+    if (startOffset >= endOffset) continue;
+    const range = doc.createRange();
+    range.setStart(segment.node, startOffset);
+    range.setEnd(segment.node, endOffset);
+    const mark = doc.createElement("mark");
+    for (const [name, value] of Object.entries(attrs)) {
+      mark.setAttribute(name, value);
+    }
     range.surroundContents(mark);
-  } catch {
-    return html;
   }
 
   return body.innerHTML;
@@ -593,11 +603,12 @@ function markHtmlTextOccurrence(
 /**
  * Wraps only the saved comment ranges in the rendered HTML.
  */
-function applyCommentHighlightsToHtml(
+export function applyCommentHighlightsToHtml(
   html: string,
   source: string,
   comments?: NoteComment[],
   pendingComment?: PendingComment | null,
+  activeCommentId?: string | null,
 ): string {
   if ((!comments || comments.length === 0) && !pendingComment) return html;
 
@@ -612,7 +623,10 @@ function applyCommentHighlightsToHtml(
         result,
         phrase,
         occurrenceIndex,
-        { class: "cm-comment-highlight", "data-comment-id": c.id },
+        {
+          class: `cm-comment-highlight${c.id === activeCommentId ? " cm-comment-active" : ""}`,
+          "data-comment-id": c.id,
+        },
       );
     }
   }
@@ -644,6 +658,7 @@ export function MarkdownPreview({
   constrainWidth = true,
   comments,
   pendingComment,
+  activeCommentId,
   onCommentClick,
 }: MarkdownPreviewProps) {
   const previewRef = useRef<HTMLDivElement>(null);
@@ -1071,8 +1086,8 @@ export function MarkdownPreview({
     const sanitized = sanitizePreviewHtml(html);
 
     // Apply comment highlights to rendered preview
-    return applyCommentHighlightsToHtml(sanitized, debouncedContent, comments, pendingComment);
-  }, [debouncedContent, onEmbed, themeMode, getSmartEmbed, getUrlPreviewMarkup, comments, pendingComment]);
+    return applyCommentHighlightsToHtml(sanitized, debouncedContent, comments, pendingComment, activeCommentId);
+  }, [debouncedContent, onEmbed, themeMode, getSmartEmbed, getUrlPreviewMarkup, comments, pendingComment, activeCommentId]);
 
   // Handle clicks on wiki-links, tags, checkboxes, and comment highlights
   useEffect(() => {
