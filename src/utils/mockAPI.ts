@@ -623,6 +623,36 @@ export function createMockAPI(): ElectronAPI {
       };
     },
 
+    mcp: {
+      list: async () => [],
+      save: async (config) => ({
+        config,
+        runtime: { status: config.enabled ? "disconnected" : "disabled", diagnostics: [] },
+        tools: [],
+      }),
+      remove: async () => {},
+      setEnabled: async (id, enabled, trusted = false) => ({
+        config: {
+          id,
+          name: id,
+          enabled,
+          trusted,
+          enabledTools: [],
+          transport: { transport: "stdio" as const, command: "", args: [], env: {} },
+          createdAt: 0,
+          updatedAt: 0,
+        },
+        runtime: { status: enabled ? "disconnected" : "disabled", diagnostics: [] },
+        tools: [],
+      }),
+      connect: async (id) => {
+        const snapshots = await (createMockAPI() as ElectronAPI).mcp.list();
+        return snapshots.find((snapshot) => snapshot.config.id === id) || await (createMockAPI() as ElectronAPI).mcp.setEnabled(id, true, true);
+      },
+      disconnect: async () => {},
+      callTool: async () => ({ content: [] }),
+    },
+
     // Thought Model (mock implementation for browser)
     thoughtModel: {
       build: async (_vaultPath: string, _numClusters?: number) => {

@@ -6,6 +6,7 @@
  */
 
 import { contextBridge, ipcRenderer } from 'electron';
+import type { McpServerConfig, McpServerSnapshot } from './mcpTypes.js';
 
 /** Type-safe API exposed to the renderer */
 const electronAPI = {
@@ -190,6 +191,19 @@ const electronAPI = {
 
   networkRequest: (params: any): Promise<any> =>
     ipcRenderer.invoke('network:request', params),
+
+  // ── User-configured MCP servers ───────────────────
+  mcp: {
+    list: (): Promise<McpServerSnapshot[]> => ipcRenderer.invoke('mcp:list'),
+    save: (config: McpServerConfig): Promise<McpServerSnapshot> => ipcRenderer.invoke('mcp:save', config),
+    remove: (id: string): Promise<void> => ipcRenderer.invoke('mcp:remove', id),
+    setEnabled: (id: string, enabled: boolean, trusted?: boolean): Promise<McpServerSnapshot> =>
+      ipcRenderer.invoke('mcp:setEnabled', id, enabled, trusted),
+    connect: (id: string): Promise<McpServerSnapshot> => ipcRenderer.invoke('mcp:connect', id),
+    disconnect: (id: string): Promise<void> => ipcRenderer.invoke('mcp:disconnect', id),
+    callTool: (id: string, name: string, args: Record<string, unknown>): Promise<unknown> =>
+      ipcRenderer.invoke('mcp:callTool', id, name, args),
+  },
 
   // ── Thought Model ─────────────────────────────────
   thoughtModel: {

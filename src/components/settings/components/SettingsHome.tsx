@@ -89,6 +89,7 @@ export function SettingsHome({ settings, onUpdateSetting, onNavigate }: Settings
             { id: "editor", title: "Editor", desc: "Typography, Wikilinks & line width" },
             { id: "appearance", title: "Appearance", desc: "Themes, font scale & zoom level" },
             { id: "ai", title: "AI", desc: "Providers, models & note indexer" },
+            { id: "mcp", title: "MCP Servers", desc: "User-configured tools & connections" },
             { id: "sync", title: "Sync", desc: "Cloud database & storage connection" },
             { id: "extensions", title: "Extensions", desc: "Community plugins & core suite" },
             { id: "system", title: "System", desc: "Updates, accounts & factory reset" },

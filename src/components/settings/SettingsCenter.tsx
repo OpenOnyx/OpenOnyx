@@ -17,6 +17,7 @@ import { version as APP_VERSION } from "../../../package.json";
 import { DEFAULT_SETTINGS } from "../../types/settings";
 import { getAPI } from "../../utils/api";
 import { buildVaultHealthReport, type VaultHealthReport } from "../../utils/vaultHealth";
+import { McpSettingsPanel } from "./components/McpSettingsPanel";
 
 export type StudioTab =
   | "home"
@@ -24,6 +25,7 @@ export type StudioTab =
   | "editor"
   | "appearance"
   | "ai"
+  | "mcp"
   | "sync"
   | "extensions"
   | "system"
@@ -54,6 +56,7 @@ const STUDIOS = [
   { id: "editor" as const, label: "Editor", desc: "Typography, [[Wikilinks]] & line width" },
   { id: "appearance" as const, label: "Appearance", desc: "Themes, font scale & zoom" },
   { id: "ai" as const, label: "AI", desc: "Providers, models & note indexer" },
+  { id: "mcp" as const, label: "MCP Servers", desc: "User-configured tools & connections" },
   { id: "sync" as const, label: "Sync", desc: "Cloud database & storage connection" },
   { id: "extensions" as const, label: "Extensions", desc: "Community plugins & core suite" },
   { id: "system" as const, label: "System", desc: "Updates, accounts & factory reset" },
@@ -133,6 +136,8 @@ export function SettingsCenter({
       setActiveTab("editor");
     } else if (q.includes("theme") || q.includes("color") || q.includes("dark") || q.includes("light") || q.includes("zoom") || q.includes("ribbon") || q.includes("wallpaper") || q.includes("background")) {
       setActiveTab("appearance");
+    } else if (q.includes("mcp") || q.includes("model context") || q.includes("server")) {
+      setActiveTab("mcp");
     } else if (q.includes("ai") || q.includes("model") || q.includes("openai") || q.includes("openrouter") || q.includes("claude") || q.includes("key")) {
       setActiveTab("ai");
     } else if (q.includes("database") || q.includes("supabase") || q.includes("sql") || q.includes("sync")) {
@@ -458,6 +463,8 @@ export function SettingsCenter({
 
                   {/* 4. AI */}
                   {activeTab === "ai" && <AIIntelligenceDashboard />}
+
+                  {activeTab === "mcp" && <McpSettingsPanel />}
 
                   {/* 5. Sync */}
                   {activeTab === "sync" && <DatabaseInfrastructureView />}

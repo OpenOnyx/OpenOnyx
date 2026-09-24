@@ -15,6 +15,9 @@ import { SearchEngine } from './search.js';
 import { registerIpcHandlers } from './ipc.js';
 import { isInsideRoot } from './pathSafety.js';
 import { approveVaultPath } from './vaultAccess.js';
+import { McpConfigurationStore } from './mcpConfigStore.js';
+import { McpConnectionManager } from './mcpManager.js';
+import { registerMcpIpcHandlers } from './mcpIpc.js';
 
 // Register vault:// protocol as privileged before app is ready
 protocol.registerSchemesAsPrivileged([
@@ -37,6 +40,7 @@ const __dirname = path.dirname(__filename);
 let mainWindow: BrowserWindow | null = null;
 let fsManager: FileSystemManager | null = null;
 let searchEngine: SearchEngine | null = null;
+let mcpManager: McpConnectionManager | null = null;
 
 const isDevMode = !app.isPackaged;
 const MAX_RECENT_VAULTS = 20;
@@ -495,7 +499,7 @@ function buildMenu(): void {
   Menu.setApplicationMenu(menu);
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   // Register custom protocol handler for vault:// local asset loading
   protocol.handle('vault', async (request) => {
     try {
@@ -669,6 +673,13 @@ app.whenReady().then(() => {
 
   fsManager = new FileSystemManager();
   searchEngine = new SearchEngine();
+  mcpManager = new McpConnectionManager(new McpConfigurationStore(app.getPath('userData')));
+  try {
+    await mcpManager.load();
+  } catch (error) {
+    console.error('[MCP] Failed to load configuration:', error);
+  }
+  registerMcpIpcHandlers(ipcMain, mcpManager);
   restoreLastVault(fsManager);
 
   // Register all IPC handlers for renderer communication
@@ -738,4 +749,5 @@ app.on('window-all-closed', () => {
 // Clean up on exit
 app.on('will-quit', () => {
   globalShortcut.unregisterAll();
+  void mcpManager?.shutdown();
 });

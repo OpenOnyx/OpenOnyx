@@ -19,6 +19,7 @@ export type SettingsSection =
   | "core-plugins"
   | "plugins"
   | "ai"
+  | "mcp"
   | "database"
   | "backlinks"
   | "canvas"
@@ -76,6 +77,8 @@ function mapSectionToStudioTab(section?: SettingsSection): StudioTab {
     case "keychain":
     case "ai":
       return "ai";
+    case "mcp":
+      return "mcp";
     case "database":
       return "sync";
     case "core-plugins":

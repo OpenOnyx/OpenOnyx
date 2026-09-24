@@ -177,3 +177,19 @@ export type {
   SpaceChatMessage,
   SpaceForkRequest,
 } from "./spaces";
+
+export type {
+  McpConfiguration,
+  McpDiagnostic,
+  McpEnvironmentValue,
+  McpHttpTransport,
+  McpSecretReference,
+  McpServerConfig,
+  McpServerRuntimeState,
+  McpServerSnapshot,
+  McpServerStatus,
+  McpStdioTransport,
+  McpTool,
+  McpTransport,
+  McpTransportConfig,
+} from "./mcp";
