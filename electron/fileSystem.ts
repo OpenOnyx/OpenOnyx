@@ -9,7 +9,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
-import { resolveInsideRoot, sanitizeAttachmentFileName } from './pathSafety.js';
+import { getRealPath, isInsideRoot, resolveInsideRoot, sanitizeAttachmentFileName } from './pathSafety.js';
 
 export interface FileEntry {
   name: string;
@@ -79,6 +79,11 @@ export class FileSystemManager {
     const absoluteDir = this.resolvePath(dirPath);
     if (!fs.existsSync(absoluteDir)) return [];
 
+    const realDir = getRealPath(absoluteDir);
+    if (!this.vaultPath || !isInsideRoot(this.vaultPath, realDir)) {
+      return [];
+    }
+
     const entries = await fs.promises.readdir(absoluteDir, { withFileTypes: true });
     const result: FileEntry[] = [];
 
@@ -87,14 +92,18 @@ export class FileSystemManager {
 
       const relativePath = path.join(dirPath, entry.name).replace(/\\/g, '/');
       const absolutePath = path.join(absoluteDir, entry.name);
-      
+
+      if (this.vaultPath && !isInsideRoot(this.vaultPath, absolutePath)) {
+        continue;
+      }
+
       try {
         const stats = await fs.promises.stat(absolutePath);
         result.push({
           name: entry.name,
           path: relativePath,
           absolutePath,
-          isDirectory: entry.isDirectory(),
+          isDirectory: stats.isDirectory(),
           extension: path.extname(entry.name),
           modifiedAt: stats.mtimeMs,
           size: stats.size,
@@ -114,7 +123,7 @@ export class FileSystemManager {
   /** Get full file tree recursively */
   async getFileTree(dirPath: string = ''): Promise<FileEntry[]> {
     const entries = await this.listFiles(dirPath);
-    
+
     for (const entry of entries) {
       if (entry.isDirectory) {
         entry.children = await this.getFileTree(entry.path);
@@ -127,6 +136,10 @@ export class FileSystemManager {
   /** Read file content */
   async readFile(filePath: string): Promise<string | null> {
     const absolutePath = this.resolvePath(filePath);
+    const realTarget = getRealPath(absolutePath);
+    if (!this.vaultPath || !isInsideRoot(this.vaultPath, realTarget)) {
+      throw new Error('Path traversal detected');
+    }
     try {
       return await fs.promises.readFile(absolutePath, 'utf-8');
     } catch (error: any) {
@@ -137,6 +150,10 @@ export class FileSystemManager {
 
   async readBinary(filePath: string): Promise<Uint8Array> {
     const absolutePath = this.resolvePath(filePath);
+    const realTarget = getRealPath(absolutePath);
+    if (!this.vaultPath || !isInsideRoot(this.vaultPath, realTarget)) {
+      throw new Error('Path traversal detected');
+    }
     return new Uint8Array(await fs.promises.readFile(absolutePath));
   }
 
@@ -144,6 +161,16 @@ export class FileSystemManager {
   async writeFile(filePath: string, content: string): Promise<void> {
     const absolutePath = this.resolvePath(filePath);
     const dir = path.dirname(absolutePath);
+    const realParent = getRealPath(dir);
+    if (!this.vaultPath || !isInsideRoot(this.vaultPath, realParent)) {
+      throw new Error('Path traversal detected');
+    }
+    if (fs.existsSync(absolutePath)) {
+      const realTarget = getRealPath(absolutePath);
+      if (!isInsideRoot(this.vaultPath, realTarget)) {
+        throw new Error('Path traversal detected');
+      }
+    }
     await fs.promises.mkdir(dir, { recursive: true });
     await fs.promises.writeFile(absolutePath, content, 'utf-8');
   }
@@ -151,6 +178,16 @@ export class FileSystemManager {
   async writeBinary(filePath: string, content: Uint8Array): Promise<void> {
     const absolutePath = this.resolvePath(filePath);
     const dir = path.dirname(absolutePath);
+    const realParent = getRealPath(dir);
+    if (!this.vaultPath || !isInsideRoot(this.vaultPath, realParent)) {
+      throw new Error('Path traversal detected');
+    }
+    if (fs.existsSync(absolutePath)) {
+      const realTarget = getRealPath(absolutePath);
+      if (!isInsideRoot(this.vaultPath, realTarget)) {
+        throw new Error('Path traversal detected');
+      }
+    }
     await fs.promises.mkdir(dir, { recursive: true });
     await fs.promises.writeFile(absolutePath, content);
   }
@@ -159,12 +196,18 @@ export class FileSystemManager {
   async createFile(filePath: string, content: string = ''): Promise<void> {
     const absolutePath = this.resolvePath(filePath);
     const dir = path.dirname(absolutePath);
-    await fs.promises.mkdir(dir, { recursive: true });
-    
-    // Don't overwrite existing files
+    const realParent = getRealPath(dir);
+    if (!this.vaultPath || !isInsideRoot(this.vaultPath, realParent)) {
+      throw new Error('Path traversal detected');
+    }
     if (fs.existsSync(absolutePath)) {
+      const realTarget = getRealPath(absolutePath);
+      if (!isInsideRoot(this.vaultPath, realTarget)) {
+        throw new Error('Path traversal detected');
+      }
       return;
     }
+    await fs.promises.mkdir(dir, { recursive: true });
     await fs.promises.writeFile(absolutePath, content, 'utf-8');
   }
 
@@ -172,6 +215,10 @@ export class FileSystemManager {
   async deleteFile(filePath: string): Promise<void> {
     const absolutePath = this.resolvePath(filePath);
     if (fs.existsSync(absolutePath)) {
+      const realTarget = getRealPath(absolutePath);
+      if (!this.vaultPath || !isInsideRoot(this.vaultPath, realTarget)) {
+        throw new Error('Path traversal detected');
+      }
       await fs.promises.unlink(absolutePath);
     }
   }
@@ -181,6 +228,14 @@ export class FileSystemManager {
     const absoluteOld = this.resolvePath(oldPath);
     const absoluteNew = this.resolvePath(newPath);
     const dir = path.dirname(absoluteNew);
+    const realParent = getRealPath(dir);
+    if (!this.vaultPath || !isInsideRoot(this.vaultPath, realParent)) {
+      throw new Error('Path traversal detected');
+    }
+    const realOld = getRealPath(absoluteOld);
+    if (!isInsideRoot(this.vaultPath, realOld)) {
+      throw new Error('Path traversal detected');
+    }
     await fs.promises.mkdir(dir, { recursive: true });
     await fs.promises.rename(absoluteOld, absoluteNew);
   }
@@ -188,6 +243,10 @@ export class FileSystemManager {
   /** Create a directory */
   async createDirectory(dirPath: string): Promise<void> {
     const absolutePath = this.resolvePath(dirPath);
+    const realParent = getRealPath(path.dirname(absolutePath));
+    if (!this.vaultPath || !isInsideRoot(this.vaultPath, realParent)) {
+      throw new Error('Path traversal detected');
+    }
     await fs.promises.mkdir(absolutePath, { recursive: true });
   }
 
@@ -195,6 +254,10 @@ export class FileSystemManager {
   async deleteDirectory(dirPath: string): Promise<void> {
     const absolutePath = this.resolvePath(dirPath);
     if (fs.existsSync(absolutePath)) {
+      const realTarget = getRealPath(absolutePath);
+      if (!this.vaultPath || !isInsideRoot(this.vaultPath, realTarget)) {
+        throw new Error('Path traversal detected');
+      }
       await fs.promises.rm(absolutePath, { recursive: true, force: true });
     }
   }
@@ -383,9 +446,9 @@ export class FileSystemManager {
 
     for (const entry of entries) {
       if (entry.name.startsWith('.') || entry.name === 'node_modules') continue;
-      
+
       const relativePath = (dirPath ? path.join(dirPath, entry.name) : entry.name).replace(/\\/g, '/');
-      
+
       if (entry.isDirectory()) {
         const subFiles = await this.getAllMarkdownFiles(relativePath);
         files.push(...subFiles);
@@ -423,6 +486,10 @@ export class FileSystemManager {
     
     // Create attachments folder if it doesn't exist
     const attachmentsDir = resolveInsideRoot(this.vaultPath, 'attachments');
+    const realAttachmentsDir = getRealPath(attachmentsDir);
+    if (!isInsideRoot(this.vaultPath, realAttachmentsDir)) {
+      throw new Error('Path traversal detected');
+    }
     if (!fs.existsSync(attachmentsDir)) {
       fs.mkdirSync(attachmentsDir, { recursive: true });
     }
@@ -442,6 +509,10 @@ export class FileSystemManager {
     
     // Write the image file
     const imagePath = resolveInsideRoot(this.vaultPath, path.join('attachments', uniqueName));
+    const realParent = getRealPath(path.dirname(imagePath));
+    if (!isInsideRoot(this.vaultPath, realParent)) {
+      throw new Error('Path traversal detected');
+    }
     fs.writeFileSync(imagePath, Buffer.from(base64Content, 'base64'));
     
     // Return relative path for markdown
@@ -450,12 +521,21 @@ export class FileSystemManager {
 
   // ── .openonyx/ Data Directory Operations ──────
 
-  /** Ensure .openonyx/ directory structure exists */
+  /** Ensure .openonyx/ directory structure exists safely */
   private ensureDataDir(subDir?: string): string {
     if (!this.vaultPath) throw new Error('No vault path set');
-    const dataDir = subDir
-      ? path.join(this.vaultPath, '.openonyx', subDir)
-      : path.join(this.vaultPath, '.openonyx');
+    const baseDataDir = resolveInsideRoot(this.vaultPath, '.openonyx');
+    if (!fs.existsSync(baseDataDir)) {
+      fs.mkdirSync(baseDataDir, { recursive: true });
+    }
+    if (!subDir || !subDir.trim()) {
+      return baseDataDir;
+    }
+    const dataDir = resolveInsideRoot(baseDataDir, subDir);
+    const realParent = getRealPath(path.dirname(dataDir));
+    if (!isInsideRoot(baseDataDir, realParent)) {
+      throw new Error('Path traversal detected');
+    }
     if (!fs.existsSync(dataDir)) {
       fs.mkdirSync(dataDir, { recursive: true });
     }
@@ -465,10 +545,12 @@ export class FileSystemManager {
   /** Read a JSON file from .openonyx/ */
   async readDataFile(relativePath: string): Promise<string | null> {
     try {
-      const dir = this.ensureDataDir();
-      const filePath = path.join(dir, relativePath);
-      if (filePath !== dir && !filePath.startsWith(dir + path.sep)) throw new Error('Path traversal detected');
+      if (!this.vaultPath) return null;
+      const baseDataDir = resolveInsideRoot(this.vaultPath, '.openonyx');
+      const filePath = resolveInsideRoot(baseDataDir, relativePath);
       if (!fs.existsSync(filePath)) return null;
+      const realTarget = getRealPath(filePath);
+      if (!isInsideRoot(baseDataDir, realTarget)) return null;
       return await fs.promises.readFile(filePath, 'utf-8');
     } catch {
       return null;
@@ -477,10 +559,19 @@ export class FileSystemManager {
 
   /** Write a JSON file to .openonyx/ */
   async writeDataFile(relativePath: string, content: string): Promise<void> {
-    const dir = this.ensureDataDir();
-    const filePath = path.join(dir, relativePath);
-    if (filePath !== dir && !filePath.startsWith(dir + path.sep)) throw new Error('Path traversal detected');
+    const baseDataDir = this.ensureDataDir();
+    const filePath = resolveInsideRoot(baseDataDir, relativePath);
     const fileDir = path.dirname(filePath);
+    const realParent = getRealPath(fileDir);
+    if (!isInsideRoot(baseDataDir, realParent)) {
+      throw new Error('Path traversal detected');
+    }
+    if (fs.existsSync(filePath)) {
+      const realTarget = getRealPath(filePath);
+      if (!isInsideRoot(baseDataDir, realTarget)) {
+        throw new Error('Path traversal detected');
+      }
+    }
     if (!fs.existsSync(fileDir)) {
       fs.mkdirSync(fileDir, { recursive: true });
     }
@@ -490,25 +581,40 @@ export class FileSystemManager {
   /** Delete a file from .openonyx/ */
   async deleteDataFile(relativePath: string): Promise<void> {
     try {
-      const dir = this.ensureDataDir();
-      const filePath = path.join(dir, relativePath);
-      if (filePath !== dir && !filePath.startsWith(dir + path.sep)) return;
+      if (!this.vaultPath) return;
+      const baseDataDir = resolveInsideRoot(this.vaultPath, '.openonyx');
+      const filePath = resolveInsideRoot(baseDataDir, relativePath);
       if (fs.existsSync(filePath)) {
+        const realTarget = getRealPath(filePath);
+        if (!isInsideRoot(baseDataDir, realTarget)) return;
         await fs.promises.unlink(filePath);
       }
     } catch { /* silent */ }
   }
 
-  /** List files in a .openonyx/ subdirectory */
-  async listDataDir(subDir: string): Promise<string[]> {
+  /** List files in .openonyx/ or a subdirectory */
+  async listData(subDir: string = ''): Promise<string[]> {
     try {
-      const dir = this.ensureDataDir(subDir);
+      if (!this.vaultPath) return [];
+      const baseDataDir = resolveInsideRoot(this.vaultPath, '.openonyx');
+      const dir = subDir && subDir.trim()
+        ? resolveInsideRoot(baseDataDir, subDir)
+        : baseDataDir;
       if (!fs.existsSync(dir)) return [];
+      const realDir = getRealPath(dir);
+      if (!isInsideRoot(baseDataDir, realDir)) return [];
+      const stats = await fs.promises.stat(dir);
+      if (!stats.isDirectory()) return [];
       const files = await fs.promises.readdir(dir);
       return files.filter((f) => !f.startsWith('.'));
     } catch {
       return [];
     }
+  }
+
+  /** List files in a .openonyx/ subdirectory (alias for listData) */
+  async listDataDir(subDir: string = ''): Promise<string[]> {
+    return this.listData(subDir);
   }
 
   /** Hash file content for deduplication (SHA-256) */
@@ -527,6 +633,10 @@ export class FileSystemManager {
     if (!this.vaultPath) throw new Error('No vault path set');
 
     const attachmentsDir = resolveInsideRoot(this.vaultPath, 'attachments');
+    const realAttachmentsDir = getRealPath(attachmentsDir);
+    if (!isInsideRoot(this.vaultPath, realAttachmentsDir)) {
+      throw new Error('Path traversal detected');
+    }
     if (!fs.existsSync(attachmentsDir)) {
       fs.mkdirSync(attachmentsDir, { recursive: true });
     }
@@ -554,6 +664,10 @@ export class FileSystemManager {
     // New file — store with hash name
     const hashName = `${hash}${ext}`;
     const imagePath = resolveInsideRoot(this.vaultPath, path.join('attachments', hashName));
+    const realParent = getRealPath(path.dirname(imagePath));
+    if (!isInsideRoot(this.vaultPath, realParent)) {
+      throw new Error('Path traversal detected');
+    }
     fs.writeFileSync(imagePath, buffer);
 
     // Update mapping
