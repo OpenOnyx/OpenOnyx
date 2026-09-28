@@ -80,6 +80,7 @@ export function SiteHeader() {
         <nav className="nav-links" aria-label="Primary navigation">
           <a href="/#why">Product</a>
           {!isDocs && <a href="/#intelligence">Intelligence</a>}
+          <NavLink to="/careers">Careers</NavLink>
           <NavLink to="/docs">Docs</NavLink>
           <a className="github-stars-link" href={PRODUCT.repo} target="_blank" rel="noreferrer" aria-label={stars === "—" ? "GitHub repository" : `GitHub repository, ${stars} stars`}><GitHubIcon /><span>{stars}</span></a>
         </nav>
@@ -91,7 +92,7 @@ export function SiteHeader() {
           <button type="button" className="nav-toggle" aria-expanded={menuOpen} aria-controls="mobile-nav" onClick={() => setMenuOpen((open) => !open)}><span className="sr-only">{menuOpen ? "Close menu" : "Open menu"}</span><i /><i /></button>
         </div>
       </div>
-      <nav id="mobile-nav" className="mobile-nav" hidden={!menuOpen} aria-label="Mobile navigation"><a href="/#why">Product</a>{!isDocs && <a href="/#intelligence">Intelligence</a>}<NavLink to="/docs">Docs</NavLink><a href={PRODUCT.repo} target="_blank" rel="noreferrer">GitHub · {stars} stars</a><Link to="/download">Download</Link></nav>
+      <nav id="mobile-nav" className="mobile-nav" hidden={!menuOpen} aria-label="Mobile navigation"><a href="/#why">Product</a>{!isDocs && <a href="/#intelligence">Intelligence</a>}<NavLink to="/careers">Careers</NavLink><NavLink to="/docs">Docs</NavLink><a href={PRODUCT.repo} target="_blank" rel="noreferrer">GitHub · {stars} stars</a><Link to="/download">Download</Link></nav>
     </header>
   );
 }

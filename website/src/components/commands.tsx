@@ -33,6 +33,7 @@ export function CommandProvider({ children }: { children: ReactNode }) {
   const base = useMemo<SiteCommand[]>(
     () => [
       { id: "go-product", label: "Product", category: "Go to", action: () => navigate("/") },
+      { id: "go-careers", label: "Careers", category: "Go to", action: () => navigate("/careers") },
       { id: "go-docs", label: "Docs", category: "Go to", action: () => navigate("/docs/start") },
       { id: "go-download", label: "Download", category: "Go to", action: () => navigate("/download") },
       {
