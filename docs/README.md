@@ -7,6 +7,7 @@ User-facing product docs live at [openonyx.dev](https://openonyx.dev) (placehold
 | [roadmap.md](roadmap.md) | Public roadmap linked from the README |
 | [spaces.md](spaces.md) | Spaces pipeline, IndexedDB / Supabase schema, sync |
 | [obsidian-plugin-compatibility.md](obsidian-plugin-compatibility.md) | Plugin API coverage and real-bundle tests |
+| [mcp-architecture.md](mcp-architecture.md) | Proposed architecture for user-configurable MCP servers |
 
 Screenshots under `docs/images/` are copies of the site stills. Prefer [`website/public/images/`](../website/public/images/) when updating the product site. The README hero is `docs/images/banner.webp`.
 

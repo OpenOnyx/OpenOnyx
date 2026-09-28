@@ -10,6 +10,8 @@ import type { ElectronAPI } from "../../electron/preload";
 
 // In-memory file system for browser mode
 const mockFiles: Record<string, string> = {};
+const mockMcpServers: Record<string, any> = {};
+let mockMcpHydrated = false;
 let mockVaultPath: string | null = "OO-Test-Vault";
 
 const SAMPLE_NOTES: Record<string, string> = {
@@ -238,6 +240,16 @@ export function createMockAPI(): ElectronAPI {
   if (Object.keys(mockFiles).length === 0) {
     Object.assign(mockFiles, SAMPLE_NOTES);
   }
+  if (!mockMcpHydrated && typeof localStorage !== "undefined") {
+    try {
+      Object.assign(mockMcpServers, JSON.parse(localStorage.getItem("openonyx-mcp-servers") || "{}"));
+    } catch { /* ignore corrupt browser-only mock data */ }
+    mockMcpHydrated = true;
+  }
+
+  const persistMockMcp = () => {
+    if (typeof localStorage !== "undefined") localStorage.setItem("openonyx-mcp-servers", JSON.stringify(mockMcpServers));
+  };
 
   const mockAPI: ElectronAPI = {
     // Vault
@@ -621,6 +633,38 @@ export function createMockAPI(): ElectronAPI {
         headers: responseHeaders,
         data
       };
+    },
+
+    mcp: {
+      list: async () => Object.values(mockMcpServers),
+      save: async (config) => {
+        const existing = mockMcpServers[config.id];
+        const snapshot = {
+          config,
+          runtime: existing?.runtime || { status: config.enabled ? "disconnected" : "disabled", diagnostics: [] },
+          tools: existing?.tools || [],
+        };
+        mockMcpServers[config.id] = snapshot;
+        persistMockMcp();
+        return snapshot;
+      },
+      remove: async (id) => { delete mockMcpServers[id]; persistMockMcp(); },
+      setEnabled: async (id, enabled) => {
+        const existing = mockMcpServers[id];
+        if (!existing) throw new Error(`Unknown MCP server: ${id}`);
+        existing.config = { ...existing.config, enabled, trusted: existing.config.trusted || enabled };
+        existing.runtime = { ...existing.runtime, status: enabled ? "disconnected" : "disabled" };
+        persistMockMcp();
+        return existing;
+      },
+      connect: async (id) => {
+        const existing = mockMcpServers[id];
+        if (!existing) throw new Error(`Unknown MCP server: ${id}`);
+        existing.runtime = { ...existing.runtime, status: "connected" };
+        return existing;
+      },
+      disconnect: async () => {},
+      callTool: async () => ({ content: [] }),
     },
 
     // Thought Model (mock implementation for browser)
