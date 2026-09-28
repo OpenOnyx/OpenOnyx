@@ -28,7 +28,7 @@ interface MatchInfo {
 }
 
 const panelClass =
-  "absolute right-6 top-3 z-[1000] flex items-start gap-0 rounded-[var(--radius-md)] border border-[var(--border-medium)] bg-[var(--bg-elevated)] p-1.5 font-[var(--font-sans)] text-[13px] text-[var(--text-secondary)] shadow-none";
+  "editor-search-panel absolute right-6 top-3 z-[1000] flex items-start gap-0 rounded-[var(--radius-md)] border border-[var(--border-medium)] bg-[var(--bg-elevated)] p-1.5 font-[var(--font-sans)] text-[13px] text-[var(--text-secondary)] shadow-none";
 const toggleClass =
   "mt-0.5 flex h-[26px] w-5 cursor-pointer items-center justify-center border-0 bg-transparent p-0 text-[var(--text-tertiary)] transition-[transform,color] duration-150 hover:text-[var(--text-primary)] [&_svg]:transition-transform [&_svg]:duration-150";
 const toggleExpandedClass = "[&_svg]:rotate-90";

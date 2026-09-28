@@ -49,8 +49,8 @@ export function Modal({
   };
 
   return (
-    <div style={styles.overlay} onClick={handleCancel}>
-      <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
+    <div className="motion-dialog-backdrop" style={styles.overlay} onClick={handleCancel}>
+      <div className="motion-dialog" style={styles.modal} onClick={(e) => e.stopPropagation()}>
         <h2 style={styles.title}>{title}</h2>
         <p style={styles.message}>{message}</p>
 

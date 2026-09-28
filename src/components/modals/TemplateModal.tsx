@@ -191,8 +191,8 @@ export function TemplateModal({
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[9999]" onClick={onClose}>
-      <div className="w-full max-w-[640px] bg-(--bg-primary) border border-(--border-medium) rounded-xl shadow-none overflow-hidden" onClick={(e) => e.stopPropagation()}>
+    <div className="motion-dialog-backdrop fixed inset-0 bg-black/50 flex items-center justify-center z-[9999]" onClick={onClose}>
+      <div className="motion-dialog w-full max-w-[640px] bg-(--bg-primary) border border-(--border-medium) rounded-xl shadow-none overflow-hidden" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between px-5 py-4 border-b border-(--border-subtle) bg-(--bg-secondary)">
           <h3 className="text-sm font-semibold m-0 text-(--text-primary)">Insert Template</h3>
           <button className="bg-transparent border-none text-(--text-muted) cursor-pointer p-1 rounded flex text-lg transition-colors duration-150 hover:bg-(--bg-hover) hover:text-(--text-primary)" onClick={onClose}>

@@ -9,6 +9,8 @@ export interface RendererOptions {
   height: number;
   backgroundColor: number;
   isDark: boolean;
+  minScale?: number;
+  wheelZoomWithoutModifier?: boolean;
 }
 
 export interface NodeStyle {
@@ -112,6 +114,8 @@ export class GraphRenderer {
   private offsetY = 0;
   private targetOffsetX = 0;
   private targetOffsetY = 0;
+  private minScale = 1 / 128;
+  private wheelZoomWithoutModifier = false;
   private backgroundColor: number;
   private isDark: boolean;
 
@@ -123,6 +127,8 @@ export class GraphRenderer {
   private pointerDownPos = { x: 0, y: 0 };
   private animationFrame: number | null = null;
   private needsRender = false;
+  private revealStartedAt: number | null = null;
+  private revealProgress = 1;
   private hasCentered = false;
   private cachedRect: DOMRect | null = null;
   private cachedNodeRadii = new Map<string, number>();
@@ -174,6 +180,8 @@ export class GraphRenderer {
     this.width = options.width || 800;
     this.height = options.height || 600;
     this.isDark = options.isDark ?? true;
+    this.minScale = options.minScale ?? 1 / 128;
+    this.wheelZoomWithoutModifier = options.wheelZoomWithoutModifier ?? false;
     this.backgroundColor =
       options.backgroundColor ?? (this.isDark ? 0x101010 : 0xf0f0f6);
   }
@@ -240,8 +248,18 @@ export class GraphRenderer {
 
       // Keep zoom eased, but responsive enough that wheel input does not trail
       // behind the cursor on large graphs.
-      const zoomLerp = 0.35;
-      const panLerp = 0.35;
+      const reduceMotion = typeof window !== "undefined" &&
+        window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+      const zoomLerp = reduceMotion ? 1 : 0.35;
+      const panLerp = reduceMotion ? 1 : 0.35;
+
+      if (this.revealStartedAt !== null) {
+        const elapsed = performance.now() - this.revealStartedAt;
+        const linearProgress = Math.min(1, elapsed / 180);
+        this.revealProgress = 1 - Math.pow(1 - linearProgress, 3);
+        this.needsRender = true;
+        if (linearProgress >= 1) this.revealStartedAt = null;
+      }
 
       const scaleDiff = Math.abs(this.targetScale - this.scale);
       const offsetXDiff = Math.abs(this.targetOffsetX - this.offsetX);
@@ -278,10 +296,10 @@ export class GraphRenderer {
     const mouseX = e.clientX - rect.left;
     const mouseY = e.clientY - rect.top;
 
-    if (e.ctrlKey || e.metaKey) {
+    if (e.ctrlKey || e.metaKey || this.wheelZoomWithoutModifier) {
       // Smooth zoom factor (Obsidian style)
       const zoomFactor = Math.pow(1.5, -e.deltaY / 120);
-      const newScale = Math.max(1 / 128, Math.min(8, this.targetScale * zoomFactor));
+      const newScale = Math.max(this.minScale, Math.min(8, this.targetScale * zoomFactor));
 
       // Zoom towards the point currently under the cursor. Using the visible
       // transform avoids the "rubber band" feel when wheel events arrive faster
@@ -659,7 +677,8 @@ export class GraphRenderer {
         const color = isHighlighted
           ? this.edgeStyle.highlightColor
           : this.edgeStyle.color;
-        const alpha = baseAlpha * this.edgeStyle.alpha;
+        const edgeReveal = Math.max(0, Math.min(1, (this.revealProgress - 0.12) / 0.88));
+        const alpha = baseAlpha * this.edgeStyle.alpha * edgeReveal;
         if (alpha < 0.001) continue;
 
         // Use cached radii
@@ -742,7 +761,7 @@ export class GraphRenderer {
       const size = this.cachedNodeRadii.get(node.id) || 8;
 
       // Obsidian-style alpha: dimmed nodes use fQ (0.2), highlighted/normal use 1
-      const alpha = isDimmed ? fQ : 1;
+      const alpha = (isDimmed ? fQ : 1) * this.revealProgress;
 
       // Draw node circle
       ctx.fillStyle = hexToColor(color, alpha);
@@ -835,6 +854,8 @@ export class GraphRenderer {
         }
       }
 
+      alpha *= this.revealProgress;
+
       if (alpha <= 0) continue;
 
       if (isHovered) {
@@ -874,6 +895,7 @@ export class GraphRenderer {
   setData(nodes: InputNode[], edges: InputEdge[]): void {
     if (!this.initialized) return;
 
+    const shouldReveal = this.nodes.size === 0 && nodes.length > 0;
     this.nodes.clear();
     this.edges = [];
     this.adjacencyMap.clear();
@@ -912,6 +934,15 @@ export class GraphRenderer {
       similarity: e.similarity,
       hiddenConnection: e.hiddenConnection,
     }));
+    const reduceMotion = typeof window !== "undefined" &&
+      window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    if (shouldReveal && !reduceMotion) {
+      this.revealProgress = 0;
+      this.revealStartedAt = performance.now();
+    } else {
+      this.revealProgress = 1;
+      this.revealStartedAt = null;
+    }
     if (!this.hasCentered && this.nodes.size > 0 && this.width > 150 && this.height > 150) {
       this.centerView(true);
     } else {
@@ -963,7 +994,11 @@ export class GraphRenderer {
     this.hasCentered = false;
   }
 
-  centerView(immediate = false): void {
+  setCurrentScaleAsMinimum(): void {
+    this.minScale = Math.max(1 / 128, Math.min(8, this.targetScale));
+  }
+
+  centerView(immediate = false, fitPadding?: number): void {
     if (this.nodes.size === 0) return;
 
     // Refresh canvas bounding rect if available to ensure fresh client dimensions
@@ -1003,12 +1038,12 @@ export class GraphRenderer {
     const safeHeight = Math.max(this.height, 200);
 
     // Padding to ensure outer node circles and text labels are not clipped
-    const nodeMargin = 64;
+    const nodeMargin = fitPadding ?? 64;
     const effectiveGraphWidth = Math.max(rawGraphWidth + nodeMargin * 2, 80);
     const effectiveGraphHeight = Math.max(rawGraphHeight + nodeMargin * 2, 80);
 
-    const paddingX = Math.min(120, Math.max(40, safeWidth * 0.08));
-    const paddingY = Math.min(120, Math.max(40, safeHeight * 0.08));
+    const paddingX = fitPadding ?? Math.min(120, Math.max(40, safeWidth * 0.08));
+    const paddingY = fitPadding ?? Math.min(120, Math.max(40, safeHeight * 0.08));
 
     const scaleX = (safeWidth - paddingX * 2) / effectiveGraphWidth;
     const scaleY = (safeHeight - paddingY * 2) / effectiveGraphHeight;

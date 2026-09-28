@@ -107,29 +107,33 @@ export function RightSidebar({
       {/* Active Tab Panel Body */}
       <div className="flex-1 overflow-hidden relative">
         {activeTab === "outline" && (
-          <OutlinePane
-            content={currentContent}
-            onHeadingClick={(line) => {
-              document.dispatchEvent(
-                new CustomEvent("editor:goto-line", { detail: line })
-              );
-            }}
-            visible={true}
-          />
+          <div className="right-sidebar-view h-full">
+            <OutlinePane
+              content={currentContent}
+              onHeadingClick={(line) => {
+                document.dispatchEvent(
+                  new CustomEvent("editor:goto-line", { detail: line })
+                );
+              }}
+              visible={true}
+            />
+          </div>
         )}
 
         {activeTab === "outgoing" && (
-          <OutgoingLinksPanel
-            content={currentContent}
-            allNoteNames={allNoteNames}
-            activeFileName={activeFileName}
-            onLinkClick={handleLinkClick}
-            visible={true}
-          />
+          <div className="right-sidebar-view h-full">
+            <OutgoingLinksPanel
+              content={currentContent}
+              allNoteNames={allNoteNames}
+              activeFileName={activeFileName}
+              onLinkClick={handleLinkClick}
+              visible={true}
+            />
+          </div>
         )}
 
         {activeTab === "backlinks" && (
-          <div className="flex flex-col h-full overflow-y-auto">
+          <div className="right-sidebar-view flex flex-col h-full overflow-y-auto">
             {/* Linked Mentions */}
             <div className="shrink-0">
               <BacklinksPanel
@@ -170,7 +174,7 @@ export function RightSidebar({
         )}
 
         {activeTab === "ai" && vaultPath && (
-          <div className="flex flex-col h-full overflow-hidden">
+          <div className="right-sidebar-view flex flex-col h-full overflow-hidden">
             <React.Suspense fallback={<div className="flex h-full items-center justify-center text-xs text-[var(--text-muted)]">Loading AI...</div>}>
               <AIPage
                 vaultPath={vaultPath}
@@ -189,7 +193,7 @@ export function RightSidebar({
         )}
 
         {activePluginView && (
-          <div className="flex flex-col h-full overflow-hidden">
+          <div className="right-sidebar-plugin-view flex flex-col h-full overflow-hidden">
             <div className="flex-1 overflow-hidden">
               <PluginViewHost view={activePluginView} />
             </div>

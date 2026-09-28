@@ -1,4 +1,3 @@
-import "./product/boot-vault";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
@@ -6,6 +5,8 @@ import { App } from "./App";
 import { ThemeProvider } from "./theme";
 import "./styles/app-embed.css";
 import "./styles/global.css";
+import "./styles/landing.css";
+import "./styles/docs.css";
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

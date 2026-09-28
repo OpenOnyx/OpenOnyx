@@ -405,6 +405,8 @@ function SidebarComponent({
   onRevealFolderHandled,
 }: SidebarProps) {
   const [expandedDirs, setExpandedDirs] = useState<Set<string>>(new Set());
+  const [collapsingDirs, setCollapsingDirs] = useState<Set<string>>(new Set());
+  const collapseTimersRef = useRef<Map<string, number>>(new Map());
   const [selectedFolder, setSelectedFolder] = useState<string | null>("");
   const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({});
   const [isFoldersCollapsed, setIsFoldersCollapsed] = useState(false);
@@ -620,16 +622,41 @@ function SidebarComponent({
     return () => window.cancelAnimationFrame(frame);
   }, [onRevealFolderHandled, revealFolderRequest]);
 
+  useEffect(() => () => {
+    collapseTimersRef.current.forEach((timer) => window.clearTimeout(timer));
+    collapseTimersRef.current.clear();
+  }, []);
+
   const toggleDir = (path: string) => {
-    setExpandedDirs((prev) => {
-      const next = new Set(prev);
-      if (next.has(path)) {
+    const existingTimer = collapseTimersRef.current.get(path);
+    if (existingTimer) window.clearTimeout(existingTimer);
+
+    if (expandedDirs.has(path)) {
+      setCollapsingDirs((previous) => new Set(previous).add(path));
+      setExpandedDirs((previous) => {
+        const next = new Set(previous);
         next.delete(path);
-      } else {
-        next.add(path);
-      }
+        return next;
+      });
+
+      const timer = window.setTimeout(() => {
+        setCollapsingDirs((previous) => {
+          const next = new Set(previous);
+          next.delete(path);
+          return next;
+        });
+        collapseTimersRef.current.delete(path);
+      }, 200);
+      collapseTimersRef.current.set(path, timer);
+      return;
+    }
+
+    setCollapsingDirs((previous) => {
+      const next = new Set(previous);
+      next.delete(path);
       return next;
     });
+    setExpandedDirs((previous) => new Set(previous).add(path));
   };
 
   const handleContextMenu = (
@@ -818,8 +845,8 @@ function SidebarComponent({
             )}
           </button>
 
-          {entry.isDirectory && entry.children && isExpanded && (
-            <div className={cx(treeChildrenWrapperClass, "open grid-rows-[1fr]")}>
+          {entry.isDirectory && entry.children && (isExpanded || collapsingDirs.has(entry.path)) && (
+            <div className={cx(treeChildrenWrapperClass, "motion-tree-children", isExpanded && "open is-open grid-rows-[1fr]")}>
               <div className={treeChildrenClass}>
                 {entry.children.length > 0 ? (
                   renderFileTree(sortEntries(entry.children, sortMode), depth + 1)
@@ -1058,9 +1085,11 @@ function SidebarComponent({
               </>
             )}
           </button>
-          {isExpanded && childDirs.length > 0 && (
-            <div className="file-tree-children">
-              {renderFoldersOnlyTree(sortEntries(entry.children || [], sortMode), depth + 1)}
+          {(isExpanded || collapsingDirs.has(entry.path)) && childDirs.length > 0 && (
+            <div className={cx("motion-tree-children", isExpanded && "is-open")}>
+              <div className="file-tree-children">
+                {renderFoldersOnlyTree(sortEntries(entry.children || [], sortMode), depth + 1)}
+              </div>
             </div>
           )}
         </React.Fragment>
@@ -1383,7 +1412,7 @@ function SidebarComponent({
                       {selectedFolder === "" ? "Root Directory" : selectedFolder ? selectedFolder.split("/").pop() : "Root Directory"}
                     </span>
                   </div>
-                  <div className="nn-notes-list">
+                  <div className="nn-notes-list motion-search-results">
                     {groupedNotes.length > 0 ? (
                       groupedNotes.map((section) => {
                         const isCollapsed = collapsedSections[section.id];
@@ -1699,9 +1728,9 @@ function SidebarComponent({
         </>
       )}
       {moveModal && (
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-xs p-4">
+        <div className="motion-dialog-backdrop fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-xs p-4">
           <div className="absolute inset-0" onClick={() => setMoveModal(null)} />
-          <div className="relative flex flex-col w-[min(90vw,440px)] max-h-[75vh] rounded-xl border border-[var(--border-medium)] bg-[var(--bg-primary)] text-[var(--text-primary)] shadow-xl overflow-hidden z-10">
+          <div className="motion-dialog relative flex flex-col w-[min(90vw,440px)] max-h-[75vh] rounded-xl border border-[var(--border-medium)] bg-[var(--bg-primary)] text-[var(--text-primary)] shadow-xl overflow-hidden z-10">
             <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--border-subtle)] bg-[var(--bg-secondary)]">
               <span className="text-xs font-bold uppercase tracking-wider text-[var(--text-primary)]">
                 Move {moveModal.isDir ? "Folder" : "Note"}

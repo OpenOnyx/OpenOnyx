@@ -1,0 +1,408 @@
+/*
+ * OpenOnyx motion system
+ *
+ * Motion communicates state and hierarchy. Keep these tokens centralized so
+ * host UI and compatible plugins can share the same quiet desktop cadence.
+ */
+:root {
+  --motion-duration-instant: 90ms;
+  --motion-duration-button: 110ms;
+  --motion-duration-hover: 140ms;
+  --motion-duration-tab: 170ms;
+  --motion-duration-dialog: 180ms;
+  --motion-duration-panel: 200ms;
+  --motion-duration-loading: 180ms;
+  --motion-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --motion-ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --motion-ease-in: cubic-bezier(0.4, 0, 1, 1);
+  --motion-distance-small: 4px;
+  --motion-distance-medium: 8px;
+  --motion-press-scale: 0.98;
+}
+
+@keyframes oo-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes oo-fade-up {
+  from { opacity: 0; transform: translate3d(0, var(--motion-distance-medium), 0); }
+  to { opacity: 1; transform: translate3d(0, 0, 0); }
+}
+
+@keyframes oo-fade-down {
+  from { opacity: 0; transform: translate3d(0, calc(var(--motion-distance-small) * -1), 0); }
+  to { opacity: 1; transform: translate3d(0, 0, 0); }
+}
+
+@keyframes oo-menu-in {
+  from { opacity: 0; transform: scale(0.98); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes oo-dialog-in {
+  from { opacity: 0; transform: translate3d(0, var(--motion-distance-medium), 0) scale(0.99); }
+  to { opacity: 1; transform: translate3d(0, 0, 0) scale(1); }
+}
+
+@keyframes oo-toast-out {
+  from { opacity: 1; transform: translate3d(0, 0, 0); }
+  to { opacity: 0; transform: translate3d(0, var(--motion-distance-small), 0); }
+}
+
+@keyframes oo-ai-card-out {
+  from { opacity: 1; transform: translate3d(0, 0, 0); }
+  to { opacity: 0; transform: translate3d(0, calc(var(--motion-distance-small) * -1), 0); }
+}
+
+@keyframes oo-shimmer {
+  from { transform: translate3d(-105%, 0, 0); }
+  to { transform: translate3d(105%, 0, 0); }
+}
+
+/* Controls --------------------------------------------------------------- */
+.app :where(button, [role="button"]):not(:disabled) {
+  transform-origin: center;
+}
+
+.app :where(button, [role="button"]):not(:disabled):active {
+  transform: scale(var(--motion-press-scale));
+  transition-duration: var(--motion-duration-button) !important;
+  transition-timing-function: var(--motion-ease-out) !important;
+}
+
+.app :where(button, [role="button"]):focus-visible {
+  outline: 1px solid transparent !important;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--interactive-accent, var(--accent-primary)) 52%, transparent) !important;
+  transition: box-shadow var(--motion-duration-hover) var(--motion-ease-out) !important;
+}
+
+.app :where(input, textarea, select) {
+  transition:
+    border-color var(--motion-duration-hover) var(--motion-ease-out),
+    background-color var(--motion-duration-hover) var(--motion-ease-out),
+    box-shadow var(--motion-duration-hover) var(--motion-ease-out);
+}
+
+.app :where(input, textarea)::placeholder {
+  transition: opacity var(--motion-duration-hover) var(--motion-ease-out);
+}
+
+.app :where(input, textarea):focus::placeholder {
+  opacity: 0.68;
+}
+
+.app :where(input, textarea):user-invalid {
+  transition:
+    border-color var(--motion-duration-loading) var(--motion-ease-out),
+    box-shadow var(--motion-duration-loading) var(--motion-ease-out);
+}
+
+/* Explorer --------------------------------------------------------------- */
+.nn-folder-item,
+.nn-note-card,
+.file-tree-item {
+  transition:
+    background-color var(--motion-duration-hover) var(--motion-ease-out),
+    border-color var(--motion-duration-hover) var(--motion-ease-out),
+    color var(--motion-duration-hover) var(--motion-ease-out),
+    opacity var(--motion-duration-hover) var(--motion-ease-out),
+    transform var(--motion-duration-hover) var(--motion-ease-out),
+    box-shadow var(--motion-duration-hover) var(--motion-ease-out) !important;
+}
+
+.motion-tree-children {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  overflow: hidden;
+  transition:
+    grid-template-rows var(--motion-duration-panel) var(--motion-ease-out),
+    opacity var(--motion-duration-hover) var(--motion-ease-out);
+}
+
+.motion-tree-children.is-open {
+  grid-template-rows: 1fr;
+  opacity: 1;
+}
+
+.motion-tree-children > .file-tree-children {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.nn-note-card {
+  animation: oo-fade-up var(--motion-duration-tab) var(--motion-ease-out) both;
+}
+
+@starting-style {
+  .nn-note-card {
+    opacity: 0;
+    transform: translate3d(0, var(--motion-distance-small), 0);
+  }
+}
+
+.file-tree-item.dragging,
+.nn-folder-item.opacity-40 {
+  transition-duration: var(--motion-duration-button) !important;
+}
+
+.file-tree-item.drop-target,
+.file-tree-item[class*="translate-x"],
+.nn-folder-item[class*="shadow-[inset"] {
+  transition-duration: var(--motion-duration-hover) !important;
+}
+
+/* Tabs and content ------------------------------------------------------- */
+.titlebar-tab {
+  transition:
+    background-color var(--motion-duration-hover) var(--motion-ease-out),
+    border-color var(--motion-duration-hover) var(--motion-ease-out),
+    color var(--motion-duration-hover) var(--motion-ease-out),
+    box-shadow var(--motion-duration-hover) var(--motion-ease-out),
+    opacity var(--motion-duration-tab) var(--motion-ease-out),
+    transform var(--motion-duration-tab) var(--motion-ease-out) !important;
+}
+
+@starting-style {
+  .titlebar-tab {
+    opacity: 0;
+    transform: translate3d(0, var(--motion-distance-small), 0);
+  }
+}
+
+.titlebar-tab.is-closing {
+  opacity: 0;
+  transform: translate3d(0, calc(var(--motion-distance-small) * -1), 0) scale(0.98);
+  pointer-events: none;
+}
+
+.titlebar-tab[draggable="true"]:active {
+  opacity: 0.76;
+}
+
+.leaf-editor-host.is-content-transitioning {
+  will-change: opacity, transform;
+}
+
+/* Sidebars and panels ---------------------------------------------------- */
+.left-sidebar-shell,
+.right-sidebar-shell {
+  transition:
+    width var(--motion-duration-panel) var(--motion-ease-out),
+    opacity var(--motion-duration-hover) var(--motion-ease-out) !important;
+}
+
+.right-sidebar-shell:not(.is-open) {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.right-sidebar-view {
+  animation: oo-fade-down var(--motion-duration-tab) var(--motion-ease-out) both;
+}
+
+/* Plugin view contents deliberately receive no additional motion. */
+.right-sidebar-plugin-view {
+  animation: none;
+}
+
+/* Menus and dialogs ------------------------------------------------------ */
+:where(
+  .context-menu,
+  .context-submenu,
+  .vault-menu,
+  .sort-menu,
+  .menu.oo-plugin-menu,
+  .oo-plugin-menu,
+  .editor-menu
+) {
+  transform-origin: top left;
+  animation: oo-menu-in var(--motion-duration-hover) var(--motion-ease-out) both;
+}
+
+.motion-dialog-backdrop {
+  animation: oo-fade-in var(--motion-duration-dialog) var(--motion-ease-out) both;
+}
+
+.motion-dialog {
+  animation: oo-dialog-in var(--motion-duration-dialog) var(--motion-ease-out) both;
+}
+
+/* Editor ---------------------------------------------------------------- */
+.markdown-preview,
+.markdown-rendered,
+.cm-searchMatch,
+.cm-searchMatch-selected,
+mark {
+  transition:
+    background-color var(--motion-duration-loading) var(--motion-ease-out),
+    border-color var(--motion-duration-loading) var(--motion-ease-out),
+    color var(--motion-duration-loading) var(--motion-ease-out),
+    opacity var(--motion-duration-loading) var(--motion-ease-out);
+}
+
+.inline-ai-toolbar,
+.cm-tooltip-autocomplete,
+.cm-completionInfo,
+.editor-search-panel {
+  transform-origin: top center;
+  animation: oo-fade-down var(--motion-duration-hover) var(--motion-ease-out) both;
+}
+
+.callout .callout-fold,
+.ai-panel-item svg,
+.nn-section-header-chevron {
+  transition: transform var(--motion-duration-tab) var(--motion-ease-out);
+}
+
+/* Search ---------------------------------------------------------------- */
+.motion-search-results > * {
+  animation: oo-fade-in var(--motion-duration-loading) var(--motion-ease-out) both;
+}
+
+.motion-search-results > :nth-child(n + 21) {
+  animation: none;
+}
+
+.motion-search-highlight {
+  animation: oo-fade-in var(--motion-duration-loading) var(--motion-ease-out) both;
+}
+
+/* Vault Intelligence ---------------------------------------------------- */
+[role="tabpanel"]:is(#ai-panel-ask, #ai-panel-suggestions, #ai-panel-insights) {
+  animation: oo-fade-up var(--motion-duration-tab) var(--motion-ease-out) both;
+}
+
+.ai-panel-item {
+  animation: oo-fade-up var(--motion-duration-loading) var(--motion-ease-out) both;
+  will-change: opacity, transform;
+}
+
+.ai-panel-item:nth-child(2) { animation-delay: 25ms; }
+.ai-panel-item:nth-child(3) { animation-delay: 50ms; }
+.ai-panel-item:nth-child(4) { animation-delay: 75ms; }
+.ai-panel-item:nth-child(5) { animation-delay: 100ms; }
+.ai-panel-item:nth-child(n + 6) { animation-delay: 100ms; }
+
+.ai-panel-item.is-exiting {
+  animation: oo-ai-card-out var(--motion-duration-hover) var(--motion-ease-in) both;
+  pointer-events: none;
+}
+
+.ai-source-chip {
+  animation: oo-fade-in var(--motion-duration-loading) var(--motion-ease-out) both;
+}
+
+.ai-source-chip:nth-child(2) { animation-delay: 25ms; }
+.ai-source-chip:nth-child(3) { animation-delay: 50ms; }
+
+.ai-tab-description {
+  animation: oo-fade-in var(--motion-duration-tab) var(--motion-ease-out) both;
+}
+
+.ai-citation-marker,
+.vault-ai-answer [class*="confidence"],
+.ai-panel-item [class*="tabular-nums"] {
+  transition:
+    opacity var(--motion-duration-loading) var(--motion-ease-out),
+    color var(--motion-duration-loading) var(--motion-ease-out),
+    background-color var(--motion-duration-loading) var(--motion-ease-out),
+    transform var(--motion-duration-button) var(--motion-ease-out);
+}
+
+.ai-sources-backdrop {
+  animation: oo-fade-in var(--motion-duration-panel) var(--motion-ease-out) both;
+}
+
+.ai-sources-drawer {
+  animation: oo-panel-from-right var(--motion-duration-panel) var(--motion-ease-out) both;
+}
+
+@keyframes oo-panel-from-right {
+  from { opacity: 0; transform: translate3d(var(--motion-distance-medium), 0, 0); }
+  to { opacity: 1; transform: translate3d(0, 0, 0); }
+}
+
+.ai-model-progress-bar {
+  position: relative;
+  overflow: hidden;
+  transition: width var(--motion-duration-loading) var(--motion-ease-out);
+}
+
+.ai-model-progress-bar::after,
+.motion-skeleton::after {
+  position: absolute;
+  inset: 0;
+  content: "";
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.12), transparent);
+  animation: oo-shimmer 1.4s linear infinite;
+}
+
+/* Graph controls remain DOM-light; canvas animation stays in GraphRenderer. */
+.graph-settings-panel,
+.graph-tools-group,
+.graph-node-counter {
+  animation: oo-fade-in var(--motion-duration-panel) var(--motion-ease-out) both;
+}
+
+/* Toasts ---------------------------------------------------------------- */
+.motion-toast {
+  animation: oo-fade-up var(--motion-duration-dialog) var(--motion-ease-out) both;
+}
+
+.motion-toast.is-exiting {
+  animation: oo-toast-out var(--motion-duration-dialog) var(--motion-ease-in) both;
+  pointer-events: none;
+}
+
+/* Accessibility --------------------------------------------------------- */
+@media (prefers-reduced-motion: reduce) {
+  html:focus-within,
+  .app :where(.overflow-y-auto, .overflow-auto, .overflow-y-scroll, .overflow-scroll) {
+    scroll-behavior: auto !important;
+  }
+
+  .app :where(button, [role="button"]):not(:disabled):active {
+    transform: none !important;
+  }
+
+  :where(
+    .nn-note-card,
+    .titlebar-tab,
+    .right-sidebar-view,
+    .motion-dialog,
+    .inline-ai-toolbar,
+    .cm-tooltip-autocomplete,
+    .cm-completionInfo,
+    .editor-search-panel,
+    .ai-panel-item,
+    .ai-source-chip,
+    .ai-tab-description,
+    .ai-sources-backdrop,
+    .ai-sources-drawer,
+    .graph-settings-panel,
+    .graph-tools-group,
+    .graph-node-counter,
+    .motion-toast,
+    [role="tabpanel"]:is(#ai-panel-ask, #ai-panel-suggestions, #ai-panel-insights)
+  ) {
+    transform: none !important;
+    animation-name: oo-fade-in !important;
+    animation-delay: 0ms !important;
+    animation-duration: var(--motion-duration-instant) !important;
+  }
+
+  .motion-tree-children,
+  .left-sidebar-shell,
+  .right-sidebar-shell {
+    transition-duration: var(--motion-duration-instant) !important;
+  }
+
+  .ai-model-progress-bar::after,
+  .motion-skeleton::after,
+  .animate-pulse,
+  .animate-spin {
+    animation: none !important;
+  }
+}

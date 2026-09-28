@@ -154,9 +154,9 @@ export function SettingsCenter({
   const currentStudio = STUDIOS.find((s) => s.id === activeTab) || STUDIOS[0];
 
   return (
-    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 backdrop-blur-xs p-4">
+    <div className="motion-dialog-backdrop fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 backdrop-blur-xs p-4">
       {/* Compact, Flat, Simple Settings Modal (900px wide x 640px high) */}
-      <div className="relative flex h-[min(95vh,920px)] w-[min(98vw,1360px)] overflow-hidden rounded-xl border border-[var(--border-medium)] bg-[var(--bg-primary)] text-[var(--text-primary)] shadow-xl">
+      <div className="motion-dialog relative flex h-[min(95vh,920px)] w-[min(98vw,1360px)] overflow-hidden rounded-xl border border-[var(--border-medium)] bg-[var(--bg-primary)] text-[var(--text-primary)] shadow-xl">
         
         {/* Plugin Marketplace Overlay Mode */}
         {isBrowsingPlugins ? (

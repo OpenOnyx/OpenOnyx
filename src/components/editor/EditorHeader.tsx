@@ -242,18 +242,22 @@ export function EditorHeader({
     <div className={editorChromeClass}>
       <div className={editorHeaderClass}>
         <div className={editorHeaderSideClass}>
-          <button
-            className={`${editorHeaderBtnClass} ${insightBtnClass}`}
-            onClick={onToggleInsight}
-            title="Note Insights"
-          >
-            <Lightbulb size={16} strokeWidth={1.5} />
-          </button>
+          {onToggleInsight ? (
+            <button
+              className={`${editorHeaderBtnClass} ${insightBtnClass}`}
+              onClick={onToggleInsight}
+              title="Note Insights"
+            >
+              <Lightbulb size={16} strokeWidth={1.5} />
+            </button>
+          ) : (
+            <span className="h-8 w-8 shrink-0" aria-hidden="true" />
+          )}
         </div>
 
         <div className={editorHeaderCenterClass}>
           {!isSpecial && (
-            <span className="font-medium text-[var(--text-secondary)] text-[13px] max-w-[250px] overflow-hidden text-ellipsis whitespace-nowrap">
+            <span className="max-w-full overflow-hidden text-ellipsis whitespace-nowrap px-2 text-[13px] font-medium text-[var(--text-secondary)]">
               {fileName}
             </span>
           )}

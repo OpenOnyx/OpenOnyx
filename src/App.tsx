@@ -415,6 +415,7 @@ export default function App() {
   const [syncStatus, setSyncStatus] = useState<SyncStatus | null>(null);
   const [showSidebar, setShowSidebar] = useState(true);
   const [showRightSidebar, setShowRightSidebar] = useState(true);
+  const [renderRightSidebar, setRenderRightSidebar] = useState(true);
   const [isNativeFullScreen, setIsNativeFullScreen] = useState(false);
   const [showGraph, setShowGraph] = useState(false);
   const [graphMode, setGraphMode] = useState<GraphMode>("manual");
@@ -438,6 +439,15 @@ export default function App() {
   const [settingsSection, setSettingsSection] = useState<string>("home");
 
   const bookmarks = bookmarkStore.vaultPath === vaultPath ? bookmarkStore.items : [];
+
+  useEffect(() => {
+    if (showRightSidebar) {
+      setRenderRightSidebar(true);
+      return;
+    }
+    const timer = window.setTimeout(() => setRenderRightSidebar(false), 200);
+    return () => window.clearTimeout(timer);
+  }, [showRightSidebar]);
   const bookmarkGroups = useMemo(
     () => Array.from(new Set(bookmarks.map((bookmark) => bookmark.group).filter(Boolean))).sort(),
     [bookmarks],
@@ -976,10 +986,24 @@ export default function App() {
   
   // Toast notifications state
   const [toast, setToast] = useState<{ message: string; type: "success" | "error" | "info" } | null>(null);
+  const [toastPhase, setToastPhase] = useState<"visible" | "exiting">("visible");
+  const toastTimersRef = useRef<number[]>([]);
   const showToast = useCallback((message: string, type: "success" | "error" | "info" = "info") => {
+    toastTimersRef.current.forEach((timer) => window.clearTimeout(timer));
+    toastTimersRef.current = [];
+    setToastPhase("visible");
     setToast({ message, type });
-    const timer = setTimeout(() => setToast(null), 3000);
-    return () => clearTimeout(timer);
+    const exitTimer = window.setTimeout(() => setToastPhase("exiting"), 2820);
+    const removeTimer = window.setTimeout(() => setToast(null), 3000);
+    toastTimersRef.current = [exitTimer, removeTimer];
+    return () => {
+      window.clearTimeout(exitTimer);
+      window.clearTimeout(removeTimer);
+    };
+  }, []);
+
+  useEffect(() => () => {
+    toastTimersRef.current.forEach((timer) => window.clearTimeout(timer));
   }, []);
 
   // ── Split Pane Tree ──
@@ -5176,7 +5200,7 @@ export default function App() {
         {vaultPath && !isFTUXZeroState && (
           <div
             ref={leftSidebarShellRef}
-            className="relative h-full min-w-0 shrink-0 overflow-hidden transition-[width] duration-150 ease-out will-change-[width]"
+            className="left-sidebar-shell relative h-full min-w-0 shrink-0 overflow-hidden will-change-[width]"
             style={{ width: showSidebar ? "var(--sidebar-width)" : 0 }}
           >
             <div className="h-full w-full">
@@ -5519,47 +5543,53 @@ export default function App() {
 
         {/* Thought Model Panel - independent of graph */}
         {/* Right Sidebar Container */}
-        {showRightSidebar && !isFTUXZeroState && (
+        {vaultPath && !isFTUXZeroState && (
           <div
             ref={rightSidebarShellRef}
-            className="relative flex h-full min-w-0 shrink-0 flex-row overflow-hidden transition-[width] duration-150 ease-out will-change-[width]"
+            className={`right-sidebar-shell relative flex h-full min-w-0 shrink-0 flex-row overflow-hidden will-change-[width] ${showRightSidebar ? "is-open" : ""}`}
             style={{ width: showRightSidebar ? "var(--right-sidebar-width)" : 0 }}
+            aria-hidden={!showRightSidebar}
+            inert={!showRightSidebar}
           >
-            <div
-              className={rightResizerClass}
-              onMouseDown={startRightSidebarDrag}
-              style={{
-                position: "absolute",
-                top: 0,
-                left: 0,
-                height: "100%",
-                zIndex: 100,
-              }}
-            />
-            <div className="flex h-full min-w-0 w-full flex-row overflow-hidden">
-              <RightSidebar
-                activeTab={rightSidebarTab}
-                currentContent={currentContent}
-                allNoteNames={allNoteNames}
-                handleLinkClick={handleLinkClick}
-                backlinks={backlinks}
-                openFile={openFile}
-                activeFilePath={activeTab?.path || null}
-                activeFileName={activeTab?.name || ""}
-                showUnlinkedMentions={settings.backlinksShowUnlinked !== false}
-                width={rightSidebarWidth}
-                vaultPath={vaultPath}
-                theme={theme}
-                fileTree={fileTree}
-                onClose={() => setShowRightSidebar(false)}
-                rightPluginViews={rightPluginViews}
-                onClosePluginView={(viewType) => {
-                  const app = ooAppRef.current;
-                  if (app) {
-                    app.workspace.detachLeavesOfType(viewType);
-                  }
+            {showRightSidebar && (
+              <div
+                className={rightResizerClass}
+                onMouseDown={startRightSidebarDrag}
+                style={{
+                  position: "absolute",
+                  top: 0,
+                  left: 0,
+                  height: "100%",
+                  zIndex: 100,
                 }}
               />
+            )}
+            <div className="flex h-full min-w-0 w-full flex-row overflow-hidden">
+              {renderRightSidebar && (
+                <RightSidebar
+                  activeTab={rightSidebarTab}
+                  currentContent={currentContent}
+                  allNoteNames={allNoteNames}
+                  handleLinkClick={handleLinkClick}
+                  backlinks={backlinks}
+                  openFile={openFile}
+                  activeFilePath={activeTab?.path || null}
+                  activeFileName={activeTab?.name || ""}
+                  showUnlinkedMentions={settings.backlinksShowUnlinked !== false}
+                  width={rightSidebarWidth}
+                  vaultPath={vaultPath}
+                  theme={theme}
+                  fileTree={fileTree}
+                  onClose={() => setShowRightSidebar(false)}
+                  rightPluginViews={rightPluginViews}
+                  onClosePluginView={(viewType) => {
+                    const app = ooAppRef.current;
+                    if (app) {
+                      app.workspace.detachLeavesOfType(viewType);
+                    }
+                  }}
+                />
+              )}
             </div>
           </div>
         )}
@@ -5839,7 +5869,7 @@ export default function App() {
       {toast && (
         <div className="fixed bottom-[var(--space-8)] right-[var(--space-8)] z-[300] flex flex-col gap-[var(--space-2)]">
           <div
-            className={`flex max-w-[360px] items-center gap-[var(--space-3)] rounded-[var(--radius-md)] border border-[var(--border-medium)] bg-[var(--bg-elevated)] px-[var(--space-4)] py-[var(--space-3)] text-[length:var(--text-sm)] text-[var(--text-secondary)] shadow-none ${
+            className={`motion-toast ${toastPhase === "exiting" ? "is-exiting" : ""} flex max-w-[360px] items-center gap-[var(--space-3)] rounded-[var(--radius-md)] border border-[var(--border-medium)] bg-[var(--bg-elevated)] px-[var(--space-4)] py-[var(--space-3)] text-[length:var(--text-sm)] text-[var(--text-secondary)] shadow-none ${
               toast.type === "success"
                 ? "border-l-[3px] border-l-[var(--success)]"
                 : toast.type === "error"

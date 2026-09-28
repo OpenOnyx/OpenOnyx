@@ -98,7 +98,7 @@ export function VaultManager({
 
   return (
     <div
-      className="fixed inset-0 z-[4200] flex items-center justify-center bg-black/35 px-4 py-6 backdrop-blur-[2px]"
+      className="motion-dialog-backdrop fixed inset-0 z-[4200] flex items-center justify-center bg-black/35 px-4 py-6 backdrop-blur-[2px]"
       role="dialog"
       aria-modal="true"
       aria-label="Vault manager"
@@ -106,7 +106,7 @@ export function VaultManager({
         if (event.target === event.currentTarget) onClose();
       }}
     >
-      <div className="flex h-[656px] max-h-[calc(100vh-48px)] w-[806px] max-w-[calc(100vw-48px)] overflow-hidden rounded-[10px] border border-[var(--border-medium)] bg-[var(--bg-primary)] text-[var(--text-primary)] shadow-none">
+      <div className="motion-dialog flex h-[656px] max-h-[calc(100vh-48px)] w-[806px] max-w-[calc(100vw-48px)] overflow-hidden rounded-[10px] border border-[var(--border-medium)] bg-[var(--bg-primary)] text-[var(--text-primary)] shadow-none">
         <aside className="flex w-[280px] min-h-0 shrink-0 flex-col border-r border-[var(--border-medium)] bg-[var(--bg-secondary)] px-5 py-10">
           <div className="-mr-3 flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto overflow-x-hidden pr-3">
             {vaults.length === 0 ? (

@@ -142,7 +142,7 @@ const panelBtnGhostClass =
 const ai = {
   modelStatus: "mx-4 mt-3 flex items-center gap-2 border-b border-(--border-subtle) px-0 pb-2.5 text-[11px] text-(--text-secondary)",
   modelProgress: "h-1 flex-1 overflow-hidden rounded-full bg-(--border-subtle)",
-  modelProgressBar: "h-full rounded-full bg-(--text-secondary)",
+  modelProgressBar: "ai-model-progress-bar h-full rounded-full bg-(--text-secondary)",
   empty: "m-3 flex min-h-[180px] flex-col items-center justify-center gap-2 p-6 text-center text-[12px] leading-relaxed text-(--text-muted)",
   tabPanel: "min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-4 py-3",
   tabPanelScroll: "min-h-0 flex-1 space-y-5 overflow-x-hidden overflow-y-auto px-4 py-4",
@@ -167,7 +167,7 @@ const ai = {
   suggestionGroupLabel: "flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-(--text-muted)",
   suggestionReason: "text-[12px] leading-[1.55] text-(--text-secondary)",
   conceptList: "flex min-w-0 flex-wrap gap-1",
-  conceptChip: "max-w-full truncate rounded-[5px] border border-(--border-subtle) bg-(--bg-primary) px-2 py-1 text-[10px] font-medium text-(--text-secondary)",
+  conceptChip: "ai-source-chip max-w-full truncate rounded-[5px] border border-(--border-subtle) bg-(--bg-primary) px-2 py-1 text-[10px] font-medium text-(--text-secondary)",
   suggestionNotLinked: "shrink-0 text-[12px] text-(--text-faint)",
   typeBadgeBase: "inline-flex shrink-0 items-center rounded-[5px] border px-2 py-1 text-[10px] font-semibold leading-none tracking-[0.01em]",
   dot: "w-1.5 h-1.5 rounded-full shrink-0",
@@ -200,7 +200,7 @@ const ai = {
   clusterMember: "inline-flex max-w-full cursor-pointer items-center overflow-hidden rounded-[5px] border border-(--border-subtle) bg-(--bg-primary) px-2 py-1.5 text-[11px] font-medium text-(--text-primary) transition-[background-color,border-color] duration-[160ms] hover:border-(--border-medium) hover:bg-(--bg-hover) focus-visible:outline-2 focus-visible:outline-(--interactive-accent) [&_span]:truncate",
   missingLinkInfo: "flex min-w-0 flex-1 flex-wrap items-center gap-1.5 overflow-hidden",
   missingLinkArrow: "inline-flex h-7 w-5 shrink-0 items-center justify-center text-[17px] font-semibold text-(--text-secondary)",
-  confidenceBadge: "shrink-0 text-[10px] font-medium tabular-nums text-(--text-muted)",
+  confidenceBadge: "ai-confidence-badge shrink-0 text-[10px] font-medium tabular-nums text-(--text-muted)",
   unwrittenList: "min-w-0 space-y-2",
   unwrittenItem: "ai-panel-item relative min-w-0 space-y-3 overflow-hidden rounded-lg border border-(--border-subtle) bg-(--bg-secondary) p-3 transition-[background-color,border-color] duration-[160ms] hover:border-(--border-medium) hover:bg-(--bg-active)",
   insightTitle: "text-[13px] font-semibold leading-snug text-(--text-primary)",
@@ -233,8 +233,8 @@ const ai = {
   answer: "vault-ai-answer ai-panel-item select-text rounded-lg border border-(--border-subtle) bg-(--bg-secondary) p-[clamp(16px,4cqw,22px)] text-(--text-primary)",
   citationMarker: "ai-citation-marker mx-0.5 inline-flex h-5 max-w-[min(180px,58cqw)] cursor-pointer items-center align-baseline rounded-md border border-(--border-medium) bg-(--bg-tertiary) px-2 text-[10px] font-medium leading-none text-(--text-secondary) shadow-[0_1px_2px_rgba(0,0,0,0.12)] transition-[background-color,color,border-color,box-shadow,transform] duration-[160ms] hover:-translate-y-px hover:border-(--border-strong) hover:bg-(--bg-hover) hover:text-(--text-primary) hover:shadow-[0_2px_6px_rgba(0,0,0,0.18)] focus-visible:outline-2 focus-visible:outline-(--interactive-accent)",
   sourcesButton: "inline-flex h-7 w-fit cursor-pointer items-center gap-1.5 rounded-[5px] border border-transparent px-2 text-[10px] font-medium text-(--text-muted) transition-[background-color,color] duration-[160ms] hover:bg-(--bg-active) hover:text-(--text-primary) focus-visible:outline-2 focus-visible:outline-(--interactive-accent)",
-  sourcesBackdrop: "absolute inset-0 z-30 cursor-pointer bg-black/25",
-  sourcesDrawer: "absolute inset-y-0 right-0 z-40 flex w-full max-w-[420px] flex-col border-l border-(--border-medium) bg-(--bg-primary) shadow-2xl",
+  sourcesBackdrop: "ai-sources-backdrop absolute inset-0 z-30 cursor-pointer bg-black/25",
+  sourcesDrawer: "ai-sources-drawer absolute inset-y-0 right-0 z-40 flex w-full max-w-[420px] flex-col border-l border-(--border-medium) bg-(--bg-primary) shadow-2xl",
   sourcesDrawerHeader: "flex h-12 shrink-0 items-center gap-2 border-b border-(--border-subtle) px-4",
   sourcesDrawerBody: "min-h-0 flex-1 space-y-2 overflow-y-auto p-3",
   sourceList: "space-y-2",
@@ -457,6 +457,7 @@ export function AIPage({
 
   // ── Auto-suggestions for active note ───────────────
   const [suggestions, setSuggestions] = useState<EnrichedSuggestion[]>([]);
+  const [exitingSuggestionPaths, setExitingSuggestionPaths] = useState<Set<string>>(new Set());
   const [linkTypeSelector, setLinkTypeSelector] = useState<string | null>(null);
 
   useEffect(() => {
@@ -517,7 +518,16 @@ export function AIPage({
         const separator = content.endsWith("\n") ? "\n" : "\n\n";
         await api.writeFile(activeNotePath, content + separator + linkText + "\n");
         recordSuggestion({ sourcePath: activeNotePath, targetPath, action: "accepted", timestamp: Date.now() });
+        if (!window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) {
+          setExitingSuggestionPaths((current) => new Set(current).add(targetPath));
+          await new Promise((resolve) => window.setTimeout(resolve, 140));
+        }
         setSuggestions((prev) => prev.filter((s) => s.path !== targetPath));
+        setExitingSuggestionPaths((current) => {
+          const next = new Set(current);
+          next.delete(targetPath);
+          return next;
+        });
         setLinkTypeSelector(null);
       } catch (err) {
         console.error("Failed to create link:", err);
@@ -527,10 +537,19 @@ export function AIPage({
   );
 
   const handleRejectSuggestion = useCallback(
-    (targetPath: string) => {
+    async (targetPath: string) => {
       if (!activeNotePath) return;
       recordSuggestion({ sourcePath: activeNotePath, targetPath, action: "rejected", timestamp: Date.now() });
+      if (!window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) {
+        setExitingSuggestionPaths((current) => new Set(current).add(targetPath));
+        await new Promise((resolve) => window.setTimeout(resolve, 140));
+      }
       setSuggestions((prev) => prev.filter((s) => s.path !== targetPath));
+      setExitingSuggestionPaths((current) => {
+        const next = new Set(current);
+        next.delete(targetPath);
+        return next;
+      });
       setLinkTypeSelector(null);
     },
     [activeNotePath],
@@ -860,7 +879,7 @@ export function AIPage({
   ) => {
     const confidence = confidenceMeta(s.similarity);
     return (
-      <div key={s.path} className={ai.suggestionItem}>
+      <div key={s.path} className={`${ai.suggestionItem} ${exitingSuggestionPaths.has(s.path) ? "is-exiting" : ""}`}>
         <div className={ai.suggestionContent}>
           <div className={ai.suggestionTopRow}>
             <button type="button" className={ai.suggestionInfo} onClick={() => onOpen(s.path)}>

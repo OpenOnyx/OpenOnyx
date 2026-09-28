@@ -194,9 +194,9 @@ const visibilityBadgeClasses: Record<SpaceVisibility, string> = {
   public: `${visibilityBadgeBaseClass} border-[rgba(80,180,120,0.25)] bg-[rgba(80,180,120,0.1)] text-[rgb(95,190,130)]`,
 };
 const modalOverlayClass =
-  "fixed inset-0 z-[9999] flex items-center justify-center bg-black/50";
+  "motion-dialog-backdrop fixed inset-0 z-[9999] flex items-center justify-center bg-black/50";
 const modalContentClass =
-  "w-full max-w-[440px] overflow-hidden rounded-[var(--radius-sm)] border border-[var(--border-strong)] bg-[var(--bg-primary)]";
+  "motion-dialog w-full max-w-[440px] overflow-hidden rounded-[var(--radius-sm)] border border-[var(--border-strong)] bg-[var(--bg-primary)]";
 const modalHeaderClass =
   "flex items-center justify-between border-b border-[var(--border-subtle)] bg-[var(--bg-secondary)] px-5 py-4";
 const modalTitleClass = "m-0 text-[13px] font-semibold";
@@ -2723,8 +2723,8 @@ export function SpacesPage({ onClose, fileTree, onOpenNote, vaultPath }: SpacesP
         })()}
 
         {isRemixing && remixProgress && (
-          <div className="fixed inset-0 z-55 flex items-center justify-center bg-black/70 backdrop-blur-sm animate-fade-in">
-            <div className="w-full max-w-sm p-6 rounded-2xl bg-[#0f0f10] border border-neutral-800 text-neutral-200 shadow-2xl flex flex-col items-center">
+          <div className="motion-dialog-backdrop fixed inset-0 z-55 flex items-center justify-center bg-black/70 backdrop-blur-sm">
+            <div className="motion-dialog w-full max-w-sm p-6 rounded-2xl bg-[#0f0f10] border border-neutral-800 text-neutral-200 shadow-2xl flex flex-col items-center">
               <h3 className="text-base font-semibold text-neutral-100 mb-2">Remixing Space</h3>
               <p className="text-xs text-neutral-400 mb-5 text-center leading-relaxed">
                 Downloading and saving note resources locally...
@@ -4100,8 +4100,8 @@ export function SpacesPage({ onClose, fileTree, onOpenNote, vaultPath }: SpacesP
         })()}
 
         {isRemixing && remixProgress && (
-          <div className="fixed inset-0 z-55 flex items-center justify-center bg-black/70 backdrop-blur-sm animate-fade-in">
-            <div className="w-full max-w-sm p-6 rounded-2xl bg-[#0f0f10] border border-neutral-800 text-neutral-200 shadow-2xl flex flex-col items-center">
+          <div className="motion-dialog-backdrop fixed inset-0 z-55 flex items-center justify-center bg-black/70 backdrop-blur-sm">
+            <div className="motion-dialog w-full max-w-sm p-6 rounded-2xl bg-[#0f0f10] border border-neutral-800 text-neutral-200 shadow-2xl flex flex-col items-center">
               <h3 className="text-base font-semibold text-neutral-100 mb-2">Remixing Space</h3>
               <p className="text-xs text-neutral-400 mb-5 text-center leading-relaxed">
                 Downloading and saving note resources locally...

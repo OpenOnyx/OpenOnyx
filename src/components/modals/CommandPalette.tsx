@@ -50,12 +50,12 @@ export function CommandPalette({ commands, onClose }: CommandPaletteProps) {
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-start justify-center pt-[15vh] z-[9999]" onClick={onClose}>
+    <div className="motion-dialog-backdrop fixed inset-0 bg-black/50 flex items-start justify-center pt-[15vh] z-[9999]" onClick={onClose}>
       <div
         role="dialog"
         aria-label="Command palette"
         aria-modal="true"
-        className="w-full max-w-[520px] bg-(--bg-primary) border border-(--border-medium) rounded-xl shadow-none overflow-hidden"
+        className="motion-dialog w-full max-w-[520px] bg-(--bg-primary) border border-(--border-medium) rounded-xl shadow-none overflow-hidden"
         onClick={(e) => e.stopPropagation()}
         onKeyDown={handleKeyDown}
       >

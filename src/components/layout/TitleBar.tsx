@@ -197,6 +197,7 @@ interface TitlebarTabItemProps {
   isActive: boolean;
   isDropLeft: boolean;
   isDropRight: boolean;
+  isClosing: boolean;
   onClick: (tabId: string) => void;
   onClose: (tabId: string) => void;
   onDragStart: (event: React.DragEvent, tabId: string) => void;
@@ -213,6 +214,7 @@ const TitlebarTabItem = React.memo(function TitlebarTabItem({
   isActive,
   isDropLeft,
   isDropRight,
+  isClosing,
   onClick,
   onClose,
   onDragStart,
@@ -266,6 +268,7 @@ const TitlebarTabItem = React.memo(function TitlebarTabItem({
           isActive && titlebarTabActiveClass,
           isDropLeft && titlebarTabDropLeftClass,
           isDropRight && titlebarTabDropRightClass,
+          isClosing && "is-closing",
           tabGroup && titlebarGroupedTabClass,
           tabGroup && isActive && titlebarGroupedActiveTabClass,
         )}
@@ -518,6 +521,8 @@ function TitleBarComponent({
 
   const [dragOverTabId, setDragOverTabId] = React.useState<string | null>(null);
   const [dragDirection, setDragDirection] = React.useState<'left' | 'right' | null>(null);
+  const [closingTabIds, setClosingTabIds] = React.useState<Set<string>>(new Set());
+  const closeTimersRef = React.useRef<Map<string, number>>(new Map());
   const [tabContextMenu, setTabContextMenu] = React.useState<{
     x: number;
     y: number;
@@ -636,8 +641,29 @@ function TitleBarComponent({
   }, [dragDirection, onTabReorder]);
 
   const handleTabClose = React.useCallback((tabId: string) => {
-    onTabClose?.(tabId);
+    if (closeTimersRef.current.has(tabId)) return;
+    if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) {
+      onTabClose?.(tabId);
+      return;
+    }
+
+    setClosingTabIds((current) => new Set(current).add(tabId));
+    const timer = window.setTimeout(() => {
+      closeTimersRef.current.delete(tabId);
+      setClosingTabIds((current) => {
+        const next = new Set(current);
+        next.delete(tabId);
+        return next;
+      });
+      onTabClose?.(tabId);
+    }, 170);
+    closeTimersRef.current.set(tabId, timer);
   }, [onTabClose]);
+
+  React.useEffect(() => () => {
+    closeTimersRef.current.forEach((timer) => window.clearTimeout(timer));
+    closeTimersRef.current.clear();
+  }, []);
 
   const handleTabContextMenu = React.useCallback((e: React.MouseEvent, tab: Tab) => {
     e.preventDefault();
@@ -792,6 +818,7 @@ function TitleBarComponent({
                   isActive={isActive}
                   isDropLeft={dragOverTabId === tab.id && dragDirection === "left"}
                   isDropRight={dragOverTabId === tab.id && dragDirection === "right"}
+                  isClosing={closingTabIds.has(tab.id)}
                   onClick={handleTabClick}
                   onClose={handleTabClose}
                   onDragStart={handleDragStart}

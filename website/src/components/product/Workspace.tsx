@@ -1,19 +1,20 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useWorkspaceMotion } from "../../lib/motion";
 import { Editor } from "../../../../src/components/editor/Editor";
+import { EditorHeader } from "../../../../src/components/editor/EditorHeader";
 import { GraphView } from "../../../../src/components/graph/GraphView";
 import { AIKnowledgeGraph, resetAIGraphCache } from "../../../../src/components/graph/AIKnowledgeGraph";
 import { DEFAULT_SETTINGS } from "../../../../src/components/settings/SettingsPage";
+import { themeClasses } from "../../../../src/styles/themeClasses";
 import { getAPI } from "../../../../src/utils/api";
 import type { FileEntry, Tab, ViewMode } from "../../../../src/types";
 import { PLUGINS_TESTED } from "../../data/facts";
-import { paletteHotkeyLabel } from "../../lib/hotkey";
 import vault from "../../data/real-vault.json";
 import { useTheme } from "../../theme";
 import { useCommands, type SiteCommand } from "../commands";
-import { SiteSpaces } from "./SiteSpaces";
+import "../../product/boot-vault";
 
-type Surface = "write" | "graph" | "ask" | "look" | "plugins";
+type Surface = "write" | "graph" | "look" | "plugins";
 type GraphMode = "manual" | "ai";
 
 const START = "01 - Projects/Research/Knowledge Management.md";
@@ -23,7 +24,6 @@ const FILES = vault as Record<string, string>;
 const VIEWS: Array<[Surface, string]> = [
   ["write", "write"],
   ["graph", "graph"],
-  ["ask", "spaces"],
 ];
 
 function fileName(path: string) {
@@ -82,15 +82,14 @@ function Icon({ children }: { children: ReactNode }) {
 
 export function Workspace() {
   const { theme, setTheme } = useTheme();
-  const { setWorkspaceCommands, openPalette } = useCommands();
+  const workspaceTheme = theme === "light" ? "light" : "openonyx";
+  const { setWorkspaceCommands } = useCommands();
   const shellRef = useRef<HTMLDivElement>(null);
   const [activePath, setActivePath] = useState(START);
   const [openTabs, setOpenTabs] = useState<string[]>([START]);
   const [contents, setContents] = useState<Record<string, string>>(() => ({ ...FILES }));
   const [surface, setSurface] = useState<Surface>("write");
-  const [viewMode, setViewMode] = useState<ViewMode>(() =>
-    typeof window !== "undefined" && window.innerWidth <= 760 ? "editor" : "split",
-  );
+  const [viewMode, setViewMode] = useState<ViewMode>("preview");
   const [graphMode, setGraphMode] = useState<GraphMode>("manual");
   const [query, setQuery] = useState("");
   const [pluginQuery, setPluginQuery] = useState("");
@@ -99,14 +98,19 @@ export function Workspace() {
   const settings = useMemo(
     () => ({
       ...DEFAULT_SETTINGS,
-      theme,
+      theme: workspaceTheme,
       defaultView: viewMode,
-      defaultEditingMode: "source" as const,
+      defaultEditingMode: "live-preview" as const,
+      fontSize: 14,
+      editorFontSize: 14,
+      previewFontSize: 14,
+      readingViewWidth: 640,
       readableLineLength: false,
-      showLineNumbers: true,
+      showLineNumbers: false,
+      indentationGuides: false,
       backgroundImage: wallpaper ? "/images/wallpaper-background.png" : "",
     }),
-    [theme, viewMode, wallpaper],
+    [workspaceTheme, viewMode, wallpaper],
   );
 
   const notes = useMemo(
@@ -133,7 +137,7 @@ export function Workspace() {
       path = byName.path;
     }
     setActivePath(path);
-    setOpenTabs((current) => (current.includes(path) ? current : [...current, path]));
+    setOpenTabs([path]);
     setSurface("write");
   };
 
@@ -169,7 +173,6 @@ export function Workspace() {
       { id: "mode-live", label: "Split source + preview", category: "Editor", action: () => { setSurface("write"); setViewMode("split"); } },
       { id: "view-graph", label: "Open graph", category: "View", shortcut: "⌘G", action: () => setSurface("graph") },
       { id: "view-ai", label: "Open AI graph", category: "View", action: () => { setSurface("graph"); setGraphMode("ai"); } },
-      { id: "view-ask", label: "Ask this vault", category: "View", action: () => setSurface("ask") },
       { id: "view-look", label: "Appearance", category: "View", action: () => setSurface("look") },
       { id: "view-plugins", label: "Plugin runtime", category: "View", action: () => setSurface("plugins") },
       { id: "toggle-side", label: "Toggle file tree", category: "View", action: () => setSidebar((value) => !value) },
@@ -201,8 +204,8 @@ export function Workspace() {
   return (
     <div
       ref={shellRef}
-      className={`oo oo-real${theme === "light" ? " is-light" : ""}${wallpaper ? " is-wall" : ""}`}
-      data-theme={theme}
+      className={`${themeClasses} oo oo-real${theme === "light" ? " is-light" : ""}${wallpaper ? " is-wall" : ""}`}
+      data-theme={workspaceTheme}
     >
       <div className="oo-title">
         <div className="oo-dots" aria-hidden>
@@ -218,9 +221,6 @@ export function Workspace() {
             </button>
           ))}
         </div>
-        <button type="button" className="oo-k" onClick={openPalette}>
-          {paletteHotkeyLabel()}
-        </button>
       </div>
 
       <div className="oo-body">
@@ -244,14 +244,9 @@ export function Workspace() {
               <path d="M8.4 8.2 15.6 8.2M7.6 9.1 10.6 15M16.4 9.1 13.4 15" />
             </Icon>
           </button>
-          <button type="button" className={surface === "ask" ? "is-on" : ""} onClick={() => setSurface("ask")} title="Spaces">
-            <Icon>
-              <path d="M12 3.5l2.2 4.5 5 .7-3.6 3.5.9 4.9L12 14.8 7.5 17.1l.9-4.9L4.8 8.7l5-.7z" />
-            </Icon>
-          </button>
         </nav>
 
-        {sidebar && surface !== "ask" && (
+        {sidebar && (
           <aside className="oo-side">
             <div className="oo-search">
               <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search notes…" aria-label="Search notes" />
@@ -279,36 +274,12 @@ export function Workspace() {
         <section className="oo-main">
           {surface === "write" && (
             <>
-              <div className="oo-tabs">
-                {tabs.map((tab) => (
-                  <div key={tab.id} className={`oo-tab${tab.id === activePath ? " is-on" : ""}`}>
-                    <button type="button" onClick={() => setActivePath(tab.path)}>
-                      {tab.name}
-                    </button>
-                    <button type="button" className="oo-tab-x" onClick={() => closeTab(tab.path)} aria-label={`Close ${tab.name}`}>
-                      ×
-                    </button>
-                  </div>
-                ))}
-              </div>
-              <div className="oo-modes" role="tablist" aria-label="Editor mode">
-                {([
-                  ["editor", "source"],
-                  ["preview", "preview"],
-                  ["split", "split"],
-                ] as const).map(([mode, label]) => (
-                  <button
-                    key={mode}
-                    type="button"
-                    role="tab"
-                    aria-selected={viewMode === mode}
-                    className={viewMode === mode ? "is-on" : ""}
-                    onClick={() => setViewMode(mode)}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
+              <EditorHeader
+                filePath={activePath}
+                viewMode={viewMode}
+                onViewModeChange={setViewMode}
+                showFormattingToolbar={false}
+              />
               <div className="oo-real-editor">
                 <div className="oo-editor-veil" aria-hidden />
                 <Editor
@@ -332,8 +303,9 @@ export function Workspace() {
                     return found ? contents[found.path] ?? FILES[found.path] ?? null : null;
                   }}
                   onOpenNote={openNote}
-                  theme={theme}
+                  theme={workspaceTheme}
                   settings={settings}
+                  disableInlineAI
                 />
               </div>
             </>
@@ -365,7 +337,7 @@ export function Workspace() {
                   <AIKnowledgeGraph
                     onNodeClick={(_name, _heading, path) => path && openNote(path)}
                     onClose={() => setSurface("write")}
-                    theme={theme}
+                    theme={workspaceTheme}
                     vaultPath={VAULT_PATH}
                     fileTree={fileTree}
                     localNodePath={activePath}
@@ -374,18 +346,12 @@ export function Workspace() {
                   <GraphView
                     onNodeClick={(_name, _heading, path) => path && openNote(path)}
                     onClose={() => setSurface("write")}
-                    theme={theme}
+                    theme={workspaceTheme}
                     vaultPath={VAULT_PATH}
                     localNodePath={activePath}
                   />
                 )}
               </div>
-            </div>
-          )}
-
-          {surface === "ask" && (
-            <div className="oo-real-spaces">
-              <SiteSpaces onOpenNote={openNote} />
             </div>
           )}
 
@@ -431,12 +397,12 @@ export function Workspace() {
         <span>
           {surface === "graph"
             ? `${graphMode === "ai" ? "AI graph" : "graph"} · ${notes.length} notes`
-            : surface === "ask"
-              ? "spaces · real index"
-              : `${activePath.replace(/\.md$/, "")}`}
+            : `${activePath.replace(/\.md$/, "")}`}
         </span>
         <span>
-          {surface === "write" ? `${viewMode} · ${content.split(/\s+/).filter(Boolean).length} words · live editor` : "OO-Test-Vault"}
+          {surface === "write"
+            ? `${viewMode === "preview" ? "reading" : "live preview"} · ${content.split(/\s+/).filter(Boolean).length} words`
+            : "OO-Test-Vault"}
         </span>
       </footer>
     </div>
@@ -452,7 +418,10 @@ function Tree({
   activePath: string;
   onOpen: (path: string) => void;
 }) {
-  const [open, setOpen] = useState(true);
+  const [open, setOpen] = useState(() => activePath === node.path || activePath.startsWith(`${node.path}/`));
+  useEffect(() => {
+    if (node.isDirectory && activePath.startsWith(`${node.path}/`)) setOpen(true);
+  }, [activePath, node.isDirectory, node.path]);
   if (!node.isDirectory) {
     return (
       <button type="button" className={`tree-file${node.path === activePath ? " is-on" : ""}`} onClick={() => onOpen(node.path)}>
@@ -466,7 +435,7 @@ function Tree({
         <span className={`chev${open ? " is-open" : ""}`} />
         {node.name}
       </button>
-      {open && node.children?.map((child) => <Tree key={child.path} node={child} activePath={activePath} onOpen={onOpen} />)}
+      {open && <div className="tree-kids">{node.children?.map((child) => <Tree key={child.path} node={child} activePath={activePath} onOpen={onOpen} />)}</div>}
     </div>
   );
 }

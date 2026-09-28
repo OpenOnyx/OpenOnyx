@@ -123,6 +123,7 @@ export function LeafPaneEditor({
   const [viewMode, setViewMode] = useState<ViewMode>("editor");
   const [fileExists, setFileExists] = useState<boolean>(true);
   const contentCacheRef = useRef<Map<string, string>>(new Map());
+  const hostRef = useRef<HTMLDivElement>(null);
   const activeTabPathRef = useRef(activeTab.path);
   useEffect(() => {
     activeTabPathRef.current = activeTab.path;
@@ -1205,6 +1206,35 @@ export function LeafPaneEditor({
     }
   }, [activeTab.path, getViewState, settings.defaultView]);
 
+  useEffect(() => {
+    if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
+
+    let animation: Animation | null = null;
+    const frame = window.requestAnimationFrame(() => {
+      const host = hostRef.current;
+      if (!host) return;
+      host.classList.add("is-content-transitioning");
+      animation = host.animate(
+        [
+          { opacity: 0, transform: "translate3d(0, 5px, 0)" },
+          { opacity: 1, transform: "translate3d(0, 0, 0)" },
+        ],
+        {
+          duration: 170,
+          easing: "cubic-bezier(0.16, 1, 0.3, 1)",
+          fill: "both",
+        },
+      );
+      animation.addEventListener("finish", () => host.classList.remove("is-content-transitioning"), { once: true });
+    });
+
+    return () => {
+      window.cancelAnimationFrame(frame);
+      animation?.cancel();
+      hostRef.current?.classList.remove("is-content-transitioning");
+    };
+  }, [activeTab.path, viewMode]);
+
   const handleViewModeChange = (mode: ViewMode) => {
     setViewMode(mode);
     if (activeTab.path && activeTab.path !== "__new_tab__") {
@@ -1332,6 +1362,7 @@ export function LeafPaneEditor({
 
   return (
     <div
+      ref={hostRef}
       className="leaf-editor-host relative flex h-full min-h-0 min-w-0 flex-col overflow-hidden"
       onMouseDownCapture={() => {
         if (!isFocused && onFocusLeaf) {

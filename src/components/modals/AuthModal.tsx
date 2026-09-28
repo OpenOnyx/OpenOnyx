@@ -44,8 +44,8 @@ export function AuthModal({ onClose, onSuccess, message, initialMode = 'login' }
   }, [mode, email, password, onClose, onSuccess]);
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[9999]" onClick={onClose}>
-      <div className="bg-(--bg-primary) border border-(--border-strong) rounded-lg w-full max-w-[400px] overflow-hidden" onClick={e => e.stopPropagation()}>
+    <div className="motion-dialog-backdrop fixed inset-0 bg-black/50 flex items-center justify-center z-[9999]" onClick={onClose}>
+      <div className="motion-dialog bg-(--bg-primary) border border-(--border-strong) rounded-lg w-full max-w-[400px] overflow-hidden" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between px-5 py-4 border-b border-(--border-subtle) bg-(--bg-secondary)">
           <h3 className="text-[13px] font-semibold m-0 text-(--text-primary)">{mode === 'login' ? 'Sign In' : 'Create Account'}</h3>
           <button className="bg-transparent border-none text-(--text-muted) cursor-pointer p-1 rounded flex transition-colors duration-150 hover:bg-(--bg-hover) hover:text-(--text-primary)" onClick={onClose}>

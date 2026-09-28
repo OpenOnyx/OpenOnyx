@@ -249,9 +249,9 @@ const editorAnnotationGenerateClass =
 const editorContainerClass =
   "editor-container relative flex min-h-0 flex-1 flex-row overflow-hidden";
 const editorLightboxBackdropClass =
-  "fixed inset-0 z-[9999] flex items-center justify-center bg-[color-mix(in_srgb,var(--bg-primary)_45%,transparent)] backdrop-blur-[3px]";
+  "motion-dialog-backdrop fixed inset-0 z-[9999] flex items-center justify-center bg-[color-mix(in_srgb,var(--bg-primary)_45%,transparent)] backdrop-blur-[3px]";
 const editorLightboxModalClass =
-  "relative flex max-h-[min(88vh,900px)] max-w-[min(92vw,1200px)] items-center justify-center rounded-[var(--radius-lg)] border border-[var(--border-medium)] bg-[var(--bg-elevated)] p-[var(--space-3)] shadow-none";
+  "motion-dialog relative flex max-h-[min(88vh,900px)] max-w-[min(92vw,1200px)] items-center justify-center rounded-[var(--radius-lg)] border border-[var(--border-medium)] bg-[var(--bg-elevated)] p-[var(--space-3)] shadow-none";
 const editorLightboxCloseClass =
   "absolute right-2 top-2 h-7 w-7 cursor-pointer rounded-full border border-[var(--border-medium)] bg-[var(--bg-secondary)] text-xl leading-none text-[var(--text-secondary)] hover:border-[var(--accent-primary)] hover:text-[var(--text-primary)]";
 const editorLightboxImageClass =
@@ -298,6 +298,7 @@ interface EditorProps {
   getViewState?: (path: string) => { scroll?: number; cursor?: number } | undefined;
   onViewStateChange?: (path: string, state: { scroll?: number; cursor?: number }) => void;
   readOnly?: boolean;
+  disableInlineAI?: boolean;
   onGenerateInsight?: () => void;
   isGeneratingInsight?: boolean;
   isFocused?: boolean;
@@ -3822,6 +3823,7 @@ export function Editor({
   getViewState,
   onViewStateChange,
   readOnly = false,
+  disableInlineAI = false,
   onGenerateInsight,
   isGeneratingInsight = false,
   isFocused = false,
@@ -7314,7 +7316,7 @@ export function Editor({
 
   return (
     <>
-      {pendingInlineEdit && createPortal(
+      {!disableInlineAI && pendingInlineEdit && createPortal(
         <div className={inlineAiDecisionFooterClass}>
           <button className={inlineAiDecisionButtonClass} onClick={discardPendingInlineEdit}>
             Deny
@@ -7326,7 +7328,7 @@ export function Editor({
         containerRef.current || document.body
       )}
 
-      {selectionRange && !pendingInlineEdit && !isInlineQuerying && !explanation && !pendingComment && createPortal(
+      {!disableInlineAI && selectionRange && !pendingInlineEdit && !isInlineQuerying && !explanation && !pendingComment && createPortal(
         <div
           className={inlineAiToolbarClass}
           style={{
@@ -7405,7 +7407,7 @@ export function Editor({
         document.body
       )}
 
-      {isInlineQuerying && selectionRange && !explanation && createPortal(
+      {!disableInlineAI && isInlineQuerying && selectionRange && !explanation && createPortal(
         <div
           className={inlineAiLoadingClass}
           style={{
@@ -7420,7 +7422,7 @@ export function Editor({
         document.body
       )}
 
-      {explanation && explanationCoords && createPortal(
+      {!disableInlineAI && explanation && explanationCoords && createPortal(
         <div
           className={inlineAiExplanationClass}
           style={{

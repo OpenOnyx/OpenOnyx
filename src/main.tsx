@@ -30,6 +30,7 @@ import "@fontsource/jetbrains-mono/400.css";
 import "@fontsource/jetbrains-mono/500.css";
 import "katex/dist/katex.min.css";
 import "./tailwind.css";
+import "./styles/motion.css";
 
 document.documentElement.className = `${document.documentElement.className} ${documentTailwindClasses} ${themeClasses}`.trim();
 installGlobalTooltips();

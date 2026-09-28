@@ -2,7 +2,7 @@
 
 export const PRODUCT = {
   name: "OpenOnyx",
-  version: "1.0.4",
+  version: "1.0.5",
   license: "Apache-2.0",
   tagline: "A local-first knowledge workspace with built-in AI, an open desktop, and files you keep.",
   oneLiner:
@@ -11,7 +11,7 @@ export const PRODUCT = {
     "OpenOnyx is a local-first knowledge workspace with built-in Spaces, an AI graph, and an Apache-2.0 desktop. Your notes stay as Markdown. No account required.",
   repo: "https://github.com/OpenOnyx/OpenOnyx",
   releases: "https://github.com/OpenOnyx/OpenOnyx/releases",
-  latestRelease: "https://github.com/OpenOnyx/OpenOnyx/releases/tag/v1.0.4",
+  latestRelease: "https://github.com/OpenOnyx/OpenOnyx/releases/tag/v1.0.5",
   issues: "https://github.com/OpenOnyx/OpenOnyx/issues",
   stack: [
     "Electron 41",

@@ -41,7 +41,7 @@ function highlightText(value: string, query: string): React.ReactNode {
     part.toLowerCase() === trimmed.toLowerCase() ? (
       <mark
         key={`${part}-${index}`}
-        className="rounded-sm bg-[rgba(234,196,74,0.45)] px-0.5 text-[var(--text-primary)]"
+        className="motion-search-highlight rounded-sm bg-[rgba(234,196,74,0.45)] px-0.5 text-[var(--text-primary)]"
       >
         {part}
       </mark>
@@ -262,7 +262,7 @@ export function SearchModal({
         <span>{mode === "search" ? "File name (A to Z)" : "Quick switch"}</span>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-4">
+      <div className="motion-search-results min-h-0 flex-1 overflow-y-auto px-3 pb-4">
         {mode === "search" ? (
           groupedSearchResults.length > 0 ? (
             groupedSearchResults.map((result) => (

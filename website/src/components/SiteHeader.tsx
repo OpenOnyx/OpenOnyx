@@ -1,125 +1,97 @@
 import { useEffect, useState } from "react";
-import { NavLink, useLocation } from "react-router-dom";
+import { Link, NavLink, useLocation } from "react-router-dom";
 import { PRODUCT } from "../data/facts";
-import { paletteHotkeyLabel } from "../lib/hotkey";
 import { useTheme } from "../theme";
 
-function formatCount(n: number) {
-  return n.toLocaleString("en-US");
+function GitHubIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path fill="currentColor" d="M12 .7a11.3 11.3 0 0 0-3.6 22c.6.1.8-.2.8-.6v-2c-3.3.7-4-1.4-4-1.4-.5-1.3-1.2-1.6-1.2-1.6-1-.7.1-.7.1-.7 1.1.1 1.7 1.2 1.7 1.2 1 .1.6 2.5 3.4 1.8.1-.7.4-1.2.7-1.5-2.6-.3-5.4-1.3-5.4-5.8 0-1.3.5-2.3 1.2-3.2-.1-.3-.5-1.5.1-3.1 0 0 1-.3 3.3 1.2a11.5 11.5 0 0 1 6 0c2.3-1.5 3.3-1.2 3.3-1.2.6 1.6.2 2.8.1 3.1.7.9 1.2 1.9 1.2 3.2 0 4.5-2.7 5.5-5.4 5.8.4.4.8 1.1.8 2.2v3.3c0 .4.2.7.8.6A11.3 11.3 0 0 0 12 .7Z" />
+    </svg>
+  );
+}
+
+function SunIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <circle cx="12" cy="12" r="4" fill="currentColor" />
+      <path fill="currentColor" d="M12 2.5a1 1 0 0 1 1 1v1.1a1 1 0 1 1-2 0V3.5a1 1 0 0 1 1-1Zm0 16.9a1 1 0 0 1 1 1v1.1a1 1 0 1 1-2 0v-1.1a1 1 0 0 1 1-1ZM4.6 4.6a1 1 0 0 1 1.4 0l.8.8a1 1 0 0 1-1.4 1.4L4.6 6a1 1 0 0 1 0-1.4Zm12.6 12.6a1 1 0 0 1 1.4 0l.8.8a1 1 0 0 1-1.4 1.4l-.8-.8a1 1 0 0 1 0-1.4ZM2.5 12a1 1 0 0 1 1-1h1.1a1 1 0 1 1 0 2H3.5a1 1 0 0 1-1-1Zm16.9 0a1 1 0 0 1 1-1h1.1a1 1 0 1 1 0 2h-1.1a1 1 0 0 1-1-1ZM6.8 17.2a1 1 0 0 1 0 1.4l-.8.8A1 1 0 0 1 4.6 18l.8-.8a1 1 0 0 1 1.4 0ZM19.4 4.6a1 1 0 0 1 0 1.4l-.8.8a1 1 0 1 1-1.4-1.4l.8-.8a1 1 0 0 1 1.4 0Z" />
+    </svg>
+  );
+}
+
+function MoonIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path fill="currentColor" d="M20.2 14.5A8.2 8.2 0 0 1 9.5 3.8a.8.8 0 0 0-.8-1.1 9.8 9.8 0 1 0 12.6 12.6.8.8 0 0 0-1.1-.8Z" />
+    </svg>
+  );
+}
+
+function formatStars(count: number) {
+  if (count >= 1000) return `${(count / 1000).toFixed(count >= 10000 ? 0 : 1)}k`;
+  return String(count);
 }
 
 export function SiteHeader() {
-  const [stars, setStars] = useState<number | null>(91);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [scrolled, setScrolled] = useState(false);
+  const [stars, setStars] = useState("—");
+  const { docsTheme, setDocsTheme } = useTheme();
   const location = useLocation();
-  const { theme, toggle } = useTheme();
+  const isDocs = location.pathname.startsWith("/docs");
 
-  useEffect(() => {
-    setMenuOpen(false);
-  }, [location.pathname]);
-
-  useEffect(() => {
-    let cancelled = false;
-    fetch("https://api.github.com/repos/OpenOnyx/OpenOnyx")
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data) => {
-        if (!cancelled && typeof data?.stargazers_count === "number") {
-          setStars(data.stargazers_count);
-        }
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
+  useEffect(() => setMenuOpen(false), [location.pathname]);
   useEffect(() => {
     document.body.style.overflow = menuOpen ? "hidden" : "";
-    const onResize = () => {
-      if (window.innerWidth > 760) setMenuOpen(false);
-    };
-    window.addEventListener("resize", onResize);
-    return () => {
-      document.body.style.overflow = "";
-      window.removeEventListener("resize", onResize);
-    };
+    return () => { document.body.style.overflow = ""; };
   }, [menuOpen]);
+  useEffect(() => {
+    const updateScrolled = () => setScrolled(window.scrollY > 8);
+    updateScrolled();
+    window.addEventListener("scroll", updateScrolled, { passive: true });
+    return () => window.removeEventListener("scroll", updateScrolled);
+  }, []);
+  useEffect(() => {
+    const cached = sessionStorage.getItem("openonyx-github-stars");
+    if (cached) setStars(cached);
+    const controller = new AbortController();
+    fetch("https://api.github.com/repos/OpenOnyx/OpenOnyx", {
+      headers: { Accept: "application/vnd.github+json" },
+      signal: controller.signal,
+    })
+      .then((response) => response.ok ? response.json() : null)
+      .then((data: { stargazers_count?: number } | null) => {
+        if (typeof data?.stargazers_count !== "number") return;
+        const nextStars = formatStars(data.stargazers_count);
+        setStars(nextStars);
+        sessionStorage.setItem("openonyx-github-stars", nextStars);
+      })
+      .catch(() => {
+        /* Keep the repository metadata fallback. */
+      });
+    return () => controller.abort();
+  }, []);
 
   return (
-    <header className={`header${menuOpen ? " is-open" : ""}`}>
+    <header className={`header${isDocs ? " is-docs" : ""}${menuOpen ? " is-open" : ""}${scrolled ? " is-scrolled" : ""}`}>
       <div className="header-bar">
-        <div className="header-left">
-          <NavLink to="/" className="brand" end onClick={() => setMenuOpen(false)}>
-            <img src="/logos/logo-dark.png" alt="" width={26} height={26} />
-            <span>openonyx</span>
-          </NavLink>
-          <nav className="nav-links" aria-label="Primary">
-            <NavLink to="/" end>
-              product
-            </NavLink>
-            <NavLink to="/docs">docs</NavLink>
-            <NavLink to="/download">download</NavLink>
-          </nav>
-        </div>
+        <Link to="/" className="brand" aria-label="OpenOnyx home"><img className="brand-logo" src="/logos/logo-dark.png" alt="" /><span>OpenOnyx</span></Link>
+        <nav className="nav-links" aria-label="Primary navigation">
+          <a href="/#why">Product</a>
+          {!isDocs && <a href="/#intelligence">Intelligence</a>}
+          <NavLink to="/docs">Docs</NavLink>
+          <a className="github-stars-link" href={PRODUCT.repo} target="_blank" rel="noreferrer" aria-label={stars === "—" ? "GitHub repository" : `GitHub repository, ${stars} stars`}><GitHubIcon /><span>{stars}</span></a>
+        </nav>
         <div className="header-meta">
-          <button
-            type="button"
-            className="theme-toggle"
-            onClick={toggle}
-            aria-label={theme === "light" ? "Switch to dark" : "Switch to light"}
-            title={theme === "light" ? "Dark mode" : "Light mode"}
-          >
-            {theme === "light" ? (
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" aria-hidden>
-                <circle cx="12" cy="12" r="4" />
-                <path d="M12 3v2M12 19v2M5.2 5.2l1.4 1.4M17.4 17.4l1.4 1.4M3 12h2M19 12h2M5.2 18.8l1.4-1.4M17.4 6.6l1.4-1.4" />
-              </svg>
-            ) : (
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                <path d="M21 14.3A8.4 8.4 0 1 1 9.7 3 6.6 6.6 0 0 0 21 14.3z" />
-              </svg>
-            )}
-          </button>
-          <button
-            type="button"
-            className="meta-chip meta-chip-palette"
-            onClick={() => window.dispatchEvent(new Event("openonyx:palette"))}
-            aria-label={`Open command palette (${paletteHotkeyLabel()})`}
-          >
-            {paletteHotkeyLabel()}
-          </button>
-          <a className="meta-chip meta-chip-version" href={PRODUCT.latestRelease} target="_blank" rel="noreferrer">
-            v{PRODUCT.version}
-          </a>
-          <a className="meta-chip meta-chip-github" href={`${PRODUCT.repo}/stargazers`} target="_blank" rel="noreferrer">
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden>
-              <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8" />
-            </svg>
-            <span>{stars !== null ? formatCount(stars) : "github"}</span>
-          </a>
-          <button
-            type="button"
-            className="nav-toggle"
-            aria-expanded={menuOpen}
-            aria-controls="mobile-nav"
-            onClick={() => setMenuOpen((open) => !open)}
-          >
-            <span className="sr-only">{menuOpen ? "Close menu" : "Open menu"}</span>
-            <span />
-            <span />
-          </button>
+          {isDocs && (
+            <button type="button" className="docs-theme-toggle" aria-label={`Switch to ${docsTheme === "dark" ? "light" : "dark"} theme`} aria-pressed={docsTheme === "dark"} onClick={() => setDocsTheme(docsTheme === "dark" ? "light" : "dark")}><span><SunIcon /><MoonIcon /></span></button>
+          )}
+          <Link className="header-cta" to="/download">Download</Link>
+          <button type="button" className="nav-toggle" aria-expanded={menuOpen} aria-controls="mobile-nav" onClick={() => setMenuOpen((open) => !open)}><span className="sr-only">{menuOpen ? "Close menu" : "Open menu"}</span><i /><i /></button>
         </div>
       </div>
-      <nav id="mobile-nav" className="mobile-nav" hidden={!menuOpen} aria-label="Mobile">
-        <NavLink to="/" end>
-          product
-        </NavLink>
-        <NavLink to="/docs">docs</NavLink>
-        <NavLink to="/download">download</NavLink>
-        <a href={`${PRODUCT.repo}/stargazers`} target="_blank" rel="noreferrer">
-          GitHub
-        </a>
-      </nav>
+      <nav id="mobile-nav" className="mobile-nav" hidden={!menuOpen} aria-label="Mobile navigation"><a href="/#why">Product</a>{!isDocs && <a href="/#intelligence">Intelligence</a>}<NavLink to="/docs">Docs</NavLink><a href={PRODUCT.repo} target="_blank" rel="noreferrer">GitHub · {stars} stars</a><Link to="/download">Download</Link></nav>
     </header>
   );
 }

@@ -25,11 +25,11 @@ export function BookmarkModal({ path, initialTitle, groups, onClose }: BookmarkM
 
   return (
     <div
-      className="fixed inset-0 z-[5000] flex items-center justify-center bg-black/55 p-4"
+      className="motion-dialog-backdrop fixed inset-0 z-[5000] flex items-center justify-center bg-black/55 p-4"
       onMouseDown={() => onClose(null)}
     >
       <div
-        className="w-full max-w-[544px] rounded-lg border border-[var(--border-medium)] bg-[var(--bg-elevated)] p-3 text-[var(--text-primary)] shadow-2xl"
+        className="motion-dialog w-full max-w-[544px] rounded-lg border border-[var(--border-medium)] bg-[var(--bg-elevated)] p-3 text-[var(--text-primary)] shadow-2xl"
         role="dialog"
         aria-modal="true"
         aria-labelledby="bookmark-modal-title"
