@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   isInsideRoot,
   isSafeVaultProtocolPath,
+  isWindowsDrivePath,
   resolveInsideRoot,
   sanitizeAttachmentFileName,
 } from "../electron/pathSafety";
@@ -30,6 +31,14 @@ describe("path safety", () => {
   it("blocks vault:// paths that walk out of the vault", () => {
     expect(isSafeVaultProtocolPath(root, "attachments/a.png")).toBe(true);
     expect(isSafeVaultProtocolPath(root, "../../etc/passwd")).toBe(false);
+    expect(isSafeVaultProtocolPath(root, "C:note.md")).toBe(true);
+  });
+
+  it("identifies Windows drive paths only when followed by a slash or backslash", () => {
+    expect(isWindowsDrivePath("C:/Windows")).toBe(true);
+    expect(isWindowsDrivePath("D:\\folder\\file.txt")).toBe(true);
+    expect(isWindowsDrivePath("C:note.md")).toBe(false);
+    expect(isWindowsDrivePath("regular-file.txt")).toBe(false);
   });
 
   it("keeps attachment names inside the attachments folder", () => {

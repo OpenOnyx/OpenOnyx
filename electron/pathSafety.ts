@@ -4,7 +4,7 @@ import * as path from "path";
 /** Helper to detect Windows drive-letter paths (e.g. C:/ or D:\) across platforms */
 export function isWindowsDrivePath(p: string): boolean {
   if (!p || typeof p !== "string") return false;
-  return /^[a-zA-Z]:[/\\]?/.test(p);
+  return /^[a-zA-Z]:[/\\]/.test(p);
 }
 
 /** Helper to check if a path is absolute across Windows and POSIX */

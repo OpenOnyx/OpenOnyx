@@ -98,7 +98,13 @@ export class FileSystemManager {
       }
 
       try {
-        const stats = await fs.promises.stat(absolutePath);
+        const stats = await fs.promises.lstat(absolutePath);
+        if (stats.isSymbolicLink()) {
+          const realTarget = getRealPath(absolutePath);
+          if (!this.vaultPath || !isInsideRoot(this.vaultPath, realTarget)) {
+            continue;
+          }
+        }
         result.push({
           name: entry.name,
           path: relativePath,
@@ -121,12 +127,20 @@ export class FileSystemManager {
   }
 
   /** Get full file tree recursively */
-  async getFileTree(dirPath: string = ''): Promise<FileEntry[]> {
+  async getFileTree(dirPath: string = '', visitedRealDirs: Set<string> = new Set()): Promise<FileEntry[]> {
+    if (!this.vaultPath) return [];
+    const absoluteDir = this.resolvePath(dirPath);
+    const realDir = getRealPath(absoluteDir);
+    if (visitedRealDirs.has(realDir)) {
+      return [];
+    }
+    visitedRealDirs.add(realDir);
+
     const entries = await this.listFiles(dirPath);
 
     for (const entry of entries) {
       if (entry.isDirectory) {
-        entry.children = await this.getFileTree(entry.path);
+        entry.children = await this.getFileTree(entry.path, visitedRealDirs);
       }
     }
 
@@ -435,11 +449,15 @@ export class FileSystemManager {
   }
 
   /** Get all .md files in the vault recursively */
-  async getAllMarkdownFiles(dirPath: string = ''): Promise<string[]> {
+  async getAllMarkdownFiles(dirPath: string = '', visitedRealDirs: Set<string> = new Set()): Promise<string[]> {
     if (!this.vaultPath) return [];
 
     const absoluteDir = this.resolvePath(dirPath);
     if (!fs.existsSync(absoluteDir)) return [];
+
+    const realDir = getRealPath(absoluteDir);
+    if (!isInsideRoot(this.vaultPath, realDir) || visitedRealDirs.has(realDir)) return [];
+    visitedRealDirs.add(realDir);
 
     const entries = await fs.promises.readdir(absoluteDir, { withFileTypes: true });
     const files: string[] = [];
@@ -448,12 +466,18 @@ export class FileSystemManager {
       if (entry.name.startsWith('.') || entry.name === 'node_modules') continue;
 
       const relativePath = (dirPath ? path.join(dirPath, entry.name) : entry.name).replace(/\\/g, '/');
+      const absolutePath = path.join(absoluteDir, entry.name);
+
+      if (!isInsideRoot(this.vaultPath, absolutePath)) continue;
 
       if (entry.isDirectory()) {
-        const subFiles = await this.getAllMarkdownFiles(relativePath);
+        const subFiles = await this.getAllMarkdownFiles(relativePath, visitedRealDirs);
         files.push(...subFiles);
       } else if (entry.name.endsWith('.md')) {
-        files.push(relativePath);
+        const realTarget = getRealPath(absolutePath);
+        if (isInsideRoot(this.vaultPath, realTarget)) {
+          files.push(relativePath);
+        }
       }
     }
 
@@ -507,13 +531,8 @@ export class FileSystemManager {
     // Remove data URL prefix if present
     const base64Content = base64Data.replace(/^data:image\/\w+;base64,/, '');
     
-    // Write the image file
-    const imagePath = resolveInsideRoot(this.vaultPath, path.join('attachments', uniqueName));
-    const realParent = getRealPath(path.dirname(imagePath));
-    if (!isInsideRoot(this.vaultPath, realParent)) {
-      throw new Error('Path traversal detected');
-    }
-    fs.writeFileSync(imagePath, Buffer.from(base64Content, 'base64'));
+    // Write the image file safely via writeBinary
+    await this.writeBinary(path.join('attachments', uniqueName), Buffer.from(base64Content, 'base64'));
     
     // Return relative path for markdown
     return `attachments/${uniqueName}`;
@@ -648,11 +667,11 @@ export class FileSystemManager {
     const ext = path.extname(safeName);
 
     // Check if a file with this hash already exists
-    const mappingPath = path.join(this.ensureDataDir(), 'attachment-map.json');
     let mapping: Record<string, string> = {};
     try {
-      if (fs.existsSync(mappingPath)) {
-        mapping = JSON.parse(fs.readFileSync(mappingPath, 'utf-8'));
+      const mappingRaw = await this.readDataFile('attachment-map.json');
+      if (mappingRaw) {
+        mapping = JSON.parse(mappingRaw);
       }
     } catch { /* fresh map */ }
 
@@ -663,16 +682,11 @@ export class FileSystemManager {
 
     // New file — store with hash name
     const hashName = `${hash}${ext}`;
-    const imagePath = resolveInsideRoot(this.vaultPath, path.join('attachments', hashName));
-    const realParent = getRealPath(path.dirname(imagePath));
-    if (!isInsideRoot(this.vaultPath, realParent)) {
-      throw new Error('Path traversal detected');
-    }
-    fs.writeFileSync(imagePath, buffer);
+    await this.writeBinary(path.join('attachments', hashName), buffer);
 
     // Update mapping
     mapping[hash] = `attachments/${hashName}`;
-    fs.writeFileSync(mappingPath, JSON.stringify(mapping, null, 2));
+    await this.writeDataFile('attachment-map.json', JSON.stringify(mapping, null, 2));
 
     return { relativePath: `attachments/${hashName}`, isDuplicate: false };
   }

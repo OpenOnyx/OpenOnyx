@@ -152,10 +152,14 @@ export function registerIpcHandlers(
     closeVaultWatchers();
     if (!vaultPath) return;
 
+    const visitedRealDirs = new Set<string>();
+
     const walk = (absoluteDir: string) => {
       if (!isInsideRoot(vaultPath, absoluteDir)) return;
       const realDir = getRealPath(absoluteDir);
-      if (!isInsideRoot(vaultPath, realDir)) return;
+      if (!isInsideRoot(vaultPath, realDir) || visitedRealDirs.has(realDir)) return;
+      visitedRealDirs.add(realDir);
+
       watchDirectory(absoluteDir);
       let entries: nodeFs.Dirent[] = [];
       try {
@@ -168,7 +172,7 @@ export function registerIpcHandlers(
         const entryPath = nodePath.join(absoluteDir, entry.name);
         if (!isInsideRoot(vaultPath, entryPath)) continue;
         try {
-          const stats = nodeFs.statSync(entryPath);
+          const stats = nodeFs.lstatSync(entryPath);
           if (stats.isDirectory()) {
             walk(entryPath);
           }

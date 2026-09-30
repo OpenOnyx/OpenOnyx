@@ -4,14 +4,14 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const electronMocks = vi.hoisted(() => ({
-  openExternal: vi.fn(async () => {}),
+  openExternal: vi.fn(async () => { }),
   openPath: vi.fn(async () => ""),
   showItemInFolder: vi.fn(),
 }));
 
 vi.mock("electron", () => ({
   app: { getPath: vi.fn() },
-  BrowserWindow: class {},
+  BrowserWindow: class { },
   clipboard: { readText: vi.fn(), writeText: vi.fn() },
   dialog: { showOpenDialog: vi.fn(), showSaveDialog: vi.fn() },
   shell: {
@@ -254,6 +254,44 @@ describe("vault security vulnerabilities unit suite", () => {
       const files = await fsManager.listFiles();
       const names = files.map((f) => f.name);
       expect(names).not.toContain("stolen-folder");
+    });
+
+    it("blocks saveImage from overwriting symlinked files pointing outside vault", async () => {
+      const { vaultDir, fsManager } = makeVault();
+      const outsideFile = path.join(os.tmpdir(), `oo-sym-target-${Date.now()}.png`);
+      fs.writeFileSync(outsideFile, "original critical data");
+      tmpDirs.push(outsideFile);
+
+      const attachmentsDir = path.join(vaultDir, "attachments");
+      fs.mkdirSync(attachmentsDir, { recursive: true });
+
+      const symlinkFile = path.join(attachmentsDir, "fake.png");
+      try {
+        fs.symlinkSync(outsideFile, symlinkFile);
+      } catch {
+        return;
+      }
+
+      const sampleBase64 = "data:image/png;base64,aGVsbG8=";
+      await expect(fsManager.saveImage("fake.png", sampleBase64)).rejects.toThrow("Path traversal detected");
+      expect(fs.readFileSync(outsideFile, "utf-8")).toBe("original critical data");
+    });
+
+    it("prevents infinite loops in getFileTree when directory symlinks form a cycle", async () => {
+      const { vaultDir, fsManager } = makeVault();
+      const subDir = path.join(vaultDir, "sub");
+      fs.mkdirSync(subDir, { recursive: true });
+
+      const cycleLink = path.join(subDir, "loop");
+      try {
+        fs.symlinkSync(vaultDir, cycleLink, "dir");
+      } catch {
+        return;
+      }
+
+      const tree = await fsManager.getFileTree();
+      expect(tree).toBeDefined();
+      expect(Array.isArray(tree)).toBe(true);
     });
   });
 });
