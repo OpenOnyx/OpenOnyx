@@ -31,7 +31,8 @@
     "test:pandoc-backend": "node scripts/test-pandoc-backend.cjs",
     "test:plugin-bundles": "node scripts/fetch-plugin-fixtures.cjs && vitest run tests/real-plugin-bundles.test.ts",
     "test:plugin-compat": "node scripts/test-obsidian-api-compat.cjs && vitest run tests/plugin-runtime.test.ts && node scripts/test-pandoc-backend.cjs && node scripts/fetch-plugin-fixtures.cjs && vitest run tests/real-plugin-bundles.test.ts",
-    "test:all-checks": "node scripts/run-all-checks.cjs"
+    "test:all-checks": "node scripts/run-all-checks.cjs",
+    "mcp:github": "node scripts/mcp-github-server.mjs"
   },
   "keywords": [
     "notes",

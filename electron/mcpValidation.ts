@@ -90,6 +90,7 @@ export function validateMcpServerConfig(input: unknown): McpValidationResult<Mcp
   if (typeof input.enabled !== "boolean") issue(issues, "server.enabled", "must be a boolean");
   if (typeof input.trusted !== "boolean") issue(issues, "server.trusted", "must be a boolean");
   validateStrings(input.enabledTools, "server.enabledTools", issues, true);
+  validateStrings(input.favoriteTools, "server.favoriteTools", issues, true);
   validateTransport(input.transport, "server.transport", issues);
   for (const field of ["createdAt", "updatedAt"] as const) {
     if (typeof input[field] !== "number" || !Number.isSafeInteger(input[field]) || input[field] < 0) issue(issues, `server.${field}`, "must be a non-negative integer");

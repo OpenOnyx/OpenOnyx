@@ -6,7 +6,7 @@
  */
 
 import { contextBridge, ipcRenderer } from 'electron';
-import type { McpServerConfig, McpServerSnapshot } from './mcpTypes.js';
+import type { McpEnabledTool, McpServerConfig, McpServerSnapshot, McpToolActivity } from './mcpTypes.js';
 
 /** Type-safe API exposed to the renderer */
 const electronAPI = {
@@ -195,14 +195,21 @@ const electronAPI = {
   // ── User-configured MCP servers ───────────────────
   mcp: {
     list: (): Promise<McpServerSnapshot[]> => ipcRenderer.invoke('mcp:list'),
+    listEnabledTools: (): Promise<McpEnabledTool[]> => ipcRenderer.invoke('mcp:listEnabledTools'),
+    listActivity: (): Promise<McpToolActivity[]> => ipcRenderer.invoke('mcp:listActivity'),
+    clearActivity: (): Promise<void> => ipcRenderer.invoke('mcp:clearActivity'),
     save: (config: McpServerConfig): Promise<McpServerSnapshot> => ipcRenderer.invoke('mcp:save', config),
     remove: (id: string): Promise<void> => ipcRenderer.invoke('mcp:remove', id),
     setEnabled: (id: string, enabled: boolean): Promise<McpServerSnapshot> =>
       ipcRenderer.invoke('mcp:setEnabled', id, enabled),
     connect: (id: string): Promise<McpServerSnapshot> => ipcRenderer.invoke('mcp:connect', id),
+    reconnect: (id: string): Promise<McpServerSnapshot> => ipcRenderer.invoke('mcp:reconnect', id),
+    revokeTrust: (id: string): Promise<McpServerSnapshot> => ipcRenderer.invoke('mcp:revokeTrust', id),
     disconnect: (id: string): Promise<void> => ipcRenderer.invoke('mcp:disconnect', id),
-    callTool: (id: string, name: string, args: Record<string, unknown>): Promise<unknown> =>
-      ipcRenderer.invoke('mcp:callTool', id, name, args),
+    requestToolExecution: (id: string, name: string, args: Record<string, unknown>): Promise<unknown> =>
+      ipcRenderer.invoke('mcp:requestToolExecution', id, name, args),
+    runTool: (id: string, name: string, args: Record<string, unknown>): Promise<unknown> =>
+      ipcRenderer.invoke('mcp:runTool', id, name, args),
   },
 
   // ── Thought Model ─────────────────────────────────

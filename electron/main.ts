@@ -18,6 +18,7 @@ import { approveVaultPath } from './vaultAccess.js';
 import { McpConfigurationStore } from './mcpConfigStore.js';
 import { McpConnectionManager } from './mcpManager.js';
 import { registerMcpIpcHandlers } from './mcpIpc.js';
+import { McpActivityStore } from './mcpActivityStore.js';
 
 // Register vault:// protocol as privileged before app is ready
 protocol.registerSchemesAsPrivileged([
@@ -675,13 +676,14 @@ app.whenReady().then(async () => {
 
   fsManager = new FileSystemManager();
   searchEngine = new SearchEngine();
-  mcpManager = new McpConnectionManager(new McpConfigurationStore(app.getPath('userData')));
+  const userDataPath = app.getPath('userData');
+  mcpManager = new McpConnectionManager(new McpConfigurationStore(userDataPath));
   try {
     await mcpManager.load();
   } catch (error) {
     console.error('[MCP] Failed to load configuration:', error);
   }
-  registerMcpIpcHandlers(ipcMain, mcpManager);
+  registerMcpIpcHandlers(ipcMain, mcpManager, new McpActivityStore(userDataPath));
   restoreLastVault(fsManager);
 
   // Register all IPC handlers for renderer communication

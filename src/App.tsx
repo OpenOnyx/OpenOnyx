@@ -47,6 +47,7 @@ const CanvasView = React.lazy(() => import("./components/canvas/CanvasView").the
 const SearchModal = React.lazy(() => import("./components/modals/SearchModal").then((m) => ({ default: m.SearchModal })));
 const BookmarkModal = React.lazy(() => import("./components/modals/BookmarkModal").then((m) => ({ default: m.BookmarkModal })));
 const CommandPalette = React.lazy(() => import("./components/modals/CommandPalette").then((m) => ({ default: m.CommandPalette })));
+const AppCapabilityPicker = React.lazy(() => import("./components/apps/AppCapabilityPicker").then((m) => ({ default: m.AppCapabilityPicker })));
 const VaultManager = React.lazy(() => import("./components/settings/VaultManager").then((m) => ({ default: m.VaultManager })));
 const SettingsPage = React.lazy(() => import("./components/settings/SettingsPage").then((m) => ({ default: m.SettingsPage })));
 const TemplateModal = React.lazy(() => import("./components/modals/TemplateModal").then((m) => ({ default: m.TemplateModal })));
@@ -431,6 +432,7 @@ export default function App() {
   const [searchInitialQuery, setSearchInitialQuery] = useState("");
   const [searchInitialMode, setSearchInitialMode] = useState<"search" | "switcher">("switcher");
   const [showCommandPalette, setShowCommandPalette] = useState(false);
+  const [showAppCapabilityPicker, setShowAppCapabilityPicker] = useState(false);
   const [rightSidebarTab, setRightSidebarTab] = useState<RightSidebarTabType>("outline");
   const [activeUsers, setActiveUsers] = useState<any[]>([]);
   const [showTags, setShowTags] = useState(false);
@@ -4301,6 +4303,16 @@ export default function App() {
     setShowUnlinkedMentions,
   });
 
+  const commandsWithApps = useMemo(() => [
+    ...commands,
+    {
+      id: "use-app",
+      label: "Use app...",
+      category: "Apps",
+      action: () => setShowAppCapabilityPicker(true),
+    },
+  ], [commands]);
+
   // Get active tab info
   const focusedLeaf = useMemo(() => {
     return findLeafById(paneTree, focusedLeafId);
@@ -5619,7 +5631,7 @@ export default function App() {
         <React.Suspense fallback={null}>
           <CommandPalette
             commands={[
-              ...commands,
+              ...commandsWithApps,
               ...pluginCommands.map(pc => ({
                 id: pc.id,
                 label: pc.name,
@@ -5643,6 +5655,12 @@ export default function App() {
         </React.Suspense>
       )}
 
+
+      {showAppCapabilityPicker && (
+        <React.Suspense fallback={null}>
+          <AppCapabilityPicker onClose={() => setShowAppCapabilityPicker(false)} />
+        </React.Suspense>
+      )}
       {showSettings && (
         <React.Suspense fallback={null}>
           <SettingsPage
@@ -5654,7 +5672,7 @@ export default function App() {
             }}
             initialSection={settingsSection as any}
             commands={[
-              ...commands,
+              ...commandsWithApps,
               ...pluginCommands.map(pc => ({
                 id: pc.id,
                 label: pc.name,

@@ -1,6 +1,6 @@
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
-import type { McpConfiguration } from "./mcpTypes.js";
+import type { McpConfiguration, McpServerConfig } from "./mcpTypes.js";
 import { validateMcpConfiguration } from "./mcpValidation.js";
 
 export const MCP_CONFIGURATION_FILE = "mcp-servers.json";
@@ -41,7 +41,7 @@ export class McpConfigurationStore {
       throw new Error(`Invalid JSON in ${this.configurationPath}`);
     }
 
-    const result = validateMcpConfiguration(parsed);
+    const result = validateMcpConfiguration(migrateConfiguration(parsed));
     if (!result.success) throw new McpConfigurationValidationError(result.issues);
     return result.value;
   }
@@ -60,4 +60,35 @@ export class McpConfigurationStore {
   }
 
   private saveQueue: Promise<void> = Promise.resolve();
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function migrateConfiguration(input: unknown): unknown {
+  if (!isRecord(input) || !isRecord(input.servers)) return input;
+  const servers: Record<string, McpServerConfig> = {};
+  for (const [serverId, rawServer] of Object.entries(input.servers)) {
+    if (!isRecord(rawServer)) {
+      servers[serverId] = rawServer as McpServerConfig;
+      continue;
+    }
+    const now = Date.now();
+    servers[serverId] = {
+      ...rawServer,
+      id: typeof rawServer.id === "string" ? rawServer.id : serverId,
+      enabled: typeof rawServer.enabled === "boolean" ? rawServer.enabled : false,
+      trusted: typeof rawServer.trusted === "boolean" ? rawServer.trusted : false,
+      enabledTools: Array.isArray(rawServer.enabledTools)
+        ? rawServer.enabledTools.filter((value): value is string => typeof value === "string")
+        : [],
+      favoriteTools: Array.isArray(rawServer.favoriteTools)
+        ? rawServer.favoriteTools.filter((value): value is string => typeof value === "string")
+        : [],
+      createdAt: typeof rawServer.createdAt === "number" ? rawServer.createdAt : now,
+      updatedAt: typeof rawServer.updatedAt === "number" ? rawServer.updatedAt : now,
+    } as McpServerConfig;
+  }
+  return { ...input, servers };
 }

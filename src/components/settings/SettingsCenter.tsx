@@ -56,7 +56,7 @@ const STUDIOS = [
   { id: "editor" as const, label: "Editor", desc: "Typography, [[Wikilinks]] & line width" },
   { id: "appearance" as const, label: "Appearance", desc: "Themes, font scale & zoom" },
   { id: "ai" as const, label: "AI", desc: "Providers, models & note indexer" },
-  { id: "mcp" as const, label: "MCP Servers", desc: "User-configured tools & connections" },
+  { id: "mcp" as const, label: "Apps", desc: "External apps, capabilities & advanced MCP" },
   { id: "sync" as const, label: "Sync", desc: "Cloud database & storage connection" },
   { id: "extensions" as const, label: "Extensions", desc: "Community plugins & core suite" },
   { id: "system" as const, label: "System", desc: "Updates, accounts & factory reset" },
@@ -136,7 +136,7 @@ export function SettingsCenter({
       setActiveTab("editor");
     } else if (q.includes("theme") || q.includes("color") || q.includes("dark") || q.includes("light") || q.includes("zoom") || q.includes("ribbon") || q.includes("wallpaper") || q.includes("background")) {
       setActiveTab("appearance");
-    } else if (q.includes("mcp") || q.includes("model context") || q.includes("server")) {
+    } else if (q.includes("app") || q.includes("apps") || q.includes("connection") || q.includes("tool") || q.includes("mcp") || q.includes("model context") || q.includes("server")) {
       setActiveTab("mcp");
     } else if (q.includes("ai") || q.includes("model") || q.includes("openai") || q.includes("openrouter") || q.includes("claude") || q.includes("key")) {
       setActiveTab("ai");

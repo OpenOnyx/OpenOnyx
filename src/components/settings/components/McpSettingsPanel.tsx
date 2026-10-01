@@ -1,143 +1,318 @@
-import React, { useEffect, useState } from "react";
-import type { McpServerConfig, McpServerSnapshot, McpTransport } from "../../../types/mcp";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import type { McpServerConfig, McpServerSnapshot, McpTool } from "../../../types/mcp";
 import { getAPI } from "../../../utils/api";
+import { getInitialFormValues, buildMcpFormModel } from "../../../utils/mcpSchema";
+import { createAppServerTemplate, type DiscoverableApp } from "../../../utils/appRegistry";
+import {
+  AdvancedMcpPage,
+  AppDetails,
+  AppsHome,
+  AppSetupPage,
+} from "./connections/ConnectionsPages";
+import type { ConnectionsActions, ConnectionsData, ToolRunState } from "./connections/types";
+import { isToolEnabled, toolKey } from "./connections/ui";
 
-const emptyConfig = (): McpServerConfig => ({
-  id: "",
-  name: "",
-  enabled: false,
-  trusted: false,
-  enabledTools: [],
-  transport: { transport: "stdio", command: "", args: [], env: {} },
-  createdAt: Date.now(),
-  updatedAt: Date.now(),
-});
+type AppsView =
+  | { kind: "home" }
+  | { kind: "setup"; appId: DiscoverableApp["id"] }
+  | { kind: "details"; serverId: string }
+  | { kind: "advanced"; serverId?: string | null };
+
+function normalizeConfig(config: McpServerConfig): McpServerConfig {
+  return {
+    ...config,
+    id: config.id.trim().toLowerCase(),
+    name: config.name.trim(),
+    enabledTools: config.enabledTools ?? [],
+    favoriteTools: config.favoriteTools ?? [],
+    updatedAt: Date.now(),
+  };
+}
+
+function getRunState(tool: McpTool): ToolRunState {
+  const model = buildMcpFormModel(tool.inputSchema);
+  return {
+    input: "{}",
+    formValues: model.supported ? getInitialFormValues(model.fields) : {},
+  };
+}
 
 export function McpSettingsPanel() {
+  const [view, setView] = useState<AppsView>({ kind: "home" });
   const [servers, setServers] = useState<McpServerSnapshot[]>([]);
-  const [draft, setDraft] = useState<McpServerConfig>(emptyConfig);
-  const [argsText, setArgsText] = useState("");
-  const [error, setError] = useState<string | null>(null);
+  const [activity, setActivity] = useState<ConnectionsData["activity"]>([]);
+  const [toolRuns, setToolRuns] = useState<Record<string, ToolRunState>>({});
+  const [selectedToolKey, setSelectedToolKey] = useState<string | null>(null);
+  const [advancedTemplate, setAdvancedTemplate] = useState<McpServerConfig | null>(null);
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const refresh = async () => setServers(await getAPI().mcp.list());
-  useEffect(() => { void refresh(); }, []);
+  const refresh = useCallback(async () => {
+    const api = getAPI().mcp;
+    const [nextServers, nextActivity] = await Promise.all([
+      api.list(),
+      typeof api.listActivity === "function" ? api.listActivity() : Promise.resolve([]),
+    ]);
+    setServers(nextServers);
+    setActivity(nextActivity);
+  }, []);
 
-  const selectTransport = (transport: McpTransport) => {
-    setDraft((current) => ({
-      ...current,
-      transport: transport === "stdio"
-        ? { transport, command: "", args: [], env: {} }
-        : { transport, url: "", headers: {} },
-    }));
-  };
-
-  const save = async () => {
-    setBusy(true);
-    setError(null);
-    try {
-      const config = {
-        ...draft,
-        id: draft.id.trim().toLowerCase(),
-        name: draft.name.trim(),
-        updatedAt: Date.now(),
-        transport: draft.transport.transport === "stdio"
-          ? { ...draft.transport, command: draft.transport.command.trim(), args: argsText.split("\n").map((arg) => arg.trim()).filter(Boolean) }
-          : { ...draft.transport, url: draft.transport.url.trim() },
-      } as McpServerConfig;
-      await getAPI().mcp.save(config);
-      await refresh();
-      setDraft(emptyConfig());
-      setArgsText("");
-    } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : "Could not save MCP server");
-    } finally { setBusy(false); }
-  };
-
-  const connect = async (server: McpServerSnapshot) => {
-    setBusy(true);
-    setError(null);
-    try {
-      await getAPI().mcp.setEnabled(server.config.id, true);
-      await refresh();
-    } catch (connectError) {
-      setError(connectError instanceof Error ? connectError.message : "Could not connect to MCP server");
-      await refresh();
-    } finally { setBusy(false); }
-  };
-
-  const remove = async (id: string) => {
-    if (!window.confirm("Remove this MCP server configuration?")) return;
-    await getAPI().mcp.remove(id);
-    await refresh();
-  };
-
-  const toggleTool = async (server: McpServerSnapshot, toolName: string, enabled: boolean) => {
-    await getAPI().mcp.save({
-      ...server.config,
-      enabledTools: enabled
-        ? [...server.config.enabledTools, toolName]
-        : server.config.enabledTools.filter((name) => name !== toolName),
-      updatedAt: Date.now(),
+  useEffect(() => {
+    void refresh().catch((refreshError) => {
+      setError(refreshError instanceof Error ? refreshError.message : "Could not load apps");
     });
-    await refresh();
+  }, [refresh]);
+
+  const tools = useMemo(() => servers.flatMap((server) => (
+    server.tools.map((tool) => ({ server, tool }))
+  )), [servers]);
+
+  const data: ConnectionsData = useMemo(() => ({
+    servers,
+    tools,
+    activity,
+    toolRuns,
+    busy,
+    error,
+  }), [activity, busy, error, servers, toolRuns, tools]);
+
+  const runAction = useCallback(async (action: () => Promise<void>, fallback: string) => {
+    setBusy(true);
+    setError(null);
+    try {
+      await action();
+    } catch (actionError) {
+      setError(actionError instanceof Error ? actionError.message : fallback);
+    } finally {
+      setBusy(false);
+    }
+  }, []);
+
+  const updateToolRun = useCallback((key: string, update: Partial<ToolRunState>) => {
+    setToolRuns((current) => {
+      const toolRef = tools.find(({ server, tool }) => toolKey(server, tool.name) === key);
+      const existing = current[key] ?? (toolRef ? getRunState(toolRef.tool) : { input: "{}", formValues: {} });
+      return { ...current, [key]: { ...existing, ...update } };
+    });
+  }, [tools]);
+
+  const openTool = useCallback((key: string | null) => {
+    setSelectedToolKey(key);
+    if (!key) return;
+    const toolRef = tools.find(({ server, tool }) => toolKey(server, tool.name) === key);
+    if (toolRef) {
+      setView({ kind: "details", serverId: toolRef.server.config.id });
+      setToolRuns((current) => current[key] ? current : { ...current, [key]: getRunState(toolRef.tool) });
+    }
+  }, [tools]);
+
+  const actions: ConnectionsActions = useMemo(() => ({
+    refresh,
+    connect: async (server) => {
+      await runAction(async () => {
+        await getAPI().mcp.setEnabled(server.config.id, true);
+        await refresh();
+      }, "Could not enable app");
+    },
+    reconnect: async (server) => {
+      await runAction(async () => {
+        if (server.runtime.status === "connected") {
+          await getAPI().mcp.reconnect(server.config.id);
+        } else if (server.config.enabled && server.config.trusted) {
+          await getAPI().mcp.connect(server.config.id);
+        } else {
+          await getAPI().mcp.setEnabled(server.config.id, true);
+        }
+        await refresh();
+      }, "Could not reconnect app");
+    },
+    remove: async (id) => {
+      if (!window.confirm("Disconnect this app?")) return;
+      await runAction(async () => {
+        await getAPI().mcp.remove(id);
+        setView((current) => current.kind === "details" && current.serverId === id ? { kind: "home" } : current);
+        setSelectedToolKey((current) => current?.startsWith(`${id}:`) ? null : current);
+        await refresh();
+      }, "Could not disconnect app");
+    },
+    revokeTrust: async (id) => {
+      await runAction(async () => {
+        const api = getAPI().mcp;
+        if (typeof api.revokeTrust === "function") {
+          await api.revokeTrust(id);
+        } else {
+          const server = servers.find((item) => item.config.id === id);
+          if (!server) throw new Error(`Unknown app: ${id}`);
+          await api.save({ ...server.config, enabled: false, trusted: false, updatedAt: Date.now() });
+        }
+        await refresh();
+      }, "Could not revoke trust");
+    },
+    saveServer: async (config) => {
+      await runAction(async () => {
+        await getAPI().mcp.save(normalizeConfig(config));
+        await refresh();
+      }, "Could not save app configuration");
+    },
+    toggleTool: async (server, toolName, enabled) => {
+      await runAction(async () => {
+        const enabledTools = enabled
+          ? [...new Set([...server.config.enabledTools, toolName])]
+          : server.config.enabledTools.filter((name) => name !== toolName);
+        const favoriteTools = enabled
+          ? server.config.favoriteTools ?? []
+          : (server.config.favoriteTools ?? []).filter((name) => name !== toolName);
+        await getAPI().mcp.save({ ...server.config, enabledTools, favoriteTools, updatedAt: Date.now() });
+        await refresh();
+      }, "Could not update capability permission");
+    },
+    toggleFavorite: async (server, toolName, favorite) => {
+      if (!isToolEnabled(server, toolName)) return;
+      await runAction(async () => {
+        const favoriteTools = favorite
+          ? [...new Set([...(server.config.favoriteTools ?? []), toolName])]
+          : (server.config.favoriteTools ?? []).filter((name) => name !== toolName);
+        await getAPI().mcp.save({ ...server.config, favoriteTools, updatedAt: Date.now() });
+        await refresh();
+      }, "Could not update favorite capability");
+    },
+    runTool: async (server, tool, args) => {
+      const key = toolKey(server, tool.name);
+      updateToolRun(key, { running: true, error: undefined, result: undefined });
+      try {
+        const mcpApi = getAPI().mcp;
+        const runner = mcpApi.requestToolExecution ?? mcpApi.runTool;
+        if (typeof runner !== "function") {
+          throw new Error("Restart OpenOnyx to load the updated app runner");
+        }
+        const result = await runner(server.config.id, tool.name, args);
+        updateToolRun(key, { running: false, result });
+      } catch (runError) {
+        updateToolRun(key, {
+          running: false,
+          error: runError instanceof Error ? runError.message : "Could not run capability",
+        });
+      } finally {
+        await refresh();
+      }
+    },
+    clearActivity: async () => {
+      await runAction(async () => {
+        await getAPI().mcp.clearActivity();
+        await refresh();
+      }, "Could not clear activity");
+    },
+  }), [refresh, runAction, servers, updateToolRun]);
+
+  const installApp = useCallback(async (appId: DiscoverableApp["id"], options?: { filesystemRoot?: string }) => {
+    if (appId === "custom") {
+      setAdvancedTemplate(createAppServerTemplate(appId));
+      setView({ kind: "advanced", serverId: null });
+      return;
+    }
+    await runAction(async () => {
+      const config = normalizeConfig(createAppServerTemplate(appId, options));
+      await getAPI().mcp.save(config);
+      await getAPI().mcp.setEnabled(config.id, true);
+      await refresh();
+      setView({ kind: "details", serverId: config.id });
+    }, `Could not connect ${appId}`);
+  }, [refresh, runAction]);
+
+  const openHome = () => {
+    setView({ kind: "home" });
+    setSelectedToolKey(null);
   };
 
-  const stdioTransport = draft.transport.transport === "stdio" ? draft.transport : null;
-  const httpTransport = draft.transport.transport !== "stdio" ? draft.transport : null;
+  const openSetup = (appId: DiscoverableApp["id"]) => {
+    setSelectedToolKey(null);
+    if (appId === "custom") {
+      setAdvancedTemplate(createAppServerTemplate(appId));
+      setView({ kind: "advanced", serverId: null });
+      return;
+    }
+    setView({ kind: "setup", appId });
+  };
+
+  const openAdvanced = (serverId?: string | null) => {
+    setSelectedToolKey(null);
+    if (!serverId) setAdvancedTemplate(createAppServerTemplate("custom"));
+    setView({ kind: "advanced", serverId: serverId ?? null });
+  };
+
+  const selectedApp = view.kind === "details"
+    ? servers.find((server) => server.config.id === view.serverId) ?? null
+    : null;
 
   return (
-    <div className="flex flex-col gap-6">
-      <div className="border-b border-[var(--border-subtle)] pb-4">
-        <h2 className="text-base font-bold text-[var(--text-primary)]">MCP Servers</h2>
-        <p className="mt-1 text-[11px] text-[var(--text-muted)]">Add trusted Model Context Protocol servers and choose which tools OpenOnyx may use.</p>
-      </div>
-
-      <div className="rounded-xl border border-amber-500/30 bg-amber-500/[0.08] p-4 text-[11px] text-[var(--text-secondary)]">
-        MCP servers are third-party programs or network services. Review the command or URL before connecting. Secrets are not supported in this first form and should never be pasted into ordinary configuration fields.
-      </div>
-
-      <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-secondary)] p-5">
-        <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">Add Server</h3>
-        <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
-          <input value={draft.id} onChange={(event) => setDraft({ ...draft, id: event.target.value })} placeholder="server-id" className="h-9 rounded-md border border-[var(--border-subtle)] bg-[var(--bg-primary)] px-3 text-xs text-[var(--text-primary)]" />
-          <input value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} placeholder="Display name" className="h-9 rounded-md border border-[var(--border-subtle)] bg-[var(--bg-primary)] px-3 text-xs text-[var(--text-primary)]" />
-          <select value={draft.transport.transport} onChange={(event) => selectTransport(event.target.value as McpTransport)} className="h-9 rounded-md border border-[var(--border-subtle)] bg-[var(--bg-primary)] px-3 text-xs text-[var(--text-primary)]">
-            <option value="stdio">Local command (stdio)</option>
-            <option value="streamable-http">Streamable HTTP</option>
-            <option value="sse">SSE</option>
-          </select>
-          {draft.transport.transport === "stdio" ? (
-            <>
-              <input value={stdioTransport?.command || ""} onChange={(event) => setDraft({ ...draft, transport: { transport: "stdio", command: event.target.value, args: stdioTransport?.args || [], env: stdioTransport?.env || {} } })} placeholder="Command, e.g. npx" className="h-9 rounded-md border border-[var(--border-subtle)] bg-[var(--bg-primary)] px-3 text-xs text-[var(--text-primary)]" />
-              <textarea value={argsText} onChange={(event) => setArgsText(event.target.value)} placeholder="One argument per line" className="min-h-20 rounded-md border border-[var(--border-subtle)] bg-[var(--bg-primary)] p-3 text-xs text-[var(--text-primary)] md:col-span-2" />
-            </>
-          ) : (
-            <input value={httpTransport?.url || ""} onChange={(event) => setDraft({ ...draft, transport: { transport: httpTransport?.transport || "streamable-http", url: event.target.value, headers: httpTransport?.headers || {} } })} placeholder="https://example.com/mcp" className="h-9 rounded-md border border-[var(--border-subtle)] bg-[var(--bg-primary)] px-3 text-xs text-[var(--text-primary)] md:col-span-2" />
-          )}
+    <div className="mx-auto flex max-w-5xl flex-col gap-5 px-2 py-1">
+      {error && (
+        <div role="alert" className="rounded-md border border-red-500/30 bg-red-500/[0.08] px-3 py-2 text-xs text-red-500">
+          {error}
         </div>
-        {error && <p className="mt-3 text-xs text-red-500">{error}</p>}
-        <button type="button" disabled={busy} onClick={() => void save()} className="mt-4 h-8 rounded-md bg-[var(--text-primary)] px-4 text-xs font-bold text-[var(--bg-primary)] disabled:opacity-50">Save Server</button>
-      </div>
+      )}
 
-      <div className="flex flex-col gap-3">
-        {servers.length === 0 ? <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-secondary)] p-6 text-center text-xs text-[var(--text-muted)]">No MCP servers configured.</div> : servers.map((server) => (
-          <div key={server.config.id} className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-secondary)] p-4">
-            <div className="flex items-start justify-between gap-3">
-              <div><h3 className="text-sm font-bold text-[var(--text-primary)]">{server.config.name}</h3><p className="mt-1 text-[11px] font-mono text-[var(--text-muted)]">{server.config.id} · {server.config.transport.transport}</p></div>
-              <span className="rounded bg-[var(--bg-tertiary)] px-2 py-1 text-[10px] font-bold uppercase text-[var(--text-muted)]">{server.runtime.status}</span>
-            </div>
-            <p className="mt-3 break-all text-[11px] text-[var(--text-secondary)]">{server.config.transport.transport === "stdio" ? `${server.config.transport.command} ${server.config.transport.args.join(" ")}` : server.config.transport.url}</p>
-            {server.runtime.lastError && <p className="mt-2 text-[11px] text-red-500">{server.runtime.lastError.message}</p>}
-            <div className="mt-4 flex flex-wrap gap-2 border-t border-[var(--border-subtle)] pt-3">
-              <button type="button" disabled={busy} onClick={() => void connect(server)} className="h-7 rounded border border-[var(--border-medium)] px-3 text-[11px] font-semibold text-[var(--text-primary)]">{server.runtime.status === "connected" ? "Reconnect" : "Connect"}</button>
-              <button type="button" onClick={() => void getAPI().mcp.setEnabled(server.config.id, false).then(refresh)} className="h-7 rounded border border-[var(--border-medium)] px-3 text-[11px] text-[var(--text-muted)]">Disable</button>
-              <button type="button" onClick={() => void remove(server.config.id)} className="h-7 rounded border border-red-500/30 px-3 text-[11px] text-red-500">Remove</button>
-            </div>
-            {server.tools.length > 0 && <div className="mt-4 border-t border-[var(--border-subtle)] pt-3"><h4 className="text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)]">Allowed tools</h4>{server.tools.map((tool) => <label key={tool.name} className="mt-2 flex items-center gap-2 text-xs text-[var(--text-secondary)]"><input type="checkbox" checked={server.config.enabledTools.includes(tool.name)} onChange={(event) => void toggleTool(server, tool.name, event.target.checked)} />{tool.name}</label>)}</div>}
-          </div>
-        ))}
-      </div>
+      {view.kind === "setup" ? (
+        <AppSetupPage
+          data={data}
+          actions={actions}
+          appId={view.appId}
+          onBack={openHome}
+          onOpenConnection={(id) => setView({ kind: "details", serverId: id })}
+          onOpenTool={openTool}
+          onAddConnection={() => openAdvanced(null)}
+          onViewApps={openHome}
+          onViewAdvanced={openAdvanced}
+          onConfigureApp={openSetup}
+          onInstallApp={installApp}
+          updateToolRun={updateToolRun}
+        />
+      ) : selectedApp ? (
+        <AppDetails
+          data={data}
+          actions={actions}
+          server={selectedApp}
+          selectedToolKey={selectedToolKey}
+          onBack={openHome}
+          onOpenConnection={(id) => setView({ kind: "details", serverId: id })}
+          onOpenTool={openTool}
+          onAddConnection={() => openAdvanced(null)}
+          onViewApps={openHome}
+          onViewAdvanced={openAdvanced}
+          onConfigureApp={openSetup}
+          onInstallApp={installApp}
+          updateToolRun={updateToolRun}
+        />
+      ) : view.kind === "advanced" ? (
+        <AdvancedMcpPage
+          data={data}
+          actions={actions}
+          advancedTemplate={advancedTemplate}
+          advancedServerId={view.serverId}
+          onAdvancedTemplateLoaded={() => setAdvancedTemplate(null)}
+          onOpenConnection={(id) => setView({ kind: "details", serverId: id })}
+          onOpenTool={openTool}
+          onAddConnection={() => openAdvanced(null)}
+          onViewApps={openHome}
+          onViewAdvanced={openAdvanced}
+          onConfigureApp={openSetup}
+          onInstallApp={installApp}
+          updateToolRun={updateToolRun}
+        />
+      ) : (
+        <AppsHome
+          data={data}
+          actions={actions}
+          onOpenConnection={(id) => setView({ kind: "details", serverId: id })}
+          onOpenTool={openTool}
+          onAddConnection={() => openAdvanced(null)}
+          onViewApps={openHome}
+          onViewAdvanced={openAdvanced}
+          onConfigureApp={openSetup}
+          onInstallApp={installApp}
+          updateToolRun={updateToolRun}
+        />
+      )}
     </div>
   );
 }

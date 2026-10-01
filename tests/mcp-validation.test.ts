@@ -10,6 +10,7 @@ const baseServer = {
   enabled: false,
   trusted: false,
   enabledTools: [],
+  favoriteTools: [],
   transport: {
     transport: "stdio" as const,
     command: "npx",

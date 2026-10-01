@@ -36,6 +36,7 @@ export interface McpServerConfig {
   enabled: boolean;
   trusted: boolean;
   enabledTools: string[];
+  favoriteTools: string[];
   transport: McpTransportConfig;
   createdAt: number;
   updatedAt: number;
@@ -65,6 +66,33 @@ export interface McpTool {
   name: string;
   description?: string;
   inputSchema: unknown;
+}
+
+export interface McpEnabledTool {
+  serverId: string;
+  serverName: string;
+  serverStatus: McpServerStatus;
+  name: string;
+  description?: string;
+  inputSchema: unknown;
+  enabled: boolean;
+  favorite: boolean;
+  requiresConfirmation: true;
+}
+
+export type McpActivityStatus = "allowed" | "denied" | "failed";
+
+export interface McpToolActivity {
+  id: string;
+  timestamp: number;
+  serverId: string;
+  serverName: string;
+  toolName: string;
+  toolTitle: string;
+  status: McpActivityStatus;
+  inputSummary?: string;
+  summary?: string;
+  error?: string;
 }
 
 export interface McpServerSnapshot {

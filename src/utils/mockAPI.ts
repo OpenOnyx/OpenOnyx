@@ -11,6 +11,7 @@ import type { ElectronAPI } from "../../electron/preload";
 // In-memory file system for browser mode
 const mockFiles: Record<string, string> = {};
 const mockMcpServers: Record<string, any> = {};
+let mockMcpActivity: any[] = [];
 let mockMcpHydrated = false;
 let mockVaultPath: string | null = "OO-Test-Vault";
 
@@ -243,12 +244,16 @@ export function createMockAPI(): ElectronAPI {
   if (!mockMcpHydrated && typeof localStorage !== "undefined") {
     try {
       Object.assign(mockMcpServers, JSON.parse(localStorage.getItem("openonyx-mcp-servers") || "{}"));
+      mockMcpActivity = JSON.parse(localStorage.getItem("openonyx-mcp-activity") || "[]");
     } catch { /* ignore corrupt browser-only mock data */ }
     mockMcpHydrated = true;
   }
 
   const persistMockMcp = () => {
     if (typeof localStorage !== "undefined") localStorage.setItem("openonyx-mcp-servers", JSON.stringify(mockMcpServers));
+  };
+  const persistMockMcpActivity = () => {
+    if (typeof localStorage !== "undefined") localStorage.setItem("openonyx-mcp-activity", JSON.stringify(mockMcpActivity));
   };
 
   const mockAPI: ElectronAPI = {
@@ -637,10 +642,30 @@ export function createMockAPI(): ElectronAPI {
 
     mcp: {
       list: async () => Object.values(mockMcpServers),
+      listEnabledTools: async () => Object.values(mockMcpServers).flatMap((server: any) => (
+        (server.tools || [])
+          .filter((tool: any) => server.config.enabledTools.includes(tool.name))
+          .map((tool: any) => ({
+            serverId: server.config.id,
+            serverName: server.config.name,
+            serverStatus: server.runtime.status,
+            name: tool.name,
+            description: tool.description,
+            inputSchema: tool.inputSchema,
+            enabled: true,
+            favorite: server.config.favoriteTools?.includes(tool.name) ?? false,
+            requiresConfirmation: true as const,
+          }))
+      )),
+      listActivity: async () => mockMcpActivity,
+      clearActivity: async () => {
+        mockMcpActivity = [];
+        persistMockMcpActivity();
+      },
       save: async (config) => {
         const existing = mockMcpServers[config.id];
         const snapshot = {
-          config,
+          config: { ...config, favoriteTools: config.favoriteTools || [] },
           runtime: existing?.runtime || { status: config.enabled ? "disconnected" : "disabled", diagnostics: [] },
           tools: existing?.tools || [],
         };
@@ -661,10 +686,51 @@ export function createMockAPI(): ElectronAPI {
         const existing = mockMcpServers[id];
         if (!existing) throw new Error(`Unknown MCP server: ${id}`);
         existing.runtime = { ...existing.runtime, status: "connected" };
+        if (!existing.tools.length) {
+          existing.tools = [{
+            name: "echo",
+            description: "Returns the supplied message for local MCP testing.",
+            inputSchema: {
+              type: "object",
+              properties: { message: { type: "string" } },
+              required: ["message"],
+            },
+          }];
+        }
         return existing;
       },
       disconnect: async () => {},
-      callTool: async () => ({ content: [] }),
+      reconnect: async (id: string) => mockAPI.mcp.connect(id),
+      revokeTrust: async (id: string) => {
+        const existing = mockMcpServers[id];
+        if (!existing) throw new Error(`Unknown MCP server: ${id}`);
+        existing.config = { ...existing.config, enabled: false, trusted: false };
+        existing.runtime = { ...existing.runtime, status: "disabled" };
+        persistMockMcp();
+        return existing;
+      },
+      requestToolExecution: async (id: string, name: string, args: Record<string, unknown>) => {
+        const existing = mockMcpServers[id];
+        if (!existing?.config.enabledTools.includes(name)) throw new Error(`MCP tool is not enabled: ${name}`);
+        const result = {
+          content: [{ type: "text", text: name === "echo" ? `Echo: ${String(args.message ?? "")}` : JSON.stringify(args) }],
+        };
+        mockMcpActivity = [{
+          id: `${Date.now()}-${id}-${name}`,
+          timestamp: Date.now(),
+          serverId: id,
+          serverName: existing.config.name,
+          toolName: name,
+          toolTitle: name.replace(/[_-]+/g, " ").replace(/^./, (first) => first.toUpperCase()),
+          status: "allowed",
+          inputSummary: Object.entries(args).map(([key, value]) => `${key}: ${String(value)}`).join("\n").slice(0, 300),
+          summary: result.content[0].text,
+        }, ...mockMcpActivity].slice(0, 100);
+        persistMockMcpActivity();
+        return result;
+      },
+      runTool: async (id: string, name: string, args: Record<string, unknown>) =>
+        mockAPI.mcp.requestToolExecution(id, name, args),
     },
 
     // Thought Model (mock implementation for browser)

@@ -39,6 +39,7 @@ describe("MCP configuration store", () => {
           enabled: false,
           trusted: false,
           enabledTools: [],
+          favoriteTools: [],
           transport: {
             transport: "stdio" as const,
             command: "node",
@@ -84,5 +85,35 @@ describe("MCP configuration store", () => {
     await fs.writeFile(getMcpConfigurationPath(userDataPath), "{not-json", "utf8");
 
     await expect(new McpConfigurationStore(userDataPath).load()).rejects.toThrow("Invalid JSON");
+  });
+
+  it("migrates persisted server configurations without silently granting permissions", async () => {
+    const userDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "openonyx-mcp-"));
+    temporaryDirectories.push(userDataPath);
+    await fs.writeFile(getMcpConfigurationPath(userDataPath), JSON.stringify({
+      servers: {
+        legacy: {
+          id: "legacy",
+          name: "Legacy server",
+          transport: {
+            transport: "stdio",
+            command: "node",
+            args: [],
+            env: {},
+          },
+        },
+      },
+    }), "utf8");
+
+    await expect(new McpConfigurationStore(userDataPath).load()).resolves.toMatchObject({
+      servers: {
+        legacy: {
+          enabled: false,
+          trusted: false,
+          enabledTools: [],
+          favoriteTools: [],
+        },
+      },
+    });
   });
 });
