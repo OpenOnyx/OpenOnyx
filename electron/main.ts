@@ -269,9 +269,20 @@ function configureChromiumRuntime(): void {
 // Chromium switches must be registered before app.whenReady().
 configureChromiumRuntime();
 
-function findFileInVault(dir: string, fileName: string, vaultPath?: string): string | null {
+export function findFileInVault(
+  dir: string,
+  fileName: string,
+  vaultPath?: string,
+  visitedRealDirs: Set<string> = new Set()
+): string | null {
   try {
     const root = vaultPath || dir;
+    const realDir = getRealPath(dir);
+    if (!isInsideRoot(root, realDir) || visitedRealDirs.has(realDir)) {
+      return null;
+    }
+    visitedRealDirs.add(realDir);
+
     const entries = fs.readdirSync(dir, { withFileTypes: true });
     for (const entry of entries) {
       if (entry.name.startsWith('.') || entry.name === 'node_modules') continue;
@@ -280,14 +291,23 @@ function findFileInVault(dir: string, fileName: string, vaultPath?: string): str
 
       let isDirectory = false;
       try {
-        const stats = fs.statSync(fullPath);
-        isDirectory = stats.isDirectory();
+        const stats = fs.lstatSync(fullPath);
+        if (stats.isSymbolicLink()) {
+          const realTarget = getRealPath(fullPath);
+          if (!isInsideRoot(root, realTarget)) {
+            continue;
+          }
+          const targetStats = fs.statSync(fullPath);
+          isDirectory = targetStats.isDirectory();
+        } else {
+          isDirectory = stats.isDirectory();
+        }
       } catch {
         continue;
       }
 
       if (isDirectory) {
-        const found = findFileInVault(fullPath, fileName, root);
+        const found = findFileInVault(fullPath, fileName, root, visitedRealDirs);
         if (found) return found;
       } else if (entry.name.toLowerCase() === fileName.toLowerCase()) {
         const realTarget = getRealPath(fullPath);

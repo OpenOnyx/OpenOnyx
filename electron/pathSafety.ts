@@ -78,27 +78,10 @@ export function isInsideRoot(root: string, candidate: string): boolean {
     }
   }
 
-  const resolvedRoot = path.resolve(root);
-  const resolvedCandidate = path.resolve(candidate);
-
-  // String prefix check
-  const normRoot = path.normalize(resolvedRoot);
-  const normCandidate = path.normalize(resolvedCandidate);
-
-  const isStringInside =
-    process.platform === "win32"
-      ? normCandidate.toLowerCase() === normRoot.toLowerCase() ||
-      normCandidate.toLowerCase().startsWith(normRoot.toLowerCase() + path.sep)
-      : normCandidate === normRoot || normCandidate.startsWith(normRoot + path.sep);
-
-  if (!isStringInside) {
-    return false;
-  }
-
   // Symlink check: resolve real physical paths
   try {
-    const realRoot = getRealPath(resolvedRoot);
-    const realCandidate = getRealPath(resolvedCandidate);
+    const realRoot = getRealPath(root);
+    const realCandidate = getRealPath(candidate);
 
     const normRealRoot = path.normalize(realRoot);
     const normRealCandidate = path.normalize(realCandidate);
@@ -108,13 +91,13 @@ export function isInsideRoot(root: string, candidate: string): boolean {
       const lowerCandidate = normRealCandidate.toLowerCase();
       return (
         lowerCandidate === lowerRoot ||
-        lowerCandidate.startsWith(lowerRoot + path.sep)
+        lowerCandidate.startsWith(lowerRoot.endsWith(path.sep) ? lowerRoot : lowerRoot + path.sep)
       );
     }
 
     return (
       normRealCandidate === normRealRoot ||
-      normRealCandidate.startsWith(normRealRoot + path.sep)
+      normRealCandidate.startsWith(normRealRoot.endsWith(path.sep) ? normRealRoot : normRealRoot + path.sep)
     );
   } catch {
     return false;

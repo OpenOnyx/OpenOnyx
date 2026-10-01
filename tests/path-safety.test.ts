@@ -21,6 +21,11 @@ describe("path safety", () => {
     expect(isInsideRoot(root, path.resolve(root, "..", "outside.md"))).toBe(false);
   });
 
+  it("handles normalized real paths and does not reject on superficial prefix differences", () => {
+    // Both point inside the vault root
+    expect(isInsideRoot(root, path.join(root, "sub", "..", "notes", "doc.md"))).toBe(true);
+  });
+
   it("throws on relative traversal", () => {
     expect(() => resolveInsideRoot(root, "../../etc/passwd")).toThrow("Path traversal detected");
     expect(resolveInsideRoot(root, "attachments/pic.png")).toBe(

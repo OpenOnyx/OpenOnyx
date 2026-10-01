@@ -10,10 +10,48 @@ const electronMocks = vi.hoisted(() => ({
 }));
 
 vi.mock("electron", () => ({
-  app: { getPath: vi.fn() },
-  BrowserWindow: class { },
+  app: {
+    getPath: vi.fn(() => os.tmpdir()),
+    requestSingleInstanceLock: vi.fn(() => true),
+    commandLine: { appendSwitch: vi.fn(), getSwitchValue: vi.fn(() => "") },
+    whenReady: vi.fn(() => new Promise(() => {})),
+    on: vi.fn(),
+    exit: vi.fn(),
+    isPackaged: false,
+  },
+  BrowserWindow: class {
+    once = vi.fn();
+    on = vi.fn();
+    show = vi.fn();
+    focus = vi.fn();
+    webContents = {
+      once: vi.fn(),
+      on: vi.fn(),
+      send: vi.fn(),
+      getURL: vi.fn(() => ""),
+      loadURL: vi.fn(),
+      loadFile: vi.fn(),
+    };
+  },
   clipboard: { readText: vi.fn(), writeText: vi.fn() },
   dialog: { showOpenDialog: vi.fn(), showSaveDialog: vi.fn() },
+  protocol: { registerSchemesAsPrivileged: vi.fn(), handle: vi.fn() },
+  session: {
+    defaultSession: {
+      getUserAgent: vi.fn(() => "mock-agent"),
+      setUserAgent: vi.fn(),
+      webRequest: {
+        onBeforeSendHeaders: vi.fn(),
+        onCompleted: vi.fn(),
+        onErrorOccurred: vi.fn(),
+        onHeadersReceived: vi.fn(),
+      },
+    },
+  },
+  Menu: { buildFromTemplate: vi.fn(), setApplicationMenu: vi.fn() },
+  globalShortcut: { unregisterAll: vi.fn() },
+  ipcMain: { handle: vi.fn(), on: vi.fn() },
+  net: { fetch: vi.fn() },
   shell: {
     openExternal: electronMocks.openExternal,
     openPath: electronMocks.openPath,
@@ -24,7 +62,8 @@ vi.mock("electron", () => ({
 
 import { FileSystemManager } from "../electron/fileSystem";
 import { registerIpcHandlers } from "../electron/ipc";
-import { isSafeVaultProtocolPath } from "../electron/pathSafety";
+import { findFileInVault } from "../electron/main";
+import { isInsideRoot, isSafeVaultProtocolPath } from "../electron/pathSafety";
 
 type Handler = (...args: any[]) => any;
 
@@ -277,6 +316,74 @@ describe("vault security vulnerabilities unit suite", () => {
       expect(fs.readFileSync(outsideFile, "utf-8")).toBe("original critical data");
     });
 
+    it("blocks writeFile, writeBinary, createFile, and writeDataFile from writing through dangling symlinks pointing outside the vault", async () => {
+      const { vaultDir, fsManager } = makeVault();
+      const outsideFile = path.join(os.tmpdir(), `oo-dangling-outside-${Date.now()}.txt`);
+      const outsideBinary = path.join(os.tmpdir(), `oo-dangling-bin-${Date.now()}.bin`);
+      const outsideCreated = path.join(os.tmpdir(), `oo-dangling-created-${Date.now()}.txt`);
+      const outsideData = path.join(os.tmpdir(), `oo-dangling-data-${Date.now()}.json`);
+      tmpDirs.push(outsideFile, outsideBinary, outsideCreated, outsideData);
+
+      const symlinkWrite = path.join(vaultDir, "dangling-write.txt");
+      const symlinkBin = path.join(vaultDir, "dangling-bin.bin");
+      const symlinkCreate = path.join(vaultDir, "dangling-create.txt");
+
+      const dataDir = path.join(vaultDir, ".openonyx");
+      fs.mkdirSync(dataDir, { recursive: true });
+      const symlinkData = path.join(dataDir, "dangling-data.json");
+
+      try {
+        fs.symlinkSync(outsideFile, symlinkWrite);
+        fs.symlinkSync(outsideBinary, symlinkBin);
+        fs.symlinkSync(outsideCreated, symlinkCreate);
+        fs.symlinkSync(outsideData, symlinkData);
+      } catch {
+        // Skip on environments without symlink privileges
+        return;
+      }
+
+      // Verify symlink is indeed dangling before test
+      expect(fs.existsSync(symlinkWrite)).toBe(false);
+      expect(fs.existsSync(symlinkBin)).toBe(false);
+      expect(fs.existsSync(symlinkCreate)).toBe(false);
+      expect(fs.existsSync(symlinkData)).toBe(false);
+
+      await expect(fsManager.writeFile("dangling-write.txt", "payload")).rejects.toThrow("Path traversal detected");
+      await expect(fsManager.writeBinary("dangling-bin.bin", new Uint8Array([1, 2, 3]))).rejects.toThrow("Path traversal detected");
+      await expect(fsManager.createFile("dangling-create.txt", "payload")).rejects.toThrow("Path traversal detected");
+      await expect(fsManager.writeDataFile("dangling-data.json", '{"key":"value"}')).rejects.toThrow("Path traversal detected");
+
+      // Verify the outside target was never created
+      expect(fs.existsSync(outsideFile)).toBe(false);
+      expect(fs.existsSync(outsideBinary)).toBe(false);
+      expect(fs.existsSync(outsideCreated)).toBe(false);
+      expect(fs.existsSync(outsideData)).toBe(false);
+    });
+
+    it("allows operations on symlinked vault root and handles macOS /var canonicalization", () => {
+      const realVaultDir = fs.mkdtempSync(path.join(os.tmpdir(), "oo-real-vault-"));
+      const symlinkVaultDir = path.join(os.tmpdir(), `oo-sym-vault-${Date.now()}`);
+      tmpDirs.push(realVaultDir, symlinkVaultDir);
+
+      try {
+        fs.symlinkSync(realVaultDir, symlinkVaultDir, "dir");
+      } catch {
+        return;
+      }
+
+      const fileInReal = path.join(realVaultDir, "note.md");
+      fs.writeFileSync(fileInReal, "# Real note");
+
+      // isInsideRoot should accept candidate inside real vault even when root is the symlink
+      expect(isInsideRoot(symlinkVaultDir, fileInReal)).toBe(true);
+      expect(isInsideRoot(realVaultDir, path.join(symlinkVaultDir, "note.md"))).toBe(true);
+
+      const fsManager = new FileSystemManager();
+      expect(fsManager.setVaultPath(symlinkVaultDir)).toBe(true);
+      // fsManager should resolve vault path to real path
+      expect(fsManager.getVaultPath()).toBe(fs.realpathSync(realVaultDir));
+    });
+
     it("prevents infinite loops in getFileTree when directory symlinks form a cycle", async () => {
       const { vaultDir, fsManager } = makeVault();
       const subDir = path.join(vaultDir, "sub");
@@ -292,6 +399,49 @@ describe("vault security vulnerabilities unit suite", () => {
       const tree = await fsManager.getFileTree();
       expect(tree).toBeDefined();
       expect(Array.isArray(tree)).toBe(true);
+    });
+
+    it("prevents infinite recursion in findFileInVault when directory symlinks form a cycle", () => {
+      const { vaultDir } = makeVault();
+      const subDir = path.join(vaultDir, "sub");
+      fs.mkdirSync(subDir, { recursive: true });
+
+      const cycleLink = path.join(subDir, "loop");
+      try {
+        fs.symlinkSync(vaultDir, cycleLink, "dir");
+      } catch {
+        return;
+      }
+
+      // Should return null without infinite recursion when searching for nonexistent file
+      const notFound = findFileInVault(vaultDir, "nonexistent-file.png", vaultDir);
+      expect(notFound).toBeNull();
+
+      // Should find existing file in nested directory despite cycle
+      const targetFile = path.join(subDir, "actual-image.png");
+      fs.writeFileSync(targetFile, "image content");
+
+      const found = findFileInVault(vaultDir, "actual-image.png", vaultDir);
+      expect(found).toBe(targetFile);
+    });
+
+    it("findFileInVault refuses to search directory symlinks pointing outside the vault", () => {
+      const { vaultDir } = makeVault();
+      const outsideDir = path.join(os.tmpdir(), `oo-outside-search-${Date.now()}`);
+      fs.mkdirSync(outsideDir, { recursive: true });
+      const outsideSecret = path.join(outsideDir, "secret-image.png");
+      fs.writeFileSync(outsideSecret, "secret");
+      tmpDirs.push(outsideDir);
+
+      const symlinkFolder = path.join(vaultDir, "outside-folder");
+      try {
+        fs.symlinkSync(outsideDir, symlinkFolder, "dir");
+      } catch {
+        return;
+      }
+
+      const found = findFileInVault(vaultDir, "secret-image.png", vaultDir);
+      expect(found).toBeNull();
     });
   });
 });
