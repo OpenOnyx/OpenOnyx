@@ -60,7 +60,28 @@ export function getRealPath(targetPath: string, visited: Set<string> = new Set()
   return resolved;
 }
 
-/** True when `candidate` is `root` or a file inside it. Performs symlink resolution. */
+/** Helper to check if candidate path is lexically inside root path (case-insensitive on Windows) */
+function isLexicallyInside(base: string, target: string): boolean {
+  if (!base || !target) return false;
+  const normBase = path.normalize(path.resolve(base));
+  const normTarget = path.normalize(path.resolve(target));
+
+  if (process.platform === "win32") {
+    const lowerBase = normBase.toLowerCase();
+    const lowerTarget = normTarget.toLowerCase();
+    return (
+      lowerTarget === lowerBase ||
+      lowerTarget.startsWith(lowerBase.endsWith(path.sep) ? lowerBase : lowerBase + path.sep)
+    );
+  }
+
+  return (
+    normTarget === normBase ||
+    normTarget.startsWith(normBase.endsWith(path.sep) ? normBase : normBase + path.sep)
+  );
+}
+
+/** True when `candidate` is `root` or a file inside it. Performs symlink and lexical resolution. */
 export function isInsideRoot(root: string, candidate: string): boolean {
   if (!root || !candidate) return false;
 
@@ -81,24 +102,21 @@ export function isInsideRoot(root: string, candidate: string): boolean {
   // Symlink check: resolve real physical paths
   try {
     const realRoot = getRealPath(root);
-    const realCandidate = getRealPath(candidate);
 
-    const normRealRoot = path.normalize(realRoot);
-    const normRealCandidate = path.normalize(realCandidate);
-
-    if (process.platform === "win32") {
-      const lowerRoot = normRealRoot.toLowerCase();
-      const lowerCandidate = normRealCandidate.toLowerCase();
-      return (
-        lowerCandidate === lowerRoot ||
-        lowerCandidate.startsWith(lowerRoot.endsWith(path.sep) ? lowerRoot : lowerRoot + path.sep)
-      );
+    // 1. Lexical containment check: Candidate must be lexically inside root/realRoot,
+    // or its enclosing directory's realpath must be inside realRoot (for symlinked root directories).
+    const isLexicalDirect = isLexicallyInside(root, candidate) || isLexicallyInside(realRoot, candidate);
+    if (!isLexicalDirect) {
+      const candidateDir = path.dirname(path.resolve(candidate));
+      const realCandidateDir = getRealPath(candidateDir);
+      if (!isLexicallyInside(realRoot, realCandidateDir) && !isLexicallyInside(root, realCandidateDir)) {
+        return false;
+      }
     }
 
-    return (
-      normRealCandidate === normRealRoot ||
-      normRealCandidate.startsWith(normRealRoot.endsWith(path.sep) ? normRealRoot : normRealRoot + path.sep)
-    );
+    // 2. Physical check: The target itself (resolving any symlinks) must be inside realRoot.
+    const realCandidate = getRealPath(candidate);
+    return isLexicallyInside(realRoot, realCandidate);
   } catch {
     return false;
   }

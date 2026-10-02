@@ -443,5 +443,37 @@ describe("vault security vulnerabilities unit suite", () => {
       const found = findFileInVault(vaultDir, "secret-image.png", vaultDir);
       expect(found).toBeNull();
     });
+
+    it("rejects paths that lexically escape the vault even when they symlink back into the vault", async () => {
+      const { vaultDir, fsManager } = makeVault();
+      const parentDir = path.dirname(vaultDir);
+      const targetNote = path.join(vaultDir, "note.md");
+      fs.writeFileSync(targetNote, "# In Vault");
+
+      const outsideLink = path.join(parentDir, `oo-outside-link-${Date.now()}.md`);
+      try {
+        fs.symlinkSync(targetNote, outsideLink);
+        tmpDirs.push(outsideLink);
+      } catch {
+        // Skip on platforms where symlink creation is restricted without privilege
+        return;
+      }
+
+      // Lexical check must reject outside link
+      expect(isInsideRoot(vaultDir, outsideLink)).toBe(false);
+
+      const relativeTraversal = `../${path.basename(outsideLink)}`;
+      await expect(fsManager.readFile(relativeTraversal)).rejects.toThrow("Path traversal detected");
+      await expect(fsManager.writeFile(relativeTraversal, "hacked")).rejects.toThrow("Path traversal detected");
+      await expect(fsManager.deleteFile(relativeTraversal)).rejects.toThrow("Path traversal detected");
+
+      // Verify the outside symlink was never modified or unlinked
+      expect(fs.existsSync(outsideLink)).toBe(true);
+
+      // IPC openPath must also reject
+      const handlers = createIpcHandlers(fsManager);
+      const openPathHandler = handlers.get("desktop:openPath")!;
+      await expect(openPathHandler({}, relativeTraversal)).rejects.toThrow("Path is outside the active vault");
+    });
   });
 });

@@ -28,6 +28,8 @@ describe("path safety", () => {
 
   it("throws on relative traversal", () => {
     expect(() => resolveInsideRoot(root, "../../etc/passwd")).toThrow("Path traversal detected");
+    expect(() => resolveInsideRoot(root, "../outside.md")).toThrow("Path traversal detected");
+    expect(() => resolveInsideRoot(root, "sub/../../link.md")).toThrow("Path traversal detected");
     expect(resolveInsideRoot(root, "attachments/pic.png")).toBe(
       path.join(root, "attachments", "pic.png"),
     );
