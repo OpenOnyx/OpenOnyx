@@ -16,9 +16,34 @@ import { registerIpcHandlers } from './ipc.js';
 import { isInsideRoot } from './pathSafety.js';
 import { approveVaultPath } from './vaultAccess.js';
 import { McpConfigurationStore } from './mcpConfigStore.js';
-import { McpConnectionManager } from './mcpManager.js';
+import { McpConnectionManager, type McpBundledServerLaunch } from './mcpManager.js';
 import { registerMcpIpcHandlers } from './mcpIpc.js';
 import { McpActivityStore } from './mcpActivityStore.js';
+
+
+function resolveBundledMcpServer(provider: string, args: string[]): McpBundledServerLaunch {
+  const scriptByProvider: Record<string, string> = {
+    github: 'mcp-github-server.mjs',
+    filesystem: 'mcp-dev-filesystem-server.mjs',
+    'local-test': 'mcp-dev-echo-server.mjs',
+  };
+  const script = scriptByProvider[provider];
+  if (!script) throw new Error(`Unknown bundled MCP provider: ${provider}`);
+  const candidates = [
+    path.join(process.resourcesPath || '', 'mcp', script),
+    path.join(app.getAppPath(), 'scripts', script),
+    path.join(process.cwd(), 'scripts', script),
+    path.join(__dirname, '..', 'scripts', script),
+  ];
+  const scriptPath = candidates.find((candidate) => candidate && fs.existsSync(candidate));
+  if (!scriptPath) throw new Error(`Bundled MCP provider is missing: ${script}`);
+  return {
+    command: process.execPath,
+    args: [scriptPath, ...args],
+    env: { ELECTRON_RUN_AS_NODE: '1' },
+    cwd: path.dirname(scriptPath),
+  };
+}
 
 // Register vault:// protocol as privileged before app is ready
 protocol.registerSchemesAsPrivileged([
@@ -677,7 +702,7 @@ app.whenReady().then(async () => {
   fsManager = new FileSystemManager();
   searchEngine = new SearchEngine();
   const userDataPath = app.getPath('userData');
-  mcpManager = new McpConnectionManager(new McpConfigurationStore(userDataPath));
+  mcpManager = new McpConnectionManager(new McpConfigurationStore(userDataPath), undefined, { resolveBundledServer: resolveBundledMcpServer });
   try {
     await mcpManager.load();
   } catch (error) {

@@ -255,7 +255,21 @@
     },
     "dmg": {
       "backgroundColor": "#121212"
-    }
+    },
+    "extraResources": [
+      {
+        "from": "scripts/mcp-github-server.mjs",
+        "to": "mcp/mcp-github-server.mjs"
+      },
+      {
+        "from": "scripts/mcp-dev-filesystem-server.mjs",
+        "to": "mcp/mcp-dev-filesystem-server.mjs"
+      },
+      {
+        "from": "scripts/mcp-dev-echo-server.mjs",
+        "to": "mcp/mcp-dev-echo-server.mjs"
+      }
+    ]
   },
   "type": "module"
 }

@@ -1,6 +1,8 @@
 import type { McpServerConfig, McpServerSnapshot, McpTool, McpToolActivity } from "../types/mcp";
 import { getToolTitle } from "./mcpSchema";
 
+export const BUNDLED_MCP_COMMAND = "__openonyx_bundled_mcp__";
+
 export type AppCategory = "popular" | "development" | "communication" | "productivity" | "files-data" | "developer" | "custom";
 export type AppAvailability = "available" | "installed" | "coming-soon";
 export type AppSetupType = "bundled" | "local" | "remote" | "custom";
@@ -399,8 +401,8 @@ export function createAppServerTemplate(appId: DiscoverableApp["id"], options: {
       ...base,
       transport: {
         transport: "stdio",
-        command: "node",
-        args: ["scripts/mcp-github-server.mjs"],
+        command: BUNDLED_MCP_COMMAND,
+        args: ["github"],
         env: {},
       },
     };
@@ -411,8 +413,8 @@ export function createAppServerTemplate(appId: DiscoverableApp["id"], options: {
       ...base,
       transport: {
         transport: "stdio",
-        command: "node",
-        args: ["scripts/mcp-dev-filesystem-server.mjs", "--root", options.filesystemRoot || "OO-Test-Vault"],
+        command: BUNDLED_MCP_COMMAND,
+        args: ["filesystem", "--root", options.filesystemRoot || "OO-Test-Vault"],
         env: {},
       },
     };

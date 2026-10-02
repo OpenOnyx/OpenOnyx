@@ -229,4 +229,30 @@ describe("MCP connection manager", () => {
     expect(client.close).toHaveBeenCalledOnce();
     expect(transport.close).toHaveBeenCalledOnce();
   });
+
+  it("connects legacy bundled GitHub configs through the bundled provider resolver", async () => {
+    const store = await createStore(serverConfig({
+      id: "github",
+      name: "GitHub",
+      enabled: true,
+      trusted: true,
+      transport: {
+        transport: "stdio",
+        command: "node",
+        args: ["scripts/mcp-github-server.mjs"],
+        env: {},
+      },
+    }));
+    const manager = new McpConnectionManager(store, undefined, {
+      operationTimeoutMs: 5_000,
+    });
+    await manager.load();
+
+    const snapshot = await manager.connect("github");
+
+    expect(snapshot.runtime.status).toBe("connected");
+    expect(snapshot.tools.map((tool) => tool.name)).toContain("search_repositories");
+    await manager.shutdown();
+  });
+
 });

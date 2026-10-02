@@ -17,9 +17,17 @@ import { McpConfigurationStore } from "./mcpConfigStore.js";
 type McpTransport = StdioClientTransport | StreamableHTTPClientTransport | SSEClientTransport;
 type McpClient = Pick<Client, "connect" | "listTools" | "callTool" | "close">;
 
+export interface McpBundledServerLaunch {
+  command: string;
+  args: string[];
+  env?: Record<string, string>;
+  cwd?: string;
+}
+
 export interface McpConnectionManagerOptions {
   createClient?: () => McpClient;
   createTransport?: (config: McpTransportConfig) => McpTransport | Promise<McpTransport>;
+  resolveBundledServer?: (provider: string, args: string[]) => McpBundledServerLaunch | Promise<McpBundledServerLaunch>;
   operationTimeoutMs?: number;
   shutdownTimeoutMs?: number;
 }
@@ -43,9 +51,17 @@ interface ConnectionAttempt {
   cancelled: boolean;
 }
 
+export const BUNDLED_MCP_COMMAND = "__openonyx_bundled_mcp__";
+
 const MAX_DIAGNOSTICS = 20;
 const DEFAULT_OPERATION_TIMEOUT_MS = 30_000;
 const DEFAULT_SHUTDOWN_TIMEOUT_MS = 5_000;
+const BUNDLED_SCRIPT_BY_PROVIDER: Record<string, string> = {
+  github: "mcp-github-server.mjs",
+  filesystem: "mcp-dev-filesystem-server.mjs",
+  "local-test": "mcp-dev-echo-server.mjs",
+};
+const PROVIDER_BY_BUNDLED_SCRIPT = new Map(Object.entries(BUNDLED_SCRIPT_BY_PROVIDER).map(([provider, script]) => [`scripts/${script}`, provider]));
 
 class McpConnectionCancelledError extends Error {
   constructor() {
@@ -381,15 +397,55 @@ export class McpConnectionManager {
 
   private async createTransport(config: McpTransportConfig): Promise<McpTransport> {
     if (config.transport === "stdio") {
+      const env = await resolveValues(config.env, this.secretResolver);
+      const bundled = this.getBundledServerRequest(config);
+      if (bundled) {
+        const launch = await this.resolveBundledServer(bundled.provider, bundled.args);
+        return new StdioClientTransport({
+          command: launch.command,
+          args: launch.args,
+          env: { ...env, ...(launch.env ?? {}) },
+          cwd: launch.cwd,
+          stderr: "pipe",
+        });
+      }
       return new StdioClientTransport({
         command: config.command,
         args: config.args,
-        env: await resolveValues(config.env, this.secretResolver),
+        env,
+        stderr: "pipe",
       });
     }
     const headers = await resolveValues(config.headers, this.secretResolver);
     if (config.transport === "sse") return new SSEClientTransport(new URL(config.url), { requestInit: { headers } });
     return new StreamableHTTPClientTransport(new URL(config.url), { requestInit: { headers } });
+  }
+
+  private getBundledServerRequest(config: Extract<McpTransportConfig, { transport: "stdio" }>): { provider: string; args: string[] } | null {
+    if (config.command === BUNDLED_MCP_COMMAND) {
+      const [provider, ...args] = config.args;
+      return provider ? { provider, args } : null;
+    }
+    const normalizedCommand = config.command.split(/[\/]/).pop()?.toLowerCase();
+    const normalizedScript = config.args[0]?.replace(/\\/g, "/");
+    if ((normalizedCommand === "node" || normalizedCommand === "node.exe") && normalizedScript) {
+      const provider = PROVIDER_BY_BUNDLED_SCRIPT.get(normalizedScript);
+      if (provider) return { provider, args: config.args.slice(1) };
+    }
+    return null;
+  }
+
+  private async resolveBundledServer(provider: string, args: string[]): Promise<McpBundledServerLaunch> {
+    const launch = await this.options.resolveBundledServer?.(provider, args);
+    if (launch) return launch;
+    const script = BUNDLED_SCRIPT_BY_PROVIDER[provider];
+    if (!script) throw new Error(`Unknown bundled MCP provider: ${provider}`);
+    return {
+      command: process.execPath,
+      args: [`scripts/${script}`, ...args],
+      env: { ELECTRON_RUN_AS_NODE: "1" },
+      cwd: process.cwd(),
+    };
   }
 
   private withDiagnostic(
