@@ -103,18 +103,16 @@ export function isInsideRoot(root: string, candidate: string): boolean {
   try {
     const realRoot = getRealPath(root);
 
-    // 1. Lexical containment check: Candidate must be lexically inside root/realRoot,
-    // or its enclosing directory's realpath must be inside realRoot (for symlinked root directories).
-    const isLexicalDirect = isLexicallyInside(root, candidate) || isLexicallyInside(realRoot, candidate);
+    // 1. The candidate must be lexically inside the vault namespace.
+    const isLexicalDirect =
+      isLexicallyInside(root, candidate) ||
+      isLexicallyInside(realRoot, candidate);
+
     if (!isLexicalDirect) {
-      const candidateDir = path.dirname(path.resolve(candidate));
-      const realCandidateDir = getRealPath(candidateDir);
-      if (!isLexicallyInside(realRoot, realCandidateDir) && !isLexicallyInside(root, realCandidateDir)) {
-        return false;
-      }
+      return false;
     }
 
-    // 2. Physical check: The target itself (resolving any symlinks) must be inside realRoot.
+    // 2. The target itself must resolve inside the real vault root.
     const realCandidate = getRealPath(candidate);
     return isLexicallyInside(realRoot, realCandidate);
   } catch {
