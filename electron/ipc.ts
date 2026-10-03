@@ -14,7 +14,7 @@ import { FileSystemManager } from './fileSystem.js';
 import { SearchEngine } from './search.js';
 import { allowedExternalUrl } from './externalUrl.js';
 import { fetchPublicHttp } from './outboundUrl.js';
-import { isInsideRoot } from './pathSafety.js';
+import { getRealPath, isInsideRoot } from './pathSafety.js';
 import { approveVaultPath, isApprovedVaultPath, seedApprovedVaultPaths } from './vaultAccess.js';
 
 export function registerIpcHandlers(
@@ -152,7 +152,14 @@ export function registerIpcHandlers(
     closeVaultWatchers();
     if (!vaultPath) return;
 
+    const visitedRealDirs = new Set<string>();
+
     const walk = (absoluteDir: string) => {
+      if (!isInsideRoot(vaultPath, absoluteDir)) return;
+      const realDir = getRealPath(absoluteDir);
+      if (!isInsideRoot(vaultPath, realDir) || visitedRealDirs.has(realDir)) return;
+      visitedRealDirs.add(realDir);
+
       watchDirectory(absoluteDir);
       let entries: nodeFs.Dirent[] = [];
       try {
@@ -161,9 +168,17 @@ export function registerIpcHandlers(
         return;
       }
       for (const entry of entries) {
-        if (!entry.isDirectory()) continue;
         if (entry.name.startsWith('.') || entry.name === 'node_modules') continue;
-        walk(nodePath.join(absoluteDir, entry.name));
+        const entryPath = nodePath.join(absoluteDir, entry.name);
+        if (!isInsideRoot(vaultPath, entryPath)) continue;
+        try {
+          const stats = nodeFs.lstatSync(entryPath);
+          if (stats.isDirectory()) {
+            walk(entryPath);
+          }
+        } catch {
+          // ignore stat errors
+        }
       }
     };
 
@@ -177,6 +192,10 @@ export function registerIpcHandlers(
       ? nodePath.resolve(targetPath)
       : fsManager.getAbsolutePath(targetPath);
     if (!isInsideRoot(vaultPath, resolved)) {
+      throw new Error('Path is outside the active vault');
+    }
+    const realTarget = getRealPath(resolved);
+    if (!isInsideRoot(vaultPath, realTarget)) {
       throw new Error('Path is outside the active vault');
     }
     return resolved;
@@ -234,13 +253,27 @@ export function registerIpcHandlers(
   });
 
   ipcMain.handle('desktop:openPath', async (_event, targetPath: string) => {
-    return shell.openPath(resolveInsideCurrentVault(targetPath));
+    if (typeof targetPath !== 'string' || !targetPath.trim()) {
+      throw new Error('Target path must be a non-empty string');
+    }
+    const resolved = resolveInsideCurrentVault(targetPath);
+    if (!nodeFs.existsSync(resolved)) {
+      throw new Error('Target file does not exist');
+    }
+    return shell.openPath(resolved);
   });
   ipcMain.handle('desktop:openExternal', async (_event, url: string) => {
     await shell.openExternal(allowedExternalUrl(url));
   });
   ipcMain.handle('desktop:showItemInFolder', (_event, targetPath: string) => {
-    shell.showItemInFolder(resolveInsideCurrentVault(targetPath));
+    if (typeof targetPath !== 'string' || !targetPath.trim()) {
+      throw new Error('Target path must be a non-empty string');
+    }
+    const resolved = resolveInsideCurrentVault(targetPath);
+    if (!nodeFs.existsSync(resolved)) {
+      throw new Error('Target file does not exist');
+    }
+    shell.showItemInFolder(resolved);
   });
   ipcMain.handle('desktop:getPath', (_event, name: Parameters<typeof app.getPath>[0]) => app.getPath(name));
 
