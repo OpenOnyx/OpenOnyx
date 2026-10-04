@@ -7,6 +7,7 @@ import { usePageMeta } from "../lib/meta";
 const InteractiveWorkspace = lazy(() =>
   import("../components/product/Workspace").then((module) => ({ default: module.Workspace })),
 );
+const AIGraphDemo = lazy(() => import("../components/product/AIGraphDemo").then((module) => ({ default: module.AIGraphDemo })));
 
 const MARQUEE_ITEMS = [
   "Plain Markdown",
@@ -60,8 +61,14 @@ const CONNECTED_TOPICS: ConnectedTopic[] = [
         { id: "drift", label: "Model Drift", x: 76, y: 26 },
         { id: "data", label: "Data Pipelines", x: 28, y: 75 },
         { id: "deploy", label: "Deployment", x: 78, y: 72 },
+        { id: "training", label: "Training Data", x: 12, y: 45 },
+        { id: "features", label: "Features", x: 45, y: 12 },
+        { id: "validation", label: "Validation", x: 85, y: 48 },
+        { id: "monitoring", label: "Monitoring", x: 53, y: 88 },
+        { id: "bias", label: "Data Bias", x: 12, y: 88 },
+        { id: "inference", label: "Inference", x: 90, y: 88 },
       ],
-      edges: [["ml", "eval"], ["ml", "drift"], ["ml", "data"], ["drift", "deploy"], ["data", "deploy"]],
+      edges: [["ml", "eval"], ["ml", "drift"], ["ml", "data"], ["drift", "deploy"], ["data", "deploy"], ["training", "data"], ["training", "features"], ["features", "ml"], ["eval", "validation"], ["validation", "deploy"], ["monitoring", "drift"], ["monitoring", "deploy"], ["bias", "training"], ["bias", "eval"], ["inference", "deploy"]],
     },
   },
   {
@@ -84,8 +91,14 @@ const CONNECTED_TOPICS: ConnectedTopic[] = [
         { id: "fault", label: "Fault Tolerance", x: 77, y: 25 },
         { id: "db", label: "Distributed Databases", x: 28, y: 75 },
         { id: "state", label: "Shared State", x: 78, y: 73 },
+        { id: "replication", label: "Replication", x: 12, y: 46 },
+        { id: "logs", label: "Event Logs", x: 47, y: 12 },
+        { id: "quorum", label: "Quorum", x: 88, y: 47 },
+        { id: "partitions", label: "Partitions", x: 50, y: 89 },
+        { id: "recovery", label: "Recovery", x: 12, y: 88 },
+        { id: "consistency", label: "Consistency", x: 90, y: 88 },
       ],
-      edges: [["ds", "raft"], ["ds", "fault"], ["ds", "db"], ["raft", "state"], ["fault", "state"]],
+      edges: [["ds", "raft"], ["ds", "fault"], ["ds", "db"], ["raft", "state"], ["fault", "state"], ["replication", "db"], ["replication", "raft"], ["logs", "raft"], ["logs", "replication"], ["quorum", "raft"], ["quorum", "consistency"], ["partitions", "fault"], ["partitions", "consistency"], ["recovery", "fault"], ["recovery", "logs"], ["consistency", "state"]],
     },
   },
   {
@@ -108,8 +121,14 @@ const CONNECTED_TOPICS: ConnectedTopic[] = [
         { id: "graph", label: "Knowledge Graphs", x: 77, y: 22 },
         { id: "summary", label: "Summaries", x: 27, y: 75 },
         { id: "review", label: "Review", x: 76, y: 73 },
+        { id: "capture", label: "Capture", x: 12, y: 46 },
+        { id: "links", label: "Backlinks", x: 47, y: 12 },
+        { id: "ideas", label: "Ideas", x: 88, y: 46 },
+        { id: "questions", label: "Questions", x: 50, y: 89 },
+        { id: "research", label: "Research", x: 12, y: 88 },
+        { id: "decisions", label: "Decisions", x: 90, y: 88 },
       ],
-      edges: [["pkm", "zettel"], ["pkm", "graph"], ["pkm", "summary"], ["summary", "review"], ["graph", "review"]],
+      edges: [["pkm", "zettel"], ["pkm", "graph"], ["pkm", "summary"], ["summary", "review"], ["graph", "review"], ["capture", "zettel"], ["capture", "research"], ["links", "zettel"], ["links", "graph"], ["ideas", "graph"], ["ideas", "questions"], ["questions", "research"], ["research", "summary"], ["decisions", "review"], ["decisions", "ideas"]],
     },
   },
 ];
@@ -163,24 +182,7 @@ function HeroMarquee() {
 }
 
 function MiniKnowledgeGraph({ topic }: { topic: ConnectedTopic }) {
-  const nodeById = new Map(topic.graph.nodes.map((node) => [node.id, node]));
-
-  return (
-    <svg className="studio-connected-graph" viewBox="0 0 100 100" role="img" aria-label={`${topic.label} knowledge graph`}>
-      {topic.graph.edges.map(([sourceId, targetId]) => {
-        const source = nodeById.get(sourceId);
-        const target = nodeById.get(targetId);
-        if (!source || !target) return null;
-        return <line key={`${sourceId}-${targetId}`} x1={source.x} y1={source.y} x2={target.x} y2={target.y} />;
-      })}
-      {topic.graph.nodes.map((node) => (
-        <g key={node.id} className={node.current ? "is-current" : undefined}>
-          <circle cx={node.x} cy={node.y} r={node.current ? 5.8 : 4.2} />
-          <text x={node.x} y={node.y + 9}>{node.label}</text>
-        </g>
-      ))}
-    </svg>
-  );
+  return <LiveVaultGraph data={topic.graph} fitPadding={24} />;
 }
 
 function ConnectedThinking() {
@@ -290,7 +292,6 @@ function IntelligenceCard() {
 
   return (
     <div className="studio-intelligence">
-      <div className="studio-card-top"><span>Vault Intelligence</span><span className="studio-live-dot">Grounded</span></div>
       <h3>Ask your own<br />knowledge.</h3>
       <div className="studio-prompt">What helps a knowledge system stay useful? <Arrow /></div>
       <div className="studio-answer">
@@ -408,16 +409,17 @@ export function Home() {
           <article className="studio-panel studio-panel-cream">
             <span className="studio-card-label">AI Graph</span>
             <h3>Discover hidden<br />connections.</h3>
-            <p>OpenOnyx finds relationships between ideas, helping you uncover patterns and connect notes you never linked.</p>
-            <div className="studio-ai-graph-visual" role="group" aria-label="AI graph with suggested relationships and related notes">
-              <div className="studio-ai-graph-map" aria-hidden="true"><i /><i /><i /><i /><i /><b /><b /><b /><b /></div>
-              <div className="studio-ai-graph-suggestions"><span>Suggested relationships</span><b>Focus <i>↔</i> Attention</b><b>Tools <i>↔</i> Habits</b><small>Related notes · 4</small></div>
+            <div role="group" aria-label="Interactive example of suggested knowledge connections">
+              <Suspense fallback={<p className="studio-graph-hint">Opening the AI graph…</p>}><AIGraphDemo /></Suspense>
             </div>
           </article>
           <article className="studio-panel studio-panel-graph">
             <h3>See the shape<br />of your thinking.</h3>
             <div className="studio-connect-row">
-              <p>Follow links, discover relationships, and move through a living body of knowledge.</p>
+              <div className="studio-manual-graph-copy">
+                <p>Follow links, discover relationships, and move through a living body of knowledge.</p>
+                <p className="studio-graph-context"><strong>Your links, made visible.</strong><span>Each node is a note. Each line is a link you wrote. Select a note to trace its connections.</span></p>
+              </div>
               <LiveVaultGraph />
             </div>
           </article>

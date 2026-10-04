@@ -402,7 +402,7 @@ export function Workspace() {
         <span>
           {surface === "write"
             ? `${viewMode === "preview" ? "reading" : "live preview"} · ${content.split(/\s+/).filter(Boolean).length} words`
-            : "OO-Test-Vault"}
+            : "Drag nodes · Scroll to zoom · Select a connection"}
         </span>
       </footer>
     </div>

@@ -19,7 +19,7 @@ type VaultNode = SimulationNodeDatum & {
   y: number;
 };
 
-type VaultEdge = { source: string | VaultNode; target: string | VaultNode };
+type VaultEdge = { source: string | VaultNode; target: string | VaultNode; hiddenConnection?: boolean; similarity?: number };
 
 const SEED_NODES = [
   "OpenOnyx",
@@ -48,9 +48,23 @@ function initialPosition(index: number) {
   return { x: Math.cos(angle) * 110, y: Math.sin(angle) * 90 };
 }
 
-export function LiveVaultGraph() {
+export type DemoGraphData = {
+  nodes: Array<{ id: string; label: string; x: number; y: number; current?: boolean; color?: number }>;
+  edges: Array<[string, string]>;
+};
+
+export function LiveVaultGraph({ data, appearance = "dark", semantic = false, showLabels = !!data, fitPadding, onExplore }: {
+  data?: DemoGraphData;
+  appearance?: "dark" | "paper";
+  semantic?: boolean;
+  showLabels?: boolean;
+  fitPadding?: number;
+  onExplore?: (label: string) => void;
+}) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
+  const exploreRef = useRef(onExplore);
+  exploreRef.current = onExplore;
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -61,19 +75,21 @@ export function LiveVaultGraph() {
     const renderer = new GraphRenderer(canvas, {
       width: Math.max(1, rect.width),
       height: Math.max(1, rect.height),
-      backgroundColor: 0x1c1d20,
+      backgroundColor: appearance === "paper" ? 0xe4e0d8 : 0x1c1d20,
       isDark: false,
       wheelZoomWithoutModifier: true,
     });
 
-    const nodes: VaultNode[] = SEED_NODES.map(({ id, name }, index) => ({
+    const sourceNodes = data ? data.nodes.map((node) => ({ id: node.id, name: node.label })) : SEED_NODES;
+    const nodes: VaultNode[] = sourceNodes.map(({ id, name }, index) => ({
       id,
       name,
       path: `${name}.md`,
       connections: 0,
-      ...initialPosition(index),
+      color: data?.nodes[index].current ? 0xf07837 : data?.nodes[index].color,
+      ...(data ? { x: (data.nodes[index].x - 50) * 4, y: (data.nodes[index].y - 50) * 4 } : initialPosition(index)),
     }));
-    const edges: VaultEdge[] = SEED_EDGES.map(([source, target]) => ({
+    const edges: VaultEdge[] = data ? data.edges.map(([source, target]) => ({ source, target, hiddenConnection: semantic })) : SEED_EDGES.map(([source, target]) => ({
       source: nodes[source].id,
       target: nodes[target].id,
     }));
@@ -95,26 +111,33 @@ export function LiveVaultGraph() {
     renderer.init().then(() => {
       if (disposed) return;
       renderer.setNodeStyle({
-        color: 0xd5d1d1,
+        color: appearance === "paper" ? 0x77736d : 0xd5d1d1,
         size: 6,
-        selectedColor: 0x1f2937,
-        hoveredColor: 0xc0c0c0,
-        connectedColor: 0xc0c0c0,
+        selectedColor: 0xf07837,
+        hoveredColor: 0xf07837,
+        connectedColor: appearance === "paper" ? 0x55514b : 0xc0c0c0,
+        dimmedAlpha: .65,
       });
       renderer.setEdgeStyle({
-        color: 0x5d5d5d,
+        color: appearance === "paper" ? 0xaaa69e : 0x5d5d5d,
         width: 1,
-        highlightColor: 0xc0c0c0,
+        highlightColor: 0xf07837,
         highlightWidth: 2,
         alpha: 0.8,
       });
-      renderer.setLabelStyle({ color: "#e5e5e5", size: 11, show: true, threshold: 0.2 });
+      renderer.setLabelStyle({ color: appearance === "paper" ? "#55514b" : "#d8d5cf", size: 11, show: showLabels, threshold: 0 });
       renderer.setCallbacks({
         onNodeClick: (id) => {
           const node = nodes.find((item) => item.id === id);
           if (node) {
             renderer.selectNode(id);
+            exploreRef.current?.(node.name);
           }
+        },
+        onEdgeClick: (source, target) => {
+          const from = nodes.find((node) => node.id === source);
+          const to = nodes.find((node) => node.id === target);
+          if (from && to) exploreRef.current?.(`${from.name} ↔ ${to.name}`);
         },
         onNodeDrag: (id, x, y, active) => {
           const node = nodes.find((item) => item.id === id);
@@ -138,7 +161,7 @@ export function LiveVaultGraph() {
         });
       simulation.stop().tick(180);
       renderer.setData(nodes, edges);
-      renderer.centerView(true, 12);
+      renderer.centerView(true, fitPadding ?? (showLabels ? 48 : 22));
       renderer.setCurrentScaleAsMinimum();
       graphReady = true;
     });
@@ -150,7 +173,7 @@ export function LiveVaultGraph() {
       stageWidth = next.width;
       stageHeight = next.height;
       if (graphReady && sizeChanged) {
-        renderer.centerView(true, 12);
+        renderer.centerView(true, fitPadding ?? (showLabels ? 48 : 22));
         renderer.setCurrentScaleAsMinimum();
       }
     });
@@ -162,13 +185,14 @@ export function LiveVaultGraph() {
       simulation?.stop();
       renderer.destroy();
     };
-  }, []);
+  }, [data, appearance, semantic, showLabels, fitPadding]);
 
   return (
     <figure className="mk-live-graph" aria-label="Interactive OpenOnyx vault graph">
       <div className="mk-live-graph-stage" ref={stageRef}>
         <canvas ref={canvasRef} aria-label="Interactive OpenOnyx vault graph. Drag nodes, zoom, and click a note." />
       </div>
+      <figcaption className="studio-graph-hint">Drag · Zoom · Select {semantic ? "a connection" : "a note"}</figcaption>
     </figure>
   );
 }
