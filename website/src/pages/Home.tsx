@@ -466,7 +466,7 @@ export function Home() {
           <div className="studio-footer-links">
             <p>Make space for thought.<br />Keep ownership of every idea.</p>
             <div><h3>Product</h3><Link to="/download">Download</Link><a href="#why">Product</a><a href="#intelligence">Intelligence</a><Link to="/docs/start">Docs</Link></div>
-            <div><h3>Resources</h3><a href={PRODUCT.repo} target="_blank" rel="noreferrer">GitHub</a><a href={`${PRODUCT.repo}/discussions`} target="_blank" rel="noreferrer">Community</a><a href={`${PRODUCT.repo}/releases`} target="_blank" rel="noreferrer">Releases</a></div>
+            <div><h3>Resources</h3><a href={PRODUCT.repo} target="_blank" rel="noreferrer">GitHub</a><a href={`${PRODUCT.repo}/discussions`} target="_blank" rel="noreferrer">Community</a><a href={`${PRODUCT.repo}/releases`} target="_blank" rel="noreferrer">Releases</a><Link to="/privacy">Privacy</Link><Link to="/terms">Terms</Link></div>
           </div>
           <div className="studio-footer-word" aria-label="OpenOnyx"><span aria-hidden="true">O</span><span aria-hidden="true">p</span><span aria-hidden="true">e</span><span aria-hidden="true">n</span><span aria-hidden="true">O</span><span aria-hidden="true">n</span><span aria-hidden="true">y</span><span aria-hidden="true">x</span></div>
         </div>

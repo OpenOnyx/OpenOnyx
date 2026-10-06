@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "prebuild": "node scripts/ensure-app-deps.mjs",
-    "build": "vite build",
+    "build": "vite build && node scripts/prerender-legal.mjs",
+    "test:legal": "node --test tests/legal.test.mjs",
     "preview": "vite preview"
   },
   "engines": {

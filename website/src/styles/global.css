@@ -549,6 +549,8 @@ img, video { max-width: 100%; display: block; }
   font-size: 12px;
 }
 .footer nav { display: flex; gap: 16px; }
+.footer-inner nav { flex-wrap:wrap; justify-content:flex-end; }
+@media (max-width:800px) { .footer-inner nav { justify-content:flex-start; } }
 .footer a { border-bottom: 1px solid transparent; }
 .footer a:hover { color: var(--text); border-bottom-color: var(--line-strong); }
 

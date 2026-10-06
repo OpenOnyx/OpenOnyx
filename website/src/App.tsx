@@ -4,6 +4,7 @@ import { CareerRolePage, Careers } from "./pages/Careers";
 import { Docs } from "./pages/Docs";
 import { Download } from "./pages/Download";
 import { Home } from "./pages/Home";
+import { Privacy, Terms } from "./pages/Legal";
 import { NotFound } from "./pages/NotFound";
 
 export function App() {
@@ -14,6 +15,8 @@ export function App() {
         <Route path="careers" element={<Careers />} />
         <Route path="careers/:slug" element={<CareerRolePage />} />
         <Route path="download" element={<Download />} />
+        <Route path="privacy" element={<Privacy />} />
+        <Route path="terms" element={<Terms />} />
         <Route path="docs" element={<Navigate to="/docs/start" replace />} />
         <Route path="docs/:slug" element={<Docs />} />
         <Route path="*" element={<NotFound />} />
