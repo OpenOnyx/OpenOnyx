@@ -217,7 +217,7 @@ export function Download() {
         <div className="download-primary-copy">
           <span>{currentAsset.platformLabel}</span>
           <small>{detected.platform === currentAsset.platform ? "Detected on this device" : detected.platform ? "Selected platform" : "Platform not detected"}</small>
-          <h2 id="primary-download-title">Download OpenOnyx {PRODUCT.version}</h2>
+          <h1 id="primary-download-title">Download OpenOnyx {PRODUCT.version}</h1>
         </div>
 
         <div className="download-action-panel">

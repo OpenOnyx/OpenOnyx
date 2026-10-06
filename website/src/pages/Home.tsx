@@ -365,7 +365,7 @@ export function Home() {
             <div className="studio-hero-copy">
               <SectionTag>Local-first knowledge management</SectionTag>
               <h1>Make space<br /><i><span>for</span><span>thought.</span></i></h1>
-              <p>A quiet, powerful workspace for ideas that deserve to stay yours.</p>
+              <p>An open-source, local-first knowledge management app. Connect Markdown notes and ask your own files with optional AI tools.</p>
               <div className="studio-actions">
                 <Link className="studio-button studio-button-dark" to="/download">Download OpenOnyx <Arrow /></Link>
                 <a className="studio-text-link" href={PRODUCT.repo} target="_blank" rel="noreferrer">Explore the source <Arrow /></a>
@@ -382,7 +382,7 @@ export function Home() {
         <div className="studio-wrap studio-intro-grid">
           <article className="studio-principle-card">
             <span className="studio-card-label">Plain Markdown</span>
-            <h3>Your notes.<br /><i>Yours forever.</i></h3>
+            <h2 className="studio-card-heading">Your notes.<br /><i>Yours forever.</i></h2>
             <p>Open, portable Markdown files that stay on your machine. No proprietary formats. No vendor lock-in.</p>
             <div className="studio-principle-files" aria-label="Markdown file list and folder tree">
               <span className="studio-tree-folder"><b>your-vault/</b><em>folder</em></span>
@@ -408,13 +408,13 @@ export function Home() {
         <div className="studio-wrap studio-panel-grid">
           <article className="studio-panel studio-panel-cream">
             <span className="studio-card-label">AI Graph</span>
-            <h3>Discover hidden<br />connections.</h3>
+            <h2 className="studio-card-heading">Discover hidden<br />connections.</h2>
             <div role="group" aria-label="Interactive example of suggested knowledge connections">
               <Suspense fallback={<p className="studio-graph-hint">Opening the AI graph…</p>}><AIGraphDemo /></Suspense>
             </div>
           </article>
           <article className="studio-panel studio-panel-graph">
-            <h3>See the shape<br />of your thinking.</h3>
+            <h2 className="studio-card-heading">See the shape<br />of your thinking.</h2>
             <div className="studio-connect-row">
               <div className="studio-manual-graph-copy">
                 <p>Follow links, discover relationships, and move through a living body of knowledge.</p>

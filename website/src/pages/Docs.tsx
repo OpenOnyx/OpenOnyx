@@ -6,7 +6,7 @@ import { PRODUCT } from '../data/facts';
 import { renderManual } from '../lib/manual';
 import { usePageMeta } from '../lib/meta';
 
-export function Docs() {
+export function Docs({ serverHtml, serverSourceUrl }: { serverHtml?: string; serverSourceUrl?: string } = {}) {
   const { slug = 'start' } = useParams();
   const location = useLocation();
   const navigate = useNavigate();
@@ -20,7 +20,7 @@ export function Docs() {
   const article = useRef<HTMLElement>(null);
   const search = useRef<HTMLInputElement>(null);
   const rendered = useMemo(() => renderManual(page.markdown), [page.markdown]);
-  const html = useMemo(() => DOMPurify.sanitize(rendered.html), [rendered.html]);
+  const html = useMemo(() => serverHtml ?? DOMPurify.sanitize(rendered.html), [rendered.html, serverHtml]);
   const visible = DOC_PAGES.filter(entry => `${entry.title} ${entry.group} ${entry.markdown}`.toLowerCase().includes(query.trim().toLowerCase()));
   const sourcePath = `docs/manual/${encodeURIComponent(page.filename)}`;
   usePageMeta(`${page.title} — OpenOnyx`, page.summary);
@@ -108,7 +108,7 @@ export function Docs() {
       <aside className='manual-rail' aria-label='Page navigation'>
         <div className='manual-progress'><span>{String(DOC_PAGES.indexOf(page) + 1).padStart(2, '0')} / {DOC_PAGES.length}</span><span>{Math.round(progress)}% read</span><progress max='100' value={progress} aria-label='Reading progress' /></div>
         <nav aria-label='On this page'><h2>On this page</h2>{rendered.headings.map(heading => <a key={heading.id} href={`#${heading.id}`} data-level={heading.level} aria-current={active === heading.id ? 'location' : undefined}>{heading.level === 1 ? 'Introduction' : heading.text}</a>)}</nav>
-        <div className='manual-tools'><a href={page.sourceUrl} download={page.filename}>Download Markdown</a><a href={`${PRODUCT.repo}/edit/main/${sourcePath}`} target='_blank' rel='noreferrer'>Edit this page</a><a href={`${PRODUCT.repo}/issues/new?title=${encodeURIComponent(`Docs: ${page.title}`)}`} target='_blank' rel='noreferrer'>Report an issue</a><a href={`${PRODUCT.repo}/blob/main/${sourcePath}`} target='_blank' rel='noreferrer'>View source</a></div>
+        <div className='manual-tools'><a href={serverSourceUrl ?? page.sourceUrl} download={page.filename}>Download Markdown</a><a href={`${PRODUCT.repo}/edit/main/${sourcePath}`} target='_blank' rel='noreferrer'>Edit this page</a><a href={`${PRODUCT.repo}/issues/new?title=${encodeURIComponent(`Docs: ${page.title}`)}`} target='_blank' rel='noreferrer'>Report an issue</a><a href={`${PRODUCT.repo}/blob/main/${sourcePath}`} target='_blank' rel='noreferrer'>View source</a></div>
       </aside>
     </div>
   </div>;

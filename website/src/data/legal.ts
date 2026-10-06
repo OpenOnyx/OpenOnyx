@@ -157,7 +157,7 @@ export const PRIVACY_POLICY: LegalPolicy = {
 export const TERMS_OF_SERVICE: LegalPolicy = {
   path: "/terms",
   title: "Terms of Service",
-  description: "Terms governing the use of OpenOnyx and its optional integrations and services.",
+  description: "Read the terms governing the use of OpenOnyx, its open-source software, integrations, and optional services.",
   updated: "2026-10-06",
   sections: [
     {

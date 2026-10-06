@@ -4,9 +4,10 @@
   "installCommand": "npm install",
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
-  "rewrites": [
-    { "source": "/privacy", "destination": "/privacy/index.html" },
-    { "source": "/terms", "destination": "/terms/index.html" },
-    { "source": "/(.*)", "destination": "/index.html" }
+  "cleanUrls": true,
+  "trailingSlash": false,
+  "redirects": [
+    { "source": "/docs", "destination": "/docs/start", "permanent": true },
+    { "source": "/docs/features", "destination": "/docs/reference", "permanent": true }
   ]
 }

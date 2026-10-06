@@ -76,7 +76,7 @@ export function SiteHeader() {
   return (
     <header className={`header${isDocs ? " is-docs" : ""}${menuOpen ? " is-open" : ""}${scrolled ? " is-scrolled" : ""}`}>
       <div className="header-bar">
-        <Link to="/" className="brand" aria-label="OpenOnyx home"><img className="brand-logo" src="/logos/logo-dark.png" alt="" /><span>OpenOnyx</span></Link>
+        <Link to="/" className="brand" aria-label="OpenOnyx home"><img className="brand-logo" src="/logos/logo-dark.png" width="332" height="332" alt="" /><span>OpenOnyx</span></Link>
         <nav className="nav-links" aria-label="Primary navigation">
           <a href="/#why">Product</a>
           {!isDocs && <a href="/#intelligence">Intelligence</a>}

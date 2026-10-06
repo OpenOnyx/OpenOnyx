@@ -74,7 +74,7 @@ passes. Do not mistake the baseline website errors for a clean strict typecheck.
 
 Legal tests inspect generated static HTML, semantic section anchors, dates,
 metadata, indexability, footer links, external-link safety, public React routes,
-and Vercel direct-route rewrites. No manual visual/UI testing was performed.
+and Vercel clean-route/redirect configuration. No manual visual/UI testing was performed.
 Build-time rendering starts no HTTP listener or application.
 
 Verified results on this change:

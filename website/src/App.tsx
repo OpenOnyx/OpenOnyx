@@ -1,4 +1,5 @@
 import { Navigate, Route, Routes } from "react-router-dom";
+import type { ReactNode } from "react";
 import { Layout } from "./components/Layout";
 import { CareerRolePage, Careers } from "./pages/Careers";
 import { Docs } from "./pages/Docs";
@@ -7,7 +8,7 @@ import { Home } from "./pages/Home";
 import { Privacy, Terms } from "./pages/Legal";
 import { NotFound } from "./pages/NotFound";
 
-export function App() {
+export function App({ docsElement = <Docs /> }: { docsElement?: ReactNode }) {
   return (
     <Routes>
       <Route element={<Layout />}>
@@ -18,7 +19,7 @@ export function App() {
         <Route path="privacy" element={<Privacy />} />
         <Route path="terms" element={<Terms />} />
         <Route path="docs" element={<Navigate to="/docs/start" replace />} />
-        <Route path="docs/:slug" element={<Docs />} />
+        <Route path="docs/:slug" element={docsElement} />
         <Route path="*" element={<NotFound />} />
       </Route>
     </Routes>

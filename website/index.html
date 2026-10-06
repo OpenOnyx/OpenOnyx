@@ -6,34 +6,41 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta
       name="description"
-      content="OpenOnyx is an open-source, local-first knowledge workspace. Write in Markdown, ask your own notes, and see how your ideas connect."
+      content="OpenOnyx is an open-source, local-first knowledge management app. Connect Markdown notes, explore knowledge graphs, and ask your own files with optional AI tools."
     />
     <meta name="theme-color" content="#0f0f14" />
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="OpenOnyx" />
-    <meta property="og:title" content="OpenOnyx — Your knowledge, entirely yours" />
+    <meta property="og:title" content="OpenOnyx — Local-First AI Knowledge Management" />
     <meta
       property="og:description"
-      content="An open-source, local-first knowledge workspace with grounded AI, knowledge graphs, and plain Markdown files."
+      content="OpenOnyx is an open-source, local-first knowledge management app. Connect Markdown notes, explore knowledge graphs, and ask your own files with optional AI tools."
     />
     <meta
       property="og:image"
-      content="https://raw.githubusercontent.com/OpenOnyx/OpenOnyx/main/website/public/product/openonyx-light.png"
+      content="https://openonyx.app/images/banner.webp"
     />
-    <link rel="canonical" href="/" />
+    <meta property="og:image:width" content="2048" />
+    <meta property="og:image:height" content="727" />
+    <meta property="og:image:alt" content="OpenOnyx — open-source knowledge management" />
+    <meta property="og:url" content="https://openonyx.app/" />
+    <meta name="application-name" content="OpenOnyx" />
+    <link rel="canonical" href="https://openonyx.app/" />
+    <link rel="apple-touch-icon" href="/logos/logo-dark.png" />
+    <link rel="manifest" href="/site.webmanifest" />
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="OpenOnyx — Your knowledge, entirely yours" />
+    <meta name="twitter:title" content="OpenOnyx — Local-First AI Knowledge Management" />
     <meta
       name="twitter:description"
-      content="An open-source, local-first knowledge workspace with grounded AI, knowledge graphs, and plain Markdown files."
+      content="OpenOnyx is an open-source, local-first knowledge management app. Connect Markdown notes, explore knowledge graphs, and ask your own files with optional AI tools."
     />
     <meta
       name="twitter:image"
-      content="https://raw.githubusercontent.com/OpenOnyx/OpenOnyx/main/website/public/product/openonyx-light.png"
+      content="https://openonyx.app/images/banner.webp"
     />
     <meta name="robots" content="index, follow" />
-    <meta name="keywords" content="local-first notes, open source knowledge management, Markdown notes, knowledge graph, grounded AI" />
-    <title>OpenOnyx — Your knowledge, entirely yours</title>
+    <meta name="twitter:image:alt" content="OpenOnyx — open-source knowledge management" />
+    <title>OpenOnyx — Local-First AI Knowledge Management</title>
     <script>
       try {
         var t = localStorage.getItem("openonyx-theme");
@@ -42,22 +49,6 @@
         }
         document.documentElement.dataset.theme = t;
         document.documentElement.style.colorScheme = t;
-        var origin = location.origin;
-        var img = origin + "/product/openonyx-light.png";
-        var url = origin + location.pathname + location.search;
-        var ogImage = document.querySelector('meta[property="og:image"]');
-        var twImage = document.querySelector('meta[name="twitter:image"]');
-        var ogUrl = document.querySelector('meta[property="og:url"]');
-        var canon = document.querySelector('link[rel="canonical"]');
-        if (ogImage) ogImage.setAttribute("content", img);
-        if (twImage) twImage.setAttribute("content", img);
-        if (!ogUrl) {
-          ogUrl = document.createElement("meta");
-          ogUrl.setAttribute("property", "og:url");
-          document.head.appendChild(ogUrl);
-        }
-        ogUrl.setAttribute("content", url);
-        if (canon) canon.setAttribute("href", url);
       } catch (e) {}
     </script>
     <link rel="preconnect" href="https://fonts.googleapis.com" />

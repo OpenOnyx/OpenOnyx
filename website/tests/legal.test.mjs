@@ -5,12 +5,12 @@ import { test } from "node:test";
 const file = (path) => readFile(new URL(`../${path}`, import.meta.url), "utf8");
 const descriptions = {
   privacy: "Learn how OpenOnyx handles local data, optional integrations, Google Drive access, and privacy.",
-  terms: "Terms governing the use of OpenOnyx and its optional integrations and services.",
+  terms: "Read the terms governing the use of OpenOnyx, its open-source software, integrations, and optional services.",
 };
 
 for (const [path, title, sections] of [["privacy", "Privacy Policy", 15], ["terms", "Terms of Service", 17]]) {
   test(`/${path} ships readable HTML, metadata, and complete section links without JavaScript`, async () => {
-    const html = await file(`dist/${path}/index.html`);
+    const html = await file(`dist/${path}.html`);
     assert.ok(html.includes(`<title>${title} | OpenOnyx</title>`));
     assert.ok(html.includes(`<meta name="description" content="${descriptions[path]}"`));
     assert.ok(html.includes(`<meta property="og:title" content="${title} | OpenOnyx"`));
@@ -47,13 +47,14 @@ test("public routes and homepage footer point to the legal documents", async () 
   const home = await file("src/pages/Home.tsx");
   assert.ok(home.includes('to="/privacy">Privacy</Link>'));
   assert.ok(home.includes('to="/terms">Terms</Link>'));
-  const { rewrites } = JSON.parse(await file("vercel.json"));
-  for (const path of ["privacy", "terms"]) assert.deepEqual(rewrites.find((entry) => entry.source === `/${path}`), { source: `/${path}`, destination: `/${path}/index.html` });
-  assert.equal(rewrites.at(-1).destination, "/index.html");
+  const config = JSON.parse(await file("vercel.json"));
+  assert.equal(config.cleanUrls, true);
+  assert.equal(config.trailingSlash, false);
+  assert.equal(config.rewrites, undefined);
 });
 
 test("privacy explains scope, retained copies, conditional security, and external processing", async () => {
-  const html = await file("dist/privacy/index.html");
+  const html = await file("dist/privacy.html");
   for (const phrase of ["main-process memory", "PKCE", "basic_text", "best-effort", "does not delete", "drive-pdf-cache", "drive-preview-cache", "automatically", "Supabase", "OpenRouter", "Google Fonts", "not a promise of zero network activity"]) assert.ok(html.includes(phrase), `Missing disclosure: ${phrase}`);
   assert.ok(html.includes("https://developers.google.com/terms/api-services-user-data-policy"));
   assert.ok(html.includes("https://myaccount.google.com/connections"));

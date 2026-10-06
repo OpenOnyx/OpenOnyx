@@ -1,0 +1,8 @@
+{
+  "name": "OpenOnyx",
+  "short_name": "OpenOnyx",
+  "description": "Open-source, local-first knowledge management with optional AI tools.",
+  "start_url": "/",
+  "display": "browser",
+  "icons": [{ "src": "/logos/logo-dark.png", "sizes": "332x332", "type": "image/png", "purpose": "any" }]
+}

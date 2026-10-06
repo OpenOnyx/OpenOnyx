@@ -1324,7 +1324,7 @@ body:has(.download-page) .page {
   color:var(--muted);
   font-size:13px;
 }
-.download-primary h2 {
+.download-primary h1 {
   margin:0;
   max-width:700px;
   font-size:clamp(48px, 6.8vw, 86px);

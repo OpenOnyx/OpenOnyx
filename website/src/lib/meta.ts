@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { PRODUCT } from "../data/facts";
+import { canonicalUrl, pageSeo, SOCIAL_IMAGE, structuredData } from "../data/seo";
 
 function setContent(selector: string, value: string) {
   const node = document.querySelector(selector);
@@ -27,15 +28,18 @@ function ensureLink(rel: string) {
 }
 
 function pageUrl() {
-  return `${window.location.origin}${window.location.pathname}${window.location.search}`;
+  return canonicalUrl(window.location.pathname);
 }
 
 function pageImage() {
-  return `${window.location.origin}/images/banner.webp`;
+  return SOCIAL_IMAGE;
 }
 
 export function usePageMeta(title: string, description: string = PRODUCT.description) {
   useEffect(() => {
+    const page = pageSeo(window.location.pathname);
+    const resolvedTitle = page?.title ?? title;
+    const resolvedDescription = page?.description ?? description;
     const previousTitle = document.title;
     const previousDescription = document.querySelector('meta[name="description"]')?.getAttribute("content") ?? "";
     const previousOgTitle = document.querySelector('meta[property="og:title"]')?.getAttribute("content") ?? "";
@@ -52,16 +56,25 @@ export function usePageMeta(title: string, description: string = PRODUCT.descrip
     const url = pageUrl();
     const image = pageImage();
 
-    document.title = title;
-    setContent('meta[name="description"]', description);
-    setContent('meta[property="og:title"]', title);
-    setContent('meta[property="og:description"]', description);
+    document.title = resolvedTitle;
+    setContent('meta[name="description"]', resolvedDescription);
+    setContent('meta[property="og:title"]', resolvedTitle);
+    setContent('meta[property="og:description"]', resolvedDescription);
     ensureMeta('meta[property="og:url"]', { property: "og:url" }).setAttribute("content", url);
     setContent('meta[property="og:image"]', image);
-    setContent('meta[name="twitter:title"]', title);
-    setContent('meta[name="twitter:description"]', description);
+    setContent('meta[name="twitter:title"]', resolvedTitle);
+    setContent('meta[name="twitter:description"]', resolvedDescription);
     setContent('meta[name="twitter:image"]', image);
     ensureLink("canonical").setAttribute("href", url);
+    setContent('meta[name="robots"]', page ? "index, follow" : "noindex, follow");
+    let schema = document.querySelector<HTMLScriptElement>('script[data-site-schema]');
+    if (!schema) {
+      schema = document.createElement("script");
+      schema.type = "application/ld+json";
+      schema.dataset.siteSchema = "";
+      document.head.appendChild(schema);
+    }
+    schema.textContent = JSON.stringify(structuredData(window.location.pathname));
 
     return () => {
       document.title = previousTitle;
