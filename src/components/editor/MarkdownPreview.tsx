@@ -1,3 +1,6 @@
+import { parseResourceJson, resourceBlocks, serializeExternalResource } from "../../utils/appResources";
+import type { ExternalResource } from "../../types/appResources";
+import { createResourceCard, openResource } from "../apps/ResourceCard";
 /**
  * Markdown Preview
  *
@@ -30,11 +33,15 @@ import { runMarkdownPostProcessors } from "../../lib/obsidian-api/markdown";
 import type { AppSettings } from "../settings/SettingsPage";
 import type { NoteComment, PendingComment } from "../../types/comments";
 import { getCommentDisplayText } from "../../utils/comment-anchors";
+import { protectInvalidMath } from "../../utils/markdownMathSafety";
 
 import { initializeInteractiveMermaid } from "../../utils/mermaid-layout-engine";
 
 // Enable math formatting
-marked.use(markedKatex({ throwOnError: false }));
+// Provider/PDF text can contain arbitrary Unicode, including replacement
+// characters.  KaTeX should only enhance valid math; unsupported Unicode in
+// surrounding text must remain text and must not produce console warnings.
+marked.use(markedKatex({ throwOnError: false, strict: false }));
 
 // Intercept all markdown images (including reference links) to resolve local vault paths
 marked.use({
@@ -171,6 +178,7 @@ const CALLOUT_TYPES: Record<string, { icon: string; color: string }> = {
 };
 
 interface MarkdownPreviewProps {
+  documentId?: string;
   content: string;
   onLinkClick: (linkName: string, heading?: string) => void;
   onCheckboxToggle?: (lineIndex: number, checked: boolean) => void;
@@ -646,6 +654,7 @@ export function applyCommentHighlightsToHtml(
 }
 
 export function MarkdownPreview({
+  documentId,
   content,
   onLinkClick,
   onCheckboxToggle,
@@ -663,6 +672,8 @@ export function MarkdownPreview({
 }: MarkdownPreviewProps) {
   const previewRef = useRef<HTMLDivElement>(null);
   const [debouncedContent, setDebouncedContent] = useState("");
+  const documentIdRef = useRef(documentId);
+  documentIdRef.current = documentId;
   const contentRef = useRef(content);
   contentRef.current = content;
   const [processorVersion, setProcessorVersion] = useState(0);
@@ -770,7 +781,7 @@ export function MarkdownPreview({
         let bodyHtml = "";
         if (bodyMarkdown) {
           try {
-            bodyHtml = marked.parse(bodyMarkdown, { async: false, breaks: true }) as string;
+            bodyHtml = marked.parse(protectInvalidMath(bodyMarkdown), { async: false, breaks: true }) as string;
           } catch {
             bodyHtml = `<p>${bodyMarkdown}</p>`;
           }
@@ -1037,7 +1048,7 @@ export function MarkdownPreview({
     processed = protectedCode.restore(processed)
 
     // Parse markdown to HTML
-    let html = marked.parse(processed, {
+    let html = marked.parse(protectInvalidMath(processed), {
       gfm: true,
       breaks: settings?.strictLineBreaks !== true,
     }) as string;
@@ -1266,7 +1277,7 @@ export function MarkdownPreview({
     }
 
     // Render markdown
-    const html = marked.parse(text, { async: false, breaks: true }) as string;
+    const html = marked.parse(protectInvalidMath(text), { async: false, breaks: true }) as string;
     return DOMPurify.sanitize(html);
   }, []);
 
@@ -1284,6 +1295,21 @@ export function MarkdownPreview({
       previewRef.current.innerHTML = renderedHtml;
       lastHtmlRef.current = renderedHtml;
       bindPreviewMediaFallbacks(previewRef.current);
+      previewRef.current.querySelectorAll<HTMLElement>("pre > code.language-openonyx-resource").forEach((code) => {
+        const resource = parseResourceJson(code.textContent || "");
+        if (!resource) return;
+        const source = resourceBlocks(contentRef.current).find((block) => block.resource.url === resource.url && block.resource.serverId === resource.serverId);
+        const sourceDocumentId = documentIdRef.current;
+        const original = source ? contentRef.current.slice(source.from, source.to) : "";
+        const replace = (updated?: ExternalResource) => {
+          if (!onContentChange || !original || sourceDocumentId !== documentIdRef.current) return;
+          const matches = resourceBlocks(contentRef.current).filter((block) => contentRef.current.slice(block.from, block.to) === original);
+          if (matches.length !== 1) return;
+          const block = matches[0];
+          onContentChange(contentRef.current.slice(0, block.from) + (updated ? serializeExternalResource(updated) : "") + contentRef.current.slice(block.to));
+        };
+        code.parentElement?.replaceWith(createResourceCard(resource, () => openResource(resource, onContentChange ? replace : undefined), onContentChange ? { update: replace, remove: () => replace() } : {}));
+      });
     }
     
     // Function to upgrade YouTube iframes into HD Posters

@@ -1,4 +1,5 @@
 import type { DiscoverableApp } from "../../../../utils/appRegistry";
+import { ArrowRight } from "lucide-react";
 import { DISCOVERABLE_APPS } from "../../../../utils/appRegistry";
 import { AppIcon } from "./AppIcon";
 
@@ -32,7 +33,7 @@ export function AddConnectionDialog({ onChoose, onCancel }: AddConnectionDialogP
                 <span className="mt-1 block text-[12px] text-[var(--text-muted)]">{app.description}</span>
               </span>
             </span>
-            <span className="shrink-0 text-[12px] text-[var(--text-muted)]">{app.actionLabel} →</span>
+            <span className="inline-flex shrink-0 items-center gap-1 text-[12px] text-[var(--text-muted)]">{app.actionLabel}<ArrowRight size={14} strokeWidth={2.5} aria-hidden="true" /></span>
           </button>
         ))}
       </div>

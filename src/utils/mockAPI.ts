@@ -640,6 +640,19 @@ export function createMockAPI(): ElectronAPI {
       };
     },
 
+    googleDrive: {
+      cachedPdf: async (): Promise<Uint8Array | null> => null,
+      previewPdf: async (): Promise<Uint8Array> => { throw new Error('Google Drive is unavailable outside the desktop app.'); },
+      cachedPreviewFile: async () => null,
+      previewFile: async () => { throw new Error('Google Drive is unavailable outside the desktop app.'); },
+      status: async () => ({ configured: false, secureStorage: false, accounts: [] }),
+      onStatusChanged: () => () => {},
+      connect: async () => { throw new Error("Google Drive requires the native app and configured OAuth."); },
+      cancelConnect: async () => {},
+      disconnect: async () => { throw new Error("Google Drive is not connected."); },
+      search: async () => { throw new Error("Google Drive is not connected."); },
+      getResource: async () => { throw new Error("Google Drive is not connected."); },
+    },
     mcp: {
       list: async () => Object.values(mockMcpServers),
       listEnabledTools: async () => Object.values(mockMcpServers).flatMap((server: any) => (

@@ -1,3 +1,5 @@
+import { AppResourceSurface } from "./components/apps/AppResourceView";
+import "./styles/appResources.css";
 /**
  * App - Root Application Component
  *
@@ -47,7 +49,7 @@ const CanvasView = React.lazy(() => import("./components/canvas/CanvasView").the
 const SearchModal = React.lazy(() => import("./components/modals/SearchModal").then((m) => ({ default: m.SearchModal })));
 const BookmarkModal = React.lazy(() => import("./components/modals/BookmarkModal").then((m) => ({ default: m.BookmarkModal })));
 const CommandPalette = React.lazy(() => import("./components/modals/CommandPalette").then((m) => ({ default: m.CommandPalette })));
-const AppCapabilityPicker = React.lazy(() => import("./components/apps/AppCapabilityPicker").then((m) => ({ default: m.AppCapabilityPicker })));
+const AppResourcePicker = React.lazy(() => import("./components/apps/AppResourcePicker").then((m) => ({ default: m.AppResourcePicker })));
 const VaultManager = React.lazy(() => import("./components/settings/VaultManager").then((m) => ({ default: m.VaultManager })));
 const SettingsPage = React.lazy(() => import("./components/settings/SettingsPage").then((m) => ({ default: m.SettingsPage })));
 const TemplateModal = React.lazy(() => import("./components/modals/TemplateModal").then((m) => ({ default: m.TemplateModal })));
@@ -78,7 +80,25 @@ import { type LinkType } from "./components/ai/SuggestionBanner";
 import { enrichSuggestions, type EnrichedSuggestion } from "./utils/suggestion-enrichment";
 import { resetSynthesisCache } from "./utils/synthesis";
 import { clearCache as clearSpacesCache } from "./utils/spaces-store";
-import { FileText, Layout } from "lucide-react";
+import {
+  BookOpen,
+  Bookmark,
+  ChevronRight,
+  Clipboard,
+  Copy,
+  ExternalLink,
+  FileDown,
+  FileText,
+  FolderInput,
+  FolderOpen,
+  Layout,
+  Link as LinkIcon,
+  PanelBottomOpen,
+  Pencil,
+  Replace,
+  Search,
+  Trash2,
+} from "lucide-react";
 import { Tab, ViewMode, Theme, Command, FileEntry, PaneNode, PaneLeaf, BookmarkEntry } from "./types";
 import {
   SplitPaneContainer,
@@ -108,6 +128,7 @@ import {
   mergePaneTabsWithPreservedUngrouped,
 } from "./utils/tabGroups";
 import { getAPI } from "./utils/api";
+import { buildMarkdownPdfHtml, getPdfDefaultPath } from "./utils/pdfExport";
 import { PluginManager } from "./lib/pluginManager";
 import { OOApp } from "./lib/obsidian-api/app";
 import { TFile } from "./lib/obsidian-api";
@@ -362,6 +383,13 @@ const isHostEditableMarkdownPath = (path: string | null | undefined): path is st
   if (isCanvasFile(path) || isExcalidrawFile(path)) return false;
   return path.toLowerCase().endsWith(".md");
 };
+const clampGlobalFileMenuPosition = (x: number, y: number, width = 205, height = 430) => {
+  const margin = 8;
+  return {
+    x: Math.min(Math.max(margin, x - width), Math.max(margin, window.innerWidth - width - margin)),
+    y: Math.min(Math.max(margin, y + 4), Math.max(margin, window.innerHeight - height - margin)),
+  };
+};
 const isKanbanBoard = (frontmatter: Record<string, unknown> | undefined) =>
   typeof frontmatter?.['kanban-plugin'] === 'string'
   && frontmatter['kanban-plugin'].replace(/["']/g, '').toLowerCase() === 'board';
@@ -432,7 +460,7 @@ export default function App() {
   const [searchInitialQuery, setSearchInitialQuery] = useState("");
   const [searchInitialMode, setSearchInitialMode] = useState<"search" | "switcher">("switcher");
   const [showCommandPalette, setShowCommandPalette] = useState(false);
-  const [showAppCapabilityPicker, setShowAppCapabilityPicker] = useState(false);
+  const [showAppResourcePicker, setShowAppResourcePicker] = useState(false);
   const [rightSidebarTab, setRightSidebarTab] = useState<RightSidebarTabType>("outline");
   const [activeUsers, setActiveUsers] = useState<any[]>([]);
   const [showTags, setShowTags] = useState(false);
@@ -2796,7 +2824,7 @@ export default function App() {
       setBacklinks([]);
       return;
     }
-    if (isCanvasFile(tab.path)) {
+    if (isCanvasFile(tab.path) || tab.path.toLowerCase().endsWith(".pdf")) {
       setCurrentContent("");
       setBacklinks([]);
       return;
@@ -2943,6 +2971,8 @@ export default function App() {
     }
 
     const readOrCreateMissingMarkdown = async (path: string): Promise<string> => {
+      // PDF bytes are read by the shared document viewer, never as Markdown.
+      if (path.toLowerCase().endsWith(".pdf")) return "";
       const existing = app?.vault.getFileByPath(path);
       if (existing || !path.toLowerCase().endsWith(".md")) {
         return (await api.readFile(path)) || "";
@@ -4309,7 +4339,7 @@ export default function App() {
       id: "use-app",
       label: "Use app...",
       category: "Apps",
-      action: () => setShowAppCapabilityPicker(true),
+      action: () => setShowAppResourcePicker(true),
     },
   ], [commands]);
 
@@ -4325,6 +4355,76 @@ export default function App() {
     }
     return tabs.find((t: Tab) => t.id === activeTabId);
   }, [focusedLeaf, tabs, activeTabId]);
+  const [globalFileMenuPosition, setGlobalFileMenuPosition] = useState<{ x: number; y: number } | null>(null);
+
+  useEffect(() => {
+    const handleOpenFileMenu = (event: Event) => {
+      const detail = (event as CustomEvent<{ x?: number; y?: number }>).detail;
+      if (!activeTab?.path || activeTab.path === "__new_tab__" || activeTab.path.startsWith("__")) return;
+      setGlobalFileMenuPosition(clampGlobalFileMenuPosition(detail?.x ?? window.innerWidth - 16, detail?.y ?? 48));
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setGlobalFileMenuPosition(null);
+    };
+    document.addEventListener("editor:open-file-menu", handleOpenFileMenu);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("editor:open-file-menu", handleOpenFileMenu);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [activeTab?.path]);
+
+  const handleActiveTabExportPdf = useCallback(async () => {
+    if (!activeTab || !isHostEditableMarkdownPath(activeTab.path)) return;
+    try {
+      const resolvedVaultPath = await api.getVaultPath();
+      const vaultFiles = resolvedVaultPath ? await api.getFileTree().catch(() => undefined) : undefined;
+      const markdown = currentContentPathRef.current === activeTab.path
+        ? currentContentRef.current
+        : await api.readFile(activeTab.path);
+      const html = buildMarkdownPdfHtml({
+        markdown,
+        title: activeTab.name || activeTab.path.replace(/\.md$/i, ""),
+        notePath: activeTab.path,
+        vaultPath: resolvedVaultPath || undefined,
+        vaultFiles,
+      });
+      const result = await api.exportMarkdownPdf({
+        html,
+        defaultPath: getPdfDefaultPath(resolvedVaultPath, activeTab.path),
+      });
+      if (!result.canceled && result.filePath) showToast("PDF exported", "success");
+    } catch (error) {
+      console.error("Failed to export PDF:", error);
+      showToast("Failed to export PDF.", "error");
+    }
+  }, [activeTab, showToast]);
+
+  const runGlobalFileMenuAction = useCallback((action?: () => void) => {
+    setGlobalFileMenuPosition(null);
+    action?.();
+  }, []);
+
+  const renderGlobalFileMenuItem = (
+    label: string,
+    Icon: typeof FileText,
+    action?: () => void,
+    options: { danger?: boolean; disabled?: boolean; checked?: boolean; trailing?: React.ReactNode } = {},
+  ) => (
+    <button
+      key={label}
+      type="button"
+      className={`group/menu-item flex min-h-[28px] w-full items-center gap-2 border-0 bg-transparent px-3 py-0.5 text-left text-[13px] font-[inherit] leading-5 text-[var(--text-secondary)] outline-none transition-colors duration-100 hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] ${options.danger ? "text-[var(--danger)] hover:text-[var(--danger)]" : ""} ${options.disabled ? "cursor-default opacity-45 hover:bg-transparent hover:text-[var(--text-secondary)]" : "cursor-pointer"}`}
+      onClick={() => !options.disabled && runGlobalFileMenuAction(action)}
+      disabled={options.disabled}
+    >
+      <span className="flex h-4 w-4 shrink-0 items-center justify-center text-[var(--text-muted)]">
+        <Icon size={15} strokeWidth={1.6} />
+      </span>
+      <span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap">{label}</span>
+      {options.trailing ?? (options.checked ? <span className="ml-auto">✓</span> : null)}
+    </button>
+  );
 
   // ── Collaboration State ────────────────────────────────
   const [collaborators, setCollaborators] = useState<any[]>([]);
@@ -5391,6 +5491,57 @@ export default function App() {
                 {vaultPath && !isFTUXZeroState && activeTab?.path && activeTab.path !== "__new_tab__" && !activeTab.path.startsWith("__") && (
                   <FormattingToolbar />
                 )}
+                {globalFileMenuPosition && activeTab?.path && (
+                  <div
+                    className="fixed inset-0 z-[3600] bg-transparent"
+                    onClick={() => setGlobalFileMenuPosition(null)}
+                    onContextMenu={(event) => {
+                      event.preventDefault();
+                      setGlobalFileMenuPosition(null);
+                    }}
+                  >
+                    <div
+                      className="fixed z-[3601] w-[205px] overflow-visible rounded-lg border border-[var(--border-medium)] bg-[var(--bg-elevated)] py-[5px] text-[13px] text-[var(--text-secondary)] shadow-[var(--shadow-md)]"
+                      style={{ left: globalFileMenuPosition.x, top: globalFileMenuPosition.y }}
+                      onClick={(event) => event.stopPropagation()}
+                    >
+                      {renderGlobalFileMenuItem("Backlinks in document", LinkIcon, handleNoteMenuToggleBacklinks)}
+                      {renderGlobalFileMenuItem("Reading view", BookOpen, undefined, { disabled: true })}
+                      <div className="mx-0 my-1 h-px bg-[var(--border-subtle)]" />
+                      {renderGlobalFileMenuItem("Rename...", Pencil, () => void handleNoteMenuRename(activeTab.path))}
+                      {renderGlobalFileMenuItem("Move file to...", FolderInput, () => void handleNoteMenuMove(activeTab.path))}
+                      {renderGlobalFileMenuItem("Bookmark...", Bookmark, () => setBookmarkModalPath(activeTab.path))}
+                      {renderGlobalFileMenuItem("Export to PDF...", FileDown, () => void handleActiveTabExportPdf(), {
+                        disabled: !isHostEditableMarkdownPath(activeTab.path),
+                      })}
+                      <div className="mx-0 my-1 h-px bg-[var(--border-subtle)]" />
+                      {renderGlobalFileMenuItem("Find...", Search, () => document.dispatchEvent(new CustomEvent("editor:open-search")))}
+                      {renderGlobalFileMenuItem("Replace...", Replace, () => document.dispatchEvent(new CustomEvent("editor:open-search")))}
+                      <div className="mx-0 my-1 h-px bg-[var(--border-subtle)]" />
+                      <div className="group/submenu relative">
+                        <button type="button" className="group/menu-item flex min-h-[28px] w-full cursor-default items-center gap-2 border-0 bg-transparent px-3 py-0.5 text-left text-[13px] font-[inherit] leading-5 text-[var(--text-secondary)] outline-none transition-colors duration-100 hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]">
+                          <span className="flex h-4 w-4 shrink-0 items-center justify-center text-[var(--text-muted)]">
+                            <Clipboard size={15} strokeWidth={1.6} />
+                          </span>
+                          <span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap">Copy path</span>
+                          <ChevronRight size={14} strokeWidth={1.6} />
+                        </button>
+                        <div className="absolute left-[calc(100%-2px)] top-[-5px] z-[3602] hidden w-[178px] rounded-lg border border-[var(--border-medium)] bg-[var(--bg-elevated)] py-[5px] shadow-[var(--shadow-md)] group-hover/submenu:block">
+                          {renderGlobalFileMenuItem("Relative path", Copy, () => handleCopyNoteRelativePath(activeTab.path))}
+                          {renderGlobalFileMenuItem("Absolute path", Copy, () => handleCopyNoteAbsolutePath(activeTab.path), {
+                            disabled: !vaultPath,
+                          })}
+                        </div>
+                      </div>
+                      <div className="mx-0 my-1 h-px bg-[var(--border-subtle)]" />
+                      {renderGlobalFileMenuItem("Open in default app", ExternalLink, () => void handleOpenNoteInDefaultApp(activeTab.path))}
+                      {renderGlobalFileMenuItem("Show in system explorer", FolderOpen, () => handleShowNoteInSystemExplorer(activeTab.path))}
+                      {renderGlobalFileMenuItem("Reveal file in navigation", PanelBottomOpen, () => handleRevealNoteInNavigation(activeTab.path))}
+                      <div className="mx-0 my-1 h-px bg-[var(--border-subtle)]" />
+                      {renderGlobalFileMenuItem("Delete file", Trash2, () => handleDeleteFile(activeTab.path, false), { danger: true })}
+                    </div>
+                  </div>
+                )}
                 <div
                   className={`main-content flex min-w-0 flex-1 overflow-hidden ${settings.backgroundImage ? '' : 'bg-[var(--bg-primary)]'}`}
                   ref={mainContentRef}
@@ -5656,9 +5807,10 @@ export default function App() {
       )}
 
 
-      {showAppCapabilityPicker && (
+      <AppResourceSurface />
+      {showAppResourcePicker && (
         <React.Suspense fallback={null}>
-          <AppCapabilityPicker onClose={() => setShowAppCapabilityPicker(false)} />
+          <AppResourcePicker onClose={() => setShowAppResourcePicker(false)} />
         </React.Suspense>
       )}
       {showSettings && (

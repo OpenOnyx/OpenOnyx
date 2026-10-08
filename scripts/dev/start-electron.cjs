@@ -2,7 +2,8 @@ const { spawn, spawnSync } = require('node:child_process');
 const fs = require('node:fs');
 const path = require('node:path');
 
-const env = { ...process.env };
+const { loadNativeAppEnv, nativeAppArgs } = require('./native-app-env.cjs');
+const env = loadNativeAppEnv({ ...process.env }, process.cwd());
 delete env.ELECTRON_RUN_AS_NODE;
 
 env.NODE_ENV = env.NODE_ENV || 'development';
@@ -182,7 +183,7 @@ function resolveElectronBinary() {
 }
 
 const electronBinary = resolveElectronBinary();
-const electronProcess = spawn(electronBinary, ['.'], {
+const electronProcess = spawn(electronBinary, nativeAppArgs(process.platform, env), {
   stdio: 'inherit',
   env,
 });

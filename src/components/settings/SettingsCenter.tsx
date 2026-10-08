@@ -56,7 +56,7 @@ const STUDIOS = [
   { id: "editor" as const, label: "Editor", desc: "Typography, [[Wikilinks]] & line width" },
   { id: "appearance" as const, label: "Appearance", desc: "Themes, font scale & zoom" },
   { id: "ai" as const, label: "AI", desc: "Providers, models & note indexer" },
-  { id: "mcp" as const, label: "Apps", desc: "External apps, capabilities & advanced MCP" },
+  { id: "mcp" as const, label: "Apps", desc: "External resources and app connections" },
   { id: "sync" as const, label: "Sync", desc: "Cloud database & storage connection" },
   { id: "extensions" as const, label: "Extensions", desc: "Community plugins & core suite" },
   { id: "system" as const, label: "System", desc: "Updates, accounts & factory reset" },
@@ -274,7 +274,7 @@ export function SettingsCenter({
               {/* Content Header Bar */}
               <div className="h-14 shrink-0 flex items-center justify-between px-6 border-b border-[var(--border-subtle)] bg-[var(--bg-secondary)]">
                 <div className="text-[12px] font-bold text-[var(--text-primary)] uppercase tracking-wider">
-                  {currentStudio?.label || (activeTab === "hotkeys" ? "Shortcuts Registry" : "Cloud Workspaces")}
+                  {activeTab === "mcp" ? "" : currentStudio?.label || (activeTab === "hotkeys" ? "Shortcuts Registry" : "Cloud Workspaces")}
                 </div>
                 <button
                   type="button"

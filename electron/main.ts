@@ -1,3 +1,10 @@
+import { safeStorage } from "electron";
+import { GoogleDriveProvider } from "./googleDriveProvider.js";
+import { GoogleDriveCredentialStore } from "./googleDriveStore.js";
+import { registerGoogleDriveIpc } from "./googleDriveIpc.js";
+import { GoogleDrivePdfCache } from "./googleDrivePdfCache.js";
+import { GoogleDriveFileCache } from "./googleDriveFileCache.js";
+import { readAppsAuthConfig } from "./appsAuthConfig.js";
 /**
  * OpenOnyx - Electron Main Process
  * 
@@ -67,6 +74,7 @@ let mainWindow: BrowserWindow | null = null;
 let fsManager: FileSystemManager | null = null;
 let searchEngine: SearchEngine | null = null;
 let mcpManager: McpConnectionManager | null = null;
+let googleDrive: GoogleDriveProvider | null = null;
 let mcpShutdownComplete = false;
 let mcpShutdownPromise: Promise<void> | null = null;
 
@@ -709,6 +717,17 @@ app.whenReady().then(async () => {
     console.error('[MCP] Failed to load configuration:', error);
   }
   registerMcpIpcHandlers(ipcMain, mcpManager, new McpActivityStore(userDataPath));
+  googleDrive = new GoogleDriveProvider(new GoogleDriveCredentialStore(userDataPath, safeStorage),
+    readAppsAuthConfig(path.join(__dirname, 'apps-auth.json'), app.isPackaged),
+    async (url) => { await shell.openExternal(url); });
+  try { await googleDrive.load(); } catch { console.warn('[Apps] Google Drive credentials could not be unlocked.'); }
+  registerGoogleDriveIpc(
+    ipcMain,
+    googleDrive,
+    () => mainWindow,
+    new GoogleDrivePdfCache(path.join(userDataPath, 'drive-pdf-cache')),
+    new GoogleDriveFileCache(path.join(userDataPath, 'drive-preview-cache')),
+  );
   restoreLastVault(fsManager);
 
   // Register all IPC handlers for renderer communication
@@ -787,3 +806,5 @@ app.on('will-quit', (event) => {
   }
   globalShortcut.unregisterAll();
 });
+
+app.on("before-quit", () => googleDrive?.cancelConnection());

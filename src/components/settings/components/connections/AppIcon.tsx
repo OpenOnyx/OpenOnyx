@@ -2,7 +2,7 @@ import React from "react";
 import { Database, Folder, Plug } from "lucide-react";
 import type { AppIconKey } from "../../../../utils/appRegistry";
 
-const baseClass = "flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-primary)] text-[12px] font-bold shadow-none";
+const baseClass = "flex shrink-0 items-center justify-center rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-primary)] text-[12px] font-bold shadow-none";
 
 function GoogleDriveMark() {
   return (
@@ -98,5 +98,5 @@ function iconNode(icon: AppIconKey): React.ReactNode {
 }
 
 export function AppIcon({ icon, className = "" }: { icon: AppIconKey; className?: string }) {
-  return <span className={`${baseClass} ${className}`} aria-hidden="true">{iconNode(icon)}</span>;
+  return <span className={`${baseClass} ${className || "h-9 w-9"}`} aria-hidden="true">{iconNode(icon)}</span>;
 }

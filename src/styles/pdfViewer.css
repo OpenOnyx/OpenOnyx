@@ -1,0 +1,38 @@
+.pdf-viewer-preview { margin: 12px 0 8px; min-width: 0; }
+.pdf-viewer-toolbar { display: flex; align-items: center; justify-content: flex-end; min-height: 28px; color: var(--text-muted); font-size: 12px; }
+.pdf-viewer-toolbar[hidden], .pdf-viewer-viewport[hidden] { display: none; }
+.pdf-viewer-toolbar button { flex-shrink: 0; white-space: nowrap; padding: 4px 8px; border-radius: 4px; background: var(--bg-secondary); }
+.pdf-viewer-toolbar button:disabled { opacity: .4; }
+.pdf-viewer-status { font-size: 12px; color: var(--text-muted); margin: 8px 0; }
+.pdf-viewer-status:empty { display: none; }
+.pdf-viewer-viewport { position: relative; max-height: 580px; overflow: auto; overscroll-behavior: contain; background: var(--bg-secondary); }
+.pdf-viewer-viewport canvas { display: block; max-width: none; }
+.pdf-viewer-pager { position: sticky; z-index: 2; bottom: 16px; display: flex; align-items: center; justify-content: center; gap: 4px; width: max-content; margin: -42px auto 16px; padding: 4px; border: 1px solid var(--border-medium); border-radius: 999px; background: color-mix(in srgb, var(--bg-primary) 88%, transparent); box-shadow: var(--shadow-md); backdrop-filter: blur(10px); }
+.pdf-viewer-pager button { min-width: 28px; height: 28px; padding: 2px 8px; border-radius: 999px; color: var(--text-primary); }
+.pdf-viewer-pager .pdf-viewer-arrow { width: 18px; height: 18px; display: block; stroke: currentColor; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; fill: none; }
+.pdf-viewer-pager span { min-width: 42px; text-align: center; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+
+.pdf-document-view { height: 100%; min-height: 0; overflow: hidden; padding: 16px 24px; color: var(--text-primary); }
+.pdf-document-view h2 { font-size: 14px; margin-bottom: 12px; overflow-wrap: anywhere; }
+.pdf-viewer-document { height: 100%; min-height: 0; display: flex; flex-direction: column; }
+.pdf-viewer-document .pdf-viewer-viewport { flex: 1; min-height: 0; max-height: none; overflow: auto; overscroll-behavior: auto; background: transparent; }
+.pdf-viewer-document .pdf-viewer-viewport canvas { margin: 0 auto; background: white; }
+.pdf-viewer-preview button:focus-visible { outline: 2px solid var(--accent-primary); outline-offset: 2px; }
+
+.pdf-viewer-retry { padding: 6px 10px; border-radius: var(--radius-md, 6px); background: var(--bg-secondary); color: var(--text-secondary); font-size: 12px; }
+
+/* Inline pages fit as a whole; full readers alone own vertical scrolling. */
+.pdf-viewer-inline .pdf-viewer-viewport { max-height: none; overflow: visible; overscroll-behavior: auto; }
+.pdf-viewer-inline canvas { margin: 0 auto; background: white; }
+.pdf-viewer-inline .resource-page-controls { position: relative; bottom: auto; margin: 8px auto; }
+.pdf-viewer-inline .pdf-viewer-toolbar { display: none; }
+.pdf-document-view { display: flex; flex-direction: column; box-sizing: border-box; }
+.pdf-document-view h2 { flex: none; }
+.pdf-document-host { flex: 1; min-height: 0; overflow: hidden; }
+.pdf-viewer-document { margin: 0; overflow: hidden; }
+.pdf-viewer-document .pdf-viewer-toolbar { flex: none; gap: 12px; }
+.pdf-viewer-document .pdf-viewer-viewport { overflow-y: auto; overflow-x: auto; padding: 12px; box-sizing: border-box; }
+.pdf-viewer-page { margin: 0 auto 16px; background: #fff; box-shadow: 0 1px 5px #0003; position: relative; }
+.pdf-viewer-page:empty { background: linear-gradient(#eee 0 0) 15% 15%/60% 8px no-repeat, #fff; }
+.pdf-viewer-page canvas { width: 100%; height: 100%; display: block; }
+.pdf-viewer-document .pdf-viewer-viewport { scrollbar-gutter: stable; }

@@ -3,8 +3,9 @@ import markedKatex from "marked-katex-extension";
 import DOMPurify from "dompurify";
 import { resolveVaultImageSrc } from "./resolveImageSrc";
 import { parseMarkdownCallouts } from "./calloutParser";
+import { protectInvalidMath } from "./markdownMathSafety";
 
-marked.use(markedKatex({ throwOnError: false }));
+marked.use(markedKatex({ throwOnError: false, strict: false }));
 
 function escapeHtml(value: string): string {
   return value
@@ -173,7 +174,7 @@ export function buildMarkdownPdfHtml({
   vaultFiles?: VaultFileLike[];
 }): string {
   const processed = preprocessMarkdown(markdown, vaultPath, vaultFiles);
-  let rendered = marked.parse(processed, { gfm: true, breaks: true }) as string;
+  let rendered = marked.parse(protectInvalidMath(processed), { gfm: true, breaks: true }) as string;
   rendered = rendered.replace(/<blockquote[^>]*>\s*(<div class="[^"]*docs-note[\s\S]*?<\/div>\s*<\/div>)\s*<\/blockquote>/g, "$1");
   const safeHtml = DOMPurify.sanitize(rendered, {
     ADD_TAGS: ["input", "math", "semantics", "mrow", "mi", "mo", "mn", "msup", "mspace", "msqrt", "mfrac", "annotation"],

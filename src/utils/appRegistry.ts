@@ -73,7 +73,7 @@ export interface AppDescriptor {
 }
 
 export interface DiscoverableApp extends AppCatalogEntry {
-  id: "github" | "filesystem" | "custom";
+  id: "github" | "filesystem" | "custom" | "google-drive";
   actionLabel: "Add" | "Configure";
   availability: "available";
 }
@@ -92,8 +92,8 @@ export const CATEGORY_LABELS: Record<AppCategory, string> = {
   productivity: "Productivity",
   development: "Development",
   communication: "Communication",
-  "files-data": "Files & Data",
-  developer: "Developer",
+  "files-data": "Files & knowledge",
+  developer: "Advanced",
   custom: "Custom",
 };
 
@@ -134,8 +134,8 @@ const CATALOG_BASE: AppCatalogEntry[] = [
     icon: "google-drive",
     category: "files-data",
     tags: ["drive", "files", "docs", "cloud", "google"],
-    provider: "roadmap",
-    availability: "coming-soon",
+    provider: "openonyx",
+    availability: "available",
     setupType: "remote",
     popular: true,
     capabilities: ["Search files", "Open documents"],
@@ -282,7 +282,7 @@ PRESENTATION["local-test"] = {
 export const APP_CATALOG: AppCatalogEntry[] = CATALOG_BASE;
 
 export const DISCOVERABLE_APPS: DiscoverableApp[] = APP_CATALOG.filter((entry): entry is DiscoverableApp => (
-  entry.availability === "available" && (entry.id === "github" || entry.id === "filesystem" || entry.id === "custom")
+  entry.availability === "available" && (entry.id === "github" || entry.id === "filesystem" || entry.id === "custom" || entry.id === "google-drive")
 )).map((entry) => ({
   ...entry,
   actionLabel: entry.id === "custom" ? "Configure" : "Add",
@@ -383,6 +383,7 @@ export function activityForApp(activity: McpToolActivity[], serverId: string, li
 }
 
 export function createAppServerTemplate(appId: DiscoverableApp["id"], options: { filesystemRoot?: string } = {}): McpServerConfig {
+  if (appId === "google-drive") throw new Error("Google Drive uses native account authorization, not an MCP server template.");
   const timestamp = now();
   const presentation = PRESENTATION[appId];
   const base = {

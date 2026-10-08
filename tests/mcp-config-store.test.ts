@@ -58,6 +58,20 @@ describe("MCP configuration store", () => {
     await expect(fs.readFile(getMcpConfigurationPath(userDataPath), "utf8")).resolves.toContain('"local"');
   });
 
+  it("preserves absolute custom provider paths even when they share a bundled filename", async () => {
+    const store = await createStore();
+    const config = { id: "github", name: "GitHub", enabled: true, trusted: true, enabledTools: ["search_issues"], favoriteTools: [], transport: { transport: "stdio" as const, command: "node", args: ["/custom/mcp-github-server.mjs"], env: {} }, createdAt: 1, updatedAt: 1 };
+    await store.save({ servers: { github: config } });
+    expect((await store.load()).servers.github).toEqual(config);
+  });
+
+  it("validates malformed persisted transports before attempting migration", async () => {
+    const directory = await fs.mkdtemp(path.join(os.tmpdir(), "openonyx-mcp-"));
+    temporaryDirectories.push(directory);
+    await fs.writeFile(getMcpConfigurationPath(directory), JSON.stringify({ servers: { broken: { id: "broken", name: "Broken" } } }));
+    await expect(new McpConfigurationStore(directory).load()).rejects.toBeInstanceOf(McpConfigurationValidationError);
+  });
+
   it("writes configuration atomically and creates the user data directory", async () => {
     const userDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "openonyx-mcp-"));
     temporaryDirectories.push(userDataPath);
@@ -116,4 +130,45 @@ describe("MCP configuration store", () => {
       },
     });
   });
+
+  it("migrates legacy bundled GitHub script paths away from vault-relative launches", async () => {
+    const userDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "openonyx-mcp-"));
+    temporaryDirectories.push(userDataPath);
+    await fs.writeFile(getMcpConfigurationPath(userDataPath), JSON.stringify({
+      servers: {
+        github: {
+          id: "github",
+          name: "GitHub",
+          enabled: true,
+          trusted: true,
+          enabledTools: ["search_issues"],
+          favoriteTools: [],
+          transport: {
+            transport: "stdio",
+            command: "node",
+            args: ["scripts/mcp-github-server.mjs"],
+            env: {},
+          },
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      },
+    }), "utf8");
+
+    await expect(new McpConfigurationStore(userDataPath).load()).resolves.toMatchObject({
+      servers: {
+        github: {
+          enabled: true,
+          trusted: true,
+          enabledTools: ["search_issues"],
+          transport: {
+            transport: "stdio",
+            command: "__openonyx_bundled_mcp__",
+            args: ["github"],
+          },
+        },
+      },
+    });
+  });
+
 });

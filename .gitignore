@@ -9,6 +9,7 @@ release/
 # Environment
 .env
 .env.local
+.env.local.*
 .env.*.local
 
 # OS
@@ -39,3 +40,9 @@ venv/
 
 # Mobile (separate project)
 OOMobile/
+# Supabase CLI local state
+supabase/.temp/
+
+# Vault-local state and native credential files
+.openonyx/
+google-drive-credentials.enc

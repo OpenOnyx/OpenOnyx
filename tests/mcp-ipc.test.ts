@@ -56,7 +56,7 @@ describe("MCP IPC", () => {
     )).resolves.toEqual({ content: [{ type: "text", text: "Echo: Hello" }] });
 
     expect(electronMocks.showMessageBox).toHaveBeenCalledWith(expect.objectContaining({
-      title: "Run app tool?",
+      title: "Use external app?",
       message: "OpenOnyx wants to use Local MCP Test",
       defaultId: 0,
       cancelId: 0,

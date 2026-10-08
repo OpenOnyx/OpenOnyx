@@ -1,3 +1,4 @@
+import { GITHUB_PERMISSIONS } from "../../../utils/githubProvider";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import type { McpServerConfig, McpServerSnapshot, McpTool } from "../../../types/mcp";
 import { getAPI } from "../../../utils/api";
@@ -17,6 +18,13 @@ type AppsView =
   | { kind: "setup"; appId: DiscoverableApp["id"] }
   | { kind: "details"; serverId: string }
   | { kind: "advanced"; serverId?: string | null };
+
+function appErrorMessage(error: unknown, fallback: string): string {
+  const message = error instanceof Error ? error.message : fallback;
+  if (/connection closed|module_not_found|cannot find module/i.test(message)) return "The app connection closed unexpectedly. Try reconnecting or open Advanced for diagnostics.";
+  if (/trust approval.*cancel/i.test(message)) return "Connection approval was cancelled.";
+  return message.replace(/^Error invoking remote method '[^']+': (?:Error: )?/, "");
+}
 
 function normalizeConfig(config: McpServerConfig): McpServerConfig {
   return {
@@ -55,6 +63,7 @@ export function McpSettingsPanel() {
     ]);
     setServers(nextServers);
     setActivity(nextActivity);
+    window.dispatchEvent(new Event("openonyx:apps-changed"));
   }, []);
 
   useEffect(() => {
@@ -82,11 +91,12 @@ export function McpSettingsPanel() {
     try {
       await action();
     } catch (actionError) {
-      setError(actionError instanceof Error ? actionError.message : fallback);
+      setError(appErrorMessage(actionError, fallback));
     } finally {
+      await refresh().catch(() => {});
       setBusy(false);
     }
-  }, []);
+  }, [refresh]);
 
   const updateToolRun = useCallback((key: string, update: Partial<ToolRunState>) => {
     setToolRuns((current) => {
@@ -204,7 +214,7 @@ export function McpSettingsPanel() {
     },
   }), [refresh, runAction, servers, updateToolRun]);
 
-  const installApp = useCallback(async (appId: DiscoverableApp["id"], options?: { filesystemRoot?: string }) => {
+  const installApp = useCallback(async (appId: DiscoverableApp["id"], options?: { filesystemRoot?: string; githubPermissions?: string[] }) => {
     if (appId === "custom") {
       setAdvancedTemplate(createAppServerTemplate(appId));
       setView({ kind: "advanced", serverId: null });
@@ -214,6 +224,14 @@ export function McpSettingsPanel() {
       const config = normalizeConfig(createAppServerTemplate(appId, options));
       await getAPI().mcp.save(config);
       await getAPI().mcp.setEnabled(config.id, true);
+      if (appId === "github" && options?.githubPermissions) {
+        const snapshot = (await getAPI().mcp.list()).find((entry) => entry.config.id === config.id);
+        if (snapshot) {
+          const approved: string[] = GITHUB_PERMISSIONS.filter((permission) => options.githubPermissions!.includes(permission.id)).flatMap((permission) => [...permission.tools]);
+          // Explicit install consent applies to current, known tools only.
+          await getAPI().mcp.save({ ...snapshot.config, enabledTools: snapshot.tools.filter((tool) => approved.includes(tool.name)).map((tool) => tool.name) });
+        }
+      }
       await refresh();
       setView({ kind: "details", serverId: config.id });
     }, `Could not connect ${appId}`);

@@ -1,0 +1,4 @@
+# Native clients do not need a Supabase account. This function validates Google
+# PKCE requests and signed refresh capabilities itself; other functions unchanged.
+[functions.google-drive-auth]
+verify_jwt = false

@@ -4,6 +4,12 @@ import type { McpConfiguration, McpServerConfig } from "./mcpTypes.js";
 import { validateMcpConfiguration } from "./mcpValidation.js";
 
 export const MCP_CONFIGURATION_FILE = "mcp-servers.json";
+const BUNDLED_MCP_COMMAND = "__openonyx_bundled_mcp__";
+const BUNDLED_PROVIDER_BY_SCRIPT = new Map([
+  ["mcp-github-server.mjs", "github"],
+  ["mcp-dev-filesystem-server.mjs", "filesystem"],
+  ["mcp-dev-echo-server.mjs", "local-test"],
+]);
 
 export function getMcpConfigurationPath(userDataPath: string): string {
   return path.join(userDataPath, MCP_CONFIGURATION_FILE);
@@ -75,7 +81,7 @@ function migrateConfiguration(input: unknown): unknown {
       continue;
     }
     const now = Date.now();
-    servers[serverId] = {
+    const migratedServer = {
       ...rawServer,
       id: typeof rawServer.id === "string" ? rawServer.id : serverId,
       enabled: typeof rawServer.enabled === "boolean" ? rawServer.enabled : false,
@@ -89,6 +95,31 @@ function migrateConfiguration(input: unknown): unknown {
       createdAt: typeof rawServer.createdAt === "number" ? rawServer.createdAt : now,
       updatedAt: typeof rawServer.updatedAt === "number" ? rawServer.updatedAt : now,
     } as McpServerConfig;
+    servers[serverId] = migrateBundledTransport(migratedServer);
   }
   return { ...input, servers };
+}
+
+function migrateBundledTransport(server: McpServerConfig): McpServerConfig {
+  if (!isRecord(server.transport) || server.transport.transport !== "stdio") return server;
+  if (server.transport.command === BUNDLED_MCP_COMMAND) return server;
+  if (typeof server.transport.command !== "string" || !Array.isArray(server.transport.args)) return server;
+  const executable = server.transport.command.replace(/\\/g, "/").split("/").pop()?.toLowerCase();
+  if (executable !== "node" && executable !== "node.exe") return server;
+  const [scriptArg, ...args] = server.transport.args;
+  if (typeof scriptArg !== "string") return server;
+  const normalizedScript = scriptArg.replace(/\\/g, "/").replace(/^\.\//, "");
+  if (!/^scripts\/[^/]+$/.test(normalizedScript)) return server;
+  const scriptName = normalizedScript.split("/").pop();
+  const provider = scriptName ? BUNDLED_PROVIDER_BY_SCRIPT.get(scriptName) : undefined;
+  if (!provider) return server;
+  return {
+    ...server,
+    transport: {
+      transport: "stdio",
+      command: BUNDLED_MCP_COMMAND,
+      args: [provider, ...args],
+      env: server.transport.env,
+    },
+  };
 }

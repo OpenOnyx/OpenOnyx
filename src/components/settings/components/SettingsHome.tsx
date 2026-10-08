@@ -1,4 +1,5 @@
 import React from "react";
+import { ArrowRight } from "lucide-react";
 import type { AppSettings } from "../SettingsPage";
 import { SliderControl, SegmentedControl } from "./PreferenceCard";
 
@@ -89,7 +90,7 @@ export function SettingsHome({ settings, onUpdateSetting, onNavigate }: Settings
             { id: "editor", title: "Editor", desc: "Typography, Wikilinks & line width" },
             { id: "appearance", title: "Appearance", desc: "Themes, font scale & zoom level" },
             { id: "ai", title: "AI", desc: "Providers, models & note indexer" },
-            { id: "mcp", title: "Apps", desc: "External apps, capabilities & advanced MCP" },
+            { id: "mcp", title: "Apps", desc: "External resources and app connections" },
             { id: "sync", title: "Sync", desc: "Cloud database & storage connection" },
             { id: "extensions", title: "Extensions", desc: "Community plugins & core suite" },
             { id: "system", title: "System", desc: "Updates, accounts & factory reset" },
@@ -104,7 +105,7 @@ export function SettingsHome({ settings, onUpdateSetting, onNavigate }: Settings
                 <div className="flex items-center justify-between">
                   <span className="text-sm font-bold text-[var(--text-primary)]">{cat.title}</span>
                   <span className="text-xs font-mono text-[var(--text-muted)] opacity-0 transition-opacity group-hover:opacity-100">
-                    →
+                    <ArrowRight size={15} strokeWidth={2.5} aria-hidden="true" />
                   </span>
                 </div>
                 <p className="mt-1 text-[11px] leading-relaxed text-[var(--text-muted)]">{cat.desc}</p>

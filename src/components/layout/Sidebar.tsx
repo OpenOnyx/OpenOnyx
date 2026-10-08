@@ -168,7 +168,7 @@ function collectGroupableFilePaths(entries: FileEntry[]): string[] {
         continue;
       }
 
-      if (entry.extension === ".md" || entry.extension === ".canvas") {
+      if (entry.extension === ".md" || entry.extension === ".canvas" || entry.path.toLowerCase().endsWith(".pdf")) {
         paths.push(entry.path);
       }
     }
@@ -515,7 +515,7 @@ function SidebarComponent({
           acc.push({ ...entry, children });
           return acc;
         }
-        if (showAllFileTypes || entry.extension === ".md" || entry.extension === ".canvas") {
+        if (showAllFileTypes || entry.extension === ".md" || entry.extension === ".canvas" || entry.path.toLowerCase().endsWith(".pdf")) {
           acc.push(entry);
         }
         return acc;
@@ -797,7 +797,8 @@ function SidebarComponent({
                 toggleDir(entry.path);
               } else if (
                 entry.extension === ".md" ||
-                entry.extension === ".canvas"
+                entry.extension === ".canvas" ||
+                entry.path.toLowerCase().endsWith(".pdf")
               ) {
                 onFileSelect(entry.path);
               }
@@ -874,7 +875,7 @@ function SidebarComponent({
         if (entry.isDirectory) {
           if (entry.children) collect(entry.children);
         } else {
-          if (showAllFileTypes || entry.extension === ".md" || entry.extension === ".canvas") {
+          if (showAllFileTypes || entry.extension === ".md" || entry.extension === ".canvas" || entry.path.toLowerCase().endsWith(".pdf")) {
             allFiles.push(entry);
           }
         }
@@ -941,6 +942,10 @@ function SidebarComponent({
     const api = getAPI();
     notesList.forEach((note) => {
       if (previews[note.path] !== undefined) return;
+      if (note.path.toLowerCase().endsWith(".pdf")) {
+        setPreviews((prev) => ({ ...prev, [note.path]: "PDF Document" }));
+        return;
+      }
       if (note.extension === ".canvas") {
         setPreviews((prev) => ({ ...prev, [note.path]: "Canvas Document" }));
         return;
@@ -971,7 +976,7 @@ function SidebarComponent({
         if (child.isDirectory) {
           if (child.children) walk(child.children);
         } else {
-          if (showAllFileTypes || child.extension === ".md" || child.extension === ".canvas") {
+          if (showAllFileTypes || child.extension === ".md" || child.extension === ".canvas" || child.path.toLowerCase().endsWith(".pdf")) {
             count++;
           }
         }
@@ -986,7 +991,7 @@ function SidebarComponent({
     return dirs.map((entry) => {
       const childDirs = (entry.children || []).filter((c) => c.isDirectory);
       const directNotes = (entry.children || []).filter(
-        (c) => !c.isDirectory && (showAllFileTypes || c.extension === ".md" || c.extension === ".canvas")
+        (c) => !c.isDirectory && (showAllFileTypes || c.extension === ".md" || c.extension === ".canvas" || c.path.toLowerCase().endsWith(".pdf"))
       );
       const hasNoNotesButHasSubfolders = directNotes.length === 0 && childDirs.length > 0;
       const isExpanded = effectiveExpanded.has(entry.path);

@@ -1,4 +1,9 @@
+import { DriveAppPage } from "../../../apps/DriveAppPage";
+import type { DriveStatus } from "../../../../../electron/googleDriveTypes";
+import { GithubAppPage } from "../../../apps/GithubAppPage";
+import { githubPermissionTools } from "../../../../utils/githubProvider";
 import React, { useEffect, useMemo, useState } from "react";
+import { ArrowLeft, ArrowRight } from "lucide-react";
 import type { ConnectionsActions, ConnectionsData, McpServerConfig, McpServerSnapshot, McpTool, ToolRunState } from "./types";
 import {
   connectionAriaLabel,
@@ -44,7 +49,7 @@ interface PageProps {
   onViewApps: () => void;
   onViewAdvanced: (serverId?: string | null) => void;
   onConfigureApp: (appId: DiscoverableApp["id"]) => void;
-  onInstallApp: (appId: DiscoverableApp["id"], options?: { filesystemRoot?: string }) => Promise<void>;
+  onInstallApp: (appId: DiscoverableApp["id"], options?: { filesystemRoot?: string; githubPermissions?: string[] }) => Promise<void>;
   selectedToolKey?: string | null;
   advancedTemplate?: McpServerConfig | null;
   advancedServerId?: string | null;
@@ -52,30 +57,37 @@ interface PageProps {
   updateToolRun: (key: string, update: Partial<ToolRunState>) => void;
 }
 
-const CATEGORY_FILTERS: Array<{ id: "all" | AppCategory; label: string }> = [
+const CATEGORY_FILTERS: Array<{ id: "all" | "installed" | AppCategory; label: string }> = [
   { id: "all", label: "All" },
-  { id: "productivity", label: "Productivity" },
-  { id: "development", label: "Development" },
-  { id: "communication", label: "Communication" },
-  { id: "files-data", label: "Files & Data" },
+  { id: "installed", label: "Installed" },
 ];
 
 const CATALOG_SECTION_ORDER: AppCategory[] = ["popular", "productivity", "communication", "development", "files-data", "developer"];
 
 export function AppsHome({ data, onOpenConnection, onConfigureApp }: PageProps) {
+  const [drive, setDrive] = useState<DriveStatus | null>(null);
+  useEffect(() => {
+    let alive = true;
+    const refresh = () => { void getAPI().googleDrive?.status().then(value => { if (alive) setDrive(value); }).catch(() => {}); };
+    refresh(); window.addEventListener("openonyx:apps-changed", refresh);
+    const unsubscribe = getAPI().googleDrive?.onStatusChanged?.(value => { if (alive) setDrive(value); });
+    return () => { alive = false; unsubscribe?.(); window.removeEventListener("openonyx:apps-changed", refresh); };
+  }, []);
   const [query, setQuery] = useState("");
-  const [category, setCategory] = useState<"all" | AppCategory>("all");
+  const [category, setCategory] = useState<"all" | "installed" | AppCategory>("all");
   const appDescriptors = useMemo(() => data.servers.map(toAppDescriptor), [data.servers]);
   const installedByAppId = useMemo(() => new Map(appDescriptors.map((app) => [String(app.appId), app.server])), [appDescriptors]);
   const normalizedQuery = query.trim().toLowerCase();
+  const showDrive = !!drive?.accounts.length && ["all", "installed", "files-data"].includes(category) && (!normalizedQuery || "google drive docs sheets slides files data".includes(normalizedQuery));
 
   const filteredInstalledApps = appDescriptors.filter(({ metadata, server }) => {
     const searchable = `${metadata.displayName} ${metadata.description} ${metadata.category} ${server.config.name} ${server.config.id}`.toLowerCase();
-    const matchesCategory = category === "all" || metadata.category === category;
+    const matchesCategory = category === "all" || category === "installed" || metadata.category === category;
     return matchesCategory && (!normalizedQuery || searchable.includes(normalizedQuery));
   });
 
   const catalogEntries = APP_CATALOG.filter((entry) => {
+    if (category === "installed") return false;
     const effectiveCategory = entry.popular && category === "popular" ? "popular" : entry.category;
     const matchesCategory = category === "all" || entry.category === category || effectiveCategory === category;
     return matchesCategory && (!normalizedQuery || catalogSearchText(entry).includes(normalizedQuery));
@@ -91,13 +103,13 @@ export function AppsHome({ data, onOpenConnection, onConfigureApp }: PageProps) 
   };
 
   return (
-    <div className="mx-auto flex w-full max-w-4xl flex-col gap-7 py-1">
-      <header className="flex flex-col gap-4">
+    <div className="mx-auto flex w-full max-w-4xl flex-col gap-8 py-3">
+      <header className="flex flex-col items-center gap-5 text-center">
         <div>
           <h1 className="text-xl font-bold tracking-tight text-[var(--text-primary)]">Apps</h1>
           <p className="mt-1 text-[13px] text-[var(--text-muted)]">Connect OpenOnyx to the tools you already use.</p>
         </div>
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+        <div className="flex w-full max-w-xl flex-col gap-3 sm:flex-row sm:items-center">
           <label className="relative flex-1">
             <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[13px] text-[var(--text-muted)]">⌕</span>
             <input
@@ -107,7 +119,7 @@ export function AppsHome({ data, onOpenConnection, onConfigureApp }: PageProps) 
               className="h-11 w-full rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-secondary)] pl-9 pr-3 text-sm text-[var(--text-primary)] outline-none transition-colors placeholder:text-[var(--text-muted)] focus:border-[var(--border-medium)] focus:ring-2 focus:ring-[var(--accent-primary)]/25"
             />
           </label>
-          <button type="button" onClick={jumpToCatalog} className="h-10 rounded-md bg-[var(--text-primary)] px-4 text-xs font-bold text-[var(--bg-primary)] outline-none focus:ring-2 focus:ring-[var(--accent-primary)]/30">+ Add app</button>
+
         </div>
         <div className="flex max-w-full gap-2 overflow-x-auto pb-1" role="list" aria-label="App categories">
           {CATEGORY_FILTERS.map((item) => (
@@ -124,37 +136,23 @@ export function AppsHome({ data, onOpenConnection, onConfigureApp }: PageProps) 
         </div>
       </header>
 
-      {data.servers.length === 0 && !normalizedQuery ? (
-        <EmptyState
-          title="Your knowledge doesn't have to stop at your vault."
-          description="Connect tools and services to let OpenOnyx retrieve information and perform actions with your approval."
-          actionLabel="Browse apps"
-          onAction={jumpToCatalog}
-        />
-      ) : filteredInstalledApps.length > 0 ? (
-        <section>
-          <SectionHeading>Your apps</SectionHeading>
-          <div className="grid grid-cols-1 gap-x-4 divide-y divide-[var(--border-subtle)] border-y border-[var(--border-subtle)] md:grid-cols-2 md:divide-x md:divide-y-0">
-            {filteredInstalledApps.map((app) => (
-              <InstalledAppRow key={app.server.config.id} server={app.server} onOpen={() => onOpenConnection(app.server.config.id)} />
-            ))}
-          </div>
-        </section>
-      ) : data.servers.length > 0 ? (
-        <p className="border-y border-[var(--border-subtle)] py-5 text-center text-[12px] text-[var(--text-muted)]">No installed apps match your search.</p>
-      ) : null}
+      {(filteredInstalledApps.length > 0 || showDrive) && <section><SectionHeading>Your apps</SectionHeading><div className="grid grid-cols-1 gap-x-10 gap-y-1 sm:grid-cols-2">{showDrive && <button type="button" className="flex items-center gap-3 px-3 py-3 text-left hover:bg-[var(--bg-hover)]" onClick={() => onConfigureApp("google-drive")}><AppIcon icon="google-drive" /><span><span className="block text-sm font-semibold">Google Drive</span><span className="block text-xs text-[var(--text-muted)]">{drive?.accounts[0].email || drive?.accounts[0].name} · {drive?.accounts[0].needsReconnect ? "Needs reconnection" : "Connected"}</span></span></button>}{filteredInstalledApps.map((app) => <InstalledAppRow key={app.server.config.id} server={app.server} onOpen={() => onOpenConnection(app.server.config.id)} />)}</div></section>}
+
+      {category === "installed" && filteredInstalledApps.length === 0 && !showDrive && <p className="py-4 text-center text-sm text-[var(--text-muted)]">{normalizedQuery ? "No installed apps match your search." : "No apps installed yet."}</p>}
 
       <section id="openonyx-app-catalog" className="flex scroll-mt-4 flex-col gap-6">
-        {sections.length === 0 ? (
+        {sections.length === 0 && category !== "installed" ? (
           <p className="border-y border-[var(--border-subtle)] py-5 text-center text-[12px] text-[var(--text-muted)]">No apps match your search.</p>
         ) : sections.map(({ category: sectionCategory, entries }) => (
           <div key={sectionCategory}>
             <SectionHeading>{CATEGORY_LABELS[sectionCategory]}</SectionHeading>
-            <div className="grid grid-cols-1 gap-x-4 divide-y divide-[var(--border-subtle)] border-y border-[var(--border-subtle)] md:grid-cols-2 md:divide-x md:divide-y-0">
+            <div className="grid grid-cols-1 gap-x-10 gap-y-1 sm:grid-cols-2">
               {entries.map((entry) => (
                 <CatalogAppRow
                   key={`${sectionCategory}-${entry.id}`}
                   entry={entry}
+                  nativeConnected={entry.id === "google-drive" && !!drive?.accounts.some(account => !account.needsReconnect)}
+                  nativeNeedsReconnect={entry.id === "google-drive" && drive?.connectionState === "needs-reconnection"}
                   installedServer={installedByAppId.get(entry.id)}
                   onOpenInstalled={(id) => onOpenConnection(id)}
                   onConfigure={(id) => onConfigureApp(id)}
@@ -168,12 +166,13 @@ export function AppsHome({ data, onOpenConnection, onConfigureApp }: PageProps) 
   );
 }
 
-export function AppSetupPage({ appId, onBack, onInstallApp, onViewAdvanced }: PageProps & { appId: DiscoverableApp["id"]; onBack: () => void }) {
+export function AppSetupPage({ appId, data, onBack, onInstallApp, onViewAdvanced }: PageProps & { appId: DiscoverableApp["id"]; onBack: () => void }) {
   const entry = APP_CATALOG.find((item) => item.id === appId) as DiscoverableApp | undefined;
   const [filesystemRoot, setFilesystemRoot] = useState("");
   const [localError, setLocalError] = useState<string | null>(null);
 
   if (!entry) return null;
+  if (appId === "google-drive") return <DriveAppPage onBack={onBack} />;
 
   const chooseFolder = async () => {
     setLocalError(null);
@@ -184,6 +183,10 @@ export function AppSetupPage({ appId, onBack, onInstallApp, onViewAdvanced }: Pa
       setLocalError(error instanceof Error ? error.message : "Could not choose a folder");
     }
   };
+
+  if (appId === "github") return <GithubAppPage busy={data.busy} onBack={onBack} onAdvanced={() => onViewAdvanced(null)} onConnect={async (permissionIds) => {
+    await onInstallApp("github", { githubPermissions: permissionIds });
+  }} />;
 
   const connect = async () => {
     if (entry.id === "custom") {
@@ -208,7 +211,7 @@ export function AppSetupPage({ appId, onBack, onInstallApp, onViewAdvanced }: Pa
         </div>
       </header>
 
-      <Section title="Capabilities">
+      <Section title="What you can do">
         <div className="grid gap-2">
           {entry.capabilities.map((capability) => (
             <div key={capability} className="flex items-center gap-2 text-[13px] text-[var(--text-secondary)]">
@@ -218,14 +221,6 @@ export function AppSetupPage({ appId, onBack, onInstallApp, onViewAdvanced }: Pa
           ))}
         </div>
       </Section>
-
-      {entry.id === "github" && (
-        <Section title="Setup">
-          <p className="text-[13px] text-[var(--text-secondary)]">
-            OpenOnyx will configure the bundled GitHub MCP provider. Public search works without adding a token. Actions that need authentication can be configured later in Advanced with the existing secret-reference mechanism.
-          </p>
-        </Section>
-      )}
 
       {entry.id === "filesystem" && (
         <Section title="Access">
@@ -254,113 +249,27 @@ export function AppSetupPage({ appId, onBack, onInstallApp, onViewAdvanced }: Pa
   );
 }
 
-export function AppDetails({
-  server,
-  data,
-  actions,
-  onBack,
-  onOpenTool,
-  onViewAdvanced,
-  selectedToolKey,
-  updateToolRun,
-}: PageProps & { server: McpServerSnapshot; onBack: () => void }) {
+export function AppDetails({ server, data, actions, onBack, onViewAdvanced }: PageProps & { server: McpServerSnapshot; onBack: () => void }) {
   const metadata = getAppPresentation(server);
-  const status = connectionStatus(server);
-  const activeToolKey = selectedToolKey ?? null;
-  const selectedTool = activeToolKey
-    ? server.tools.find((tool) => toolKey(server, tool.name) === activeToolKey) ?? null
-    : null;
-
-  if (selectedTool && activeToolKey) {
-    return (
-      <div className="mx-auto flex w-full max-w-3xl flex-col gap-5 py-1">
-        <BackButton onClick={() => onOpenTool(null)}>{metadata.displayName}</BackButton>
-        <div className="border-b border-[var(--border-subtle)] pb-4">
-          <p className="text-[11px] text-[var(--text-muted)]">{metadata.displayName}</p>
-          <h2 className="mt-1 text-base font-bold text-[var(--text-primary)]">{getToolTitle(selectedTool.name)}</h2>
-          {selectedTool.description && <p className="mt-2 text-[12px] text-[var(--text-secondary)]">{selectedTool.description}</p>}
-        </div>
-        <ToolRunner server={server} tool={selectedTool} runState={data.toolRuns[activeToolKey]} onUpdateRun={updateToolRun} onRun={actions.runTool} />
-        <details className="text-[12px] text-[var(--text-muted)]">
-          <summary className="cursor-pointer font-semibold text-[var(--text-secondary)]">Capability details</summary>
-          <div className="mt-3 grid grid-cols-[120px_1fr] gap-y-2">
-            <span>Tool ID</span>
-            <span className="font-mono text-[var(--text-primary)]">{selectedTool.name}</span>
-            <span>App</span>
-            <span className="text-[var(--text-primary)]">{metadata.displayName}</span>
-          </div>
-          <details className="mt-3">
-            <summary className="cursor-pointer">View input schema</summary>
-            <pre className="mt-2 max-h-48 overflow-auto rounded bg-[var(--bg-secondary)] p-2 font-mono text-[10px] text-[var(--text-primary)]">{JSON.stringify(selectedTool.inputSchema, null, 2)}</pre>
-          </details>
-        </details>
-      </div>
-    );
-  }
-
-  return (
-    <div className="mx-auto flex w-full max-w-3xl flex-col gap-5 py-1">
-      <BackButton onClick={onBack}>Apps</BackButton>
-      <div className="flex flex-col gap-4 border-b border-[var(--border-subtle)] pb-5 sm:flex-row sm:items-start sm:justify-between">
-        <div className="flex min-w-0 gap-3">
-          <AppIcon icon={metadata.icon} className="h-12 w-12" />
-          <div className="min-w-0">
-            <h2 className="text-lg font-bold text-[var(--text-primary)]">{metadata.displayName}</h2>
-            <div className="mt-1 flex flex-wrap items-center gap-2">
-              <StatusText tone={status.tone}>{status.label}</StatusText>
-              <span className="text-[12px] text-[var(--text-muted)]">{describeAppCapabilities(server)}</span>
-            </div>
-          </div>
-        </div>
-        <button type="button" onClick={() => void actions.remove(server.config.id)} className="h-8 rounded border border-red-500/30 px-3 text-[12px] font-semibold text-red-500">Disconnect</button>
-      </div>
-
-      {server.runtime.status === "error" && (
-        <div className="rounded-md border border-red-500/25 bg-red-500/[0.06] p-3">
-          <p className="text-[12px] font-semibold text-red-500">Connection failed</p>
-          <p className="mt-1 text-[12px] text-[var(--text-muted)]">{status.description}</p>
-          <div className="mt-3 flex gap-2">
-            <button type="button" onClick={() => void actions.reconnect(server)} className="h-8 rounded border border-[var(--border-medium)] px-3 text-[12px] font-semibold text-[var(--text-primary)]">Retry</button>
-            <DiagnosticsPanel server={server} onRetry={() => void actions.reconnect(server)} />
-          </div>
-        </div>
-      )}
-
-      <Section title="Capabilities">
-        <div className="divide-y divide-[var(--border-subtle)] border-y border-[var(--border-subtle)]">
-          {server.tools.map((tool) => (
-            <ToolPermissionRow
-              key={tool.name}
-              server={server}
-              tool={tool}
-              onToggle={(enabled) => void actions.toggleTool(server, tool.name, enabled)}
-              onOpen={() => onOpenTool(toolKey(server, tool.name))}
-            />
-          ))}
-          {server.tools.length === 0 && <p className="py-3 text-[12px] text-[var(--text-muted)]">No capabilities discovered yet. Reconnect after the app is approved.</p>}
-        </div>
-      </Section>
-
-      <Section title="Recent activity">
-        <AppActivity activity={activityForApp(data.activity, server.config.id, 3)} empty="No activity for this app yet." />
-        {data.activity.some((entry) => entry.serverId === server.config.id) && (
-          <button type="button" onClick={() => void actions.clearActivity()} className="mt-3 text-[12px] font-semibold text-[var(--text-secondary)] hover:text-[var(--text-primary)]">Clear activity</button>
-        )}
-      </Section>
-
-      <Section title="Permissions">
-        <KeyValue label="Capabilities" value={`${enabledToolCount(server)} of ${server.tools.length} enabled`} />
-        <KeyValue label="Execution" value="Always ask before running" />
-        <KeyValue label="Trust" value={server.config.trusted ? "Server configuration approved" : "Approval required before connecting"} />
-        <p className="mt-2 text-[12px] text-[var(--text-muted)]">OpenOnyx only sends the arguments shown in the native confirmation dialog.</p>
-      </Section>
-
-      <Section title="Advanced">
-        <p className="text-[12px] text-[var(--text-muted)]">MCP configuration, diagnostics, trust, schemas and raw runner.</p>
-        <button type="button" onClick={() => onViewAdvanced(server.config.id)} className="mt-3 h-8 rounded border border-[var(--border-medium)] px-3 text-[12px] font-semibold text-[var(--text-primary)]">Open advanced →</button>
-      </Section>
-    </div>
-  );
+  if (metadata.id === "github") return <GithubAppPage
+    key={server.config.id} server={server} busy={data.busy} onBack={onBack}
+    onAdvanced={() => onViewAdvanced(server.config.id)}
+    onDisconnect={() => void actions.remove(server.config.id)}
+    onReconnect={() => void actions.reconnect(server)}
+    onSave={async (snapshot, permissionId, enabled) => {
+      const names = githubPermissionTools(snapshot, permissionId);
+      const enabledTools = enabled ? [...new Set([...snapshot.config.enabledTools, ...names])] : snapshot.config.enabledTools.filter((name) => !names.includes(name));
+      await actions.saveServer({ ...snapshot.config, enabledTools, favoriteTools: snapshot.config.favoriteTools.filter((name) => enabledTools.includes(name)) });
+    }}
+  />;
+  const connected = server.runtime.status === "connected";
+  return <div className="mx-auto flex w-full max-w-3xl flex-col gap-6">
+    <BackButton onClick={onBack}>Apps</BackButton>
+    <div className="flex items-center gap-4"><AppIcon icon={metadata.icon} className="h-14 w-14" /><div><h1 className="text-xl font-semibold text-[var(--text-primary)]">{metadata.displayName}</h1><p className="mt-1 text-sm text-[var(--text-muted)]">{connected ? "Connected" : server.runtime.status === "error" ? "Needs attention" : "Disconnected"}</p></div></div>
+    <p className="text-sm text-[var(--text-secondary)]">{metadata.description}</p>
+    <p className="text-sm text-[var(--text-muted)]">Manage this connection and its developer controls in Advanced.</p>
+    <div className="flex flex-wrap gap-3"><button type="button" onClick={() => onViewAdvanced(server.config.id)} className="inline-flex items-center gap-1 app-resource-secondary">Advanced <ArrowRight size={14} strokeWidth={2.5} aria-hidden="true" /></button><button type="button" disabled={data.busy} onClick={() => void actions.reconnect(server)} className="app-resource-secondary">Reconnect</button><button type="button" disabled={data.busy} onClick={() => void actions.remove(server.config.id)} className="app-resource-secondary">Disconnect</button></div>
+  </div>;
 }
 
 export function ActivityPage({ data, actions }: PageProps) {
@@ -390,7 +299,7 @@ export function ActivityPage({ data, actions }: PageProps) {
   );
 }
 
-export function AdvancedMcpPage({ data, actions, advancedTemplate, advancedServerId, onAdvancedTemplateLoaded, onViewApps }: PageProps) {
+export function AdvancedMcpPage({ data, actions, advancedTemplate, advancedServerId, onAdvancedTemplateLoaded, onViewApps, updateToolRun }: PageProps) {
   const focusedServer = advancedServerId ? data.servers.find((server) => server.config.id === advancedServerId) ?? null : null;
   const [draft, setDraft] = useState(() => toDraft(focusedServer?.config ?? emptyConfig()));
   const stdioTransport = draft.config.transport.transport === "stdio" ? draft.config.transport : null;
@@ -498,6 +407,10 @@ export function AdvancedMcpPage({ data, actions, advancedTemplate, advancedServe
         </div>
         <button type="button" disabled={data.busy} onClick={() => void save()} className="mt-4 h-8 rounded-md bg-[var(--text-primary)] px-4 text-xs font-bold text-[var(--bg-primary)] disabled:opacity-50">Save changes</button>
       </Section>
+      <Section title="Activity">
+        <AppActivity activity={focusedServer ? activityForApp(data.activity, focusedServer.config.id) : data.activity} empty="No activity yet." />
+        <button type="button" disabled={data.activity.length === 0} onClick={() => void actions.clearActivity()} className="mt-3 text-xs text-[var(--text-secondary)]">Clear all app activity</button>
+      </Section>
       <Section title={focusedServer ? "Diagnostics and schemas" : "Installed MCP-backed apps"}>
         {visibleServers.length === 0 ? (
           <p className="text-[12px] text-[var(--text-muted)]">No MCP-backed apps configured.</p>
@@ -525,6 +438,13 @@ export function AdvancedMcpPage({ data, actions, advancedTemplate, advancedServe
                       <button type="button" onClick={() => void actions.revokeTrust(server.config.id)} disabled={!server.config.trusted} className="h-7 rounded border border-[var(--border-medium)] px-3 text-[11px] text-[var(--text-primary)] disabled:opacity-50">Revoke trust</button>
                     </div>
                   </div>
+                  <details className="mt-4">
+                    <summary className="cursor-pointer text-xs font-semibold text-[var(--text-secondary)]">Developer details</summary>
+                    {server.tools.map((tool) => <div key={tool.name} className="mt-4">
+                      <ToolPermissionRow server={server} tool={tool} onToggle={(enabled) => void actions.toggleTool(server, tool.name, enabled)} onOpen={() => document.getElementById(`raw-${server.config.id}-${tool.name}`)?.scrollIntoView({ block: "nearest" })} />
+                      <details id={`raw-${server.config.id}-${tool.name}`}><summary className="cursor-pointer text-xs text-[var(--text-muted)]">Raw runner · {tool.name}</summary><ToolRunner server={server} tool={tool} runState={data.toolRuns[toolKey(server, tool.name)]} onUpdateRun={updateToolRun} onRun={actions.runTool} /></details>
+                    </div>)}
+                  </details>
                   {server.tools.length > 0 && (
                     <details className="mt-3 text-[12px] text-[var(--text-muted)]">
                       <summary className="cursor-pointer font-semibold text-[var(--text-secondary)]">Raw tool schemas</summary>
@@ -544,7 +464,7 @@ export function AdvancedMcpPage({ data, actions, advancedTemplate, advancedServe
 
 function InstalledAppRow({ server, onOpen }: { server: McpServerSnapshot; onOpen: () => void }) {
   const metadata = getAppPresentation(server);
-  const status = connectionStatus(server);
+  const status = { ...connectionStatus(server), label: server.runtime.status === "connected" ? "Connected" : server.runtime.status === "error" ? "Needs attention" : "Disconnected" };
   return (
     <button
       type="button"
@@ -556,8 +476,8 @@ function InstalledAppRow({ server, onOpen }: { server: McpServerSnapshot; onOpen
         <AppIcon icon={metadata.icon} />
         <span className="min-w-0">
           <span className="block truncate text-[13px] font-bold text-[var(--text-primary)]">{metadata.displayName}</span>
-          <span className="mt-0.5 block truncate text-[12px] text-[var(--text-muted)]">{describeAppCapabilities(server)}</span>
-          <span className="mt-1 block text-[11px] text-[var(--text-muted)]">{enabledToolCount(server)} capabilities enabled</span>
+          <span className="mt-0.5 block truncate text-[12px] text-[var(--text-muted)]">{metadata.description}</span>
+          <span className="mt-1 block text-[11px] text-[var(--text-muted)]">{server.runtime.status === "connected" ? "Connected" : "Installed"}</span>
         </span>
       </span>
       <StatusText tone={status.tone}>{status.label}</StatusText>
@@ -565,10 +485,10 @@ function InstalledAppRow({ server, onOpen }: { server: McpServerSnapshot; onOpen
   );
 }
 
-function CatalogAppRow({ entry, installedServer, onOpenInstalled, onConfigure }: { entry: AppCatalogEntry; installedServer?: McpServerSnapshot; onOpenInstalled: (id: string) => void; onConfigure: (id: DiscoverableApp["id"]) => void }) {
-  const installed = Boolean(installedServer);
-  const available = entry.availability === "available" && (entry.id === "github" || entry.id === "filesystem" || entry.id === "custom");
-  const action = installed ? "Connected" : available ? (entry.id === "custom" ? "Configure" : "+") : "Coming soon";
+function CatalogAppRow({ entry, installedServer, nativeConnected = false, nativeNeedsReconnect = false, onOpenInstalled, onConfigure }: { entry: AppCatalogEntry; nativeConnected?: boolean; nativeNeedsReconnect?: boolean; installedServer?: McpServerSnapshot; onOpenInstalled: (id: string) => void; onConfigure: (id: DiscoverableApp["id"]) => void }) {
+  const installed = Boolean(installedServer) || nativeConnected || nativeNeedsReconnect;
+  const available = entry.availability === "available" && (entry.id === "github" || entry.id === "filesystem" || entry.id === "custom" || entry.id === "google-drive");
+  const action = nativeNeedsReconnect ? "Reconnect" : installed ? (installedServer?.runtime.status === "connected" || nativeConnected ? "Connected" : "Installed") : available ? (entry.id === "custom" ? "Configure" : "+") : "Coming soon";
   return (
     <button
       type="button"
@@ -606,7 +526,7 @@ function ToolPermissionRow({ server, tool, onToggle, onOpen }: { server: McpServ
           <input type="checkbox" checked={enabled} onChange={(event) => onToggle(event.target.checked)} aria-label={`${enabled ? "Disable" : "Enable"} ${toolAriaLabel(server, tool)}`} className="h-4 w-4" />
           {enabled ? "ON" : "OFF"}
         </label>
-        <button type="button" onClick={onOpen} className="h-7 rounded border border-[var(--border-medium)] px-3 text-[11px] font-semibold text-[var(--text-primary)]">Run →</button>
+        <button type="button" onClick={onOpen} className="inline-flex h-7 items-center gap-1 rounded border border-[var(--border-medium)] px-3 text-[11px] font-semibold text-[var(--text-primary)]">Run <ArrowRight size={14} strokeWidth={2.5} aria-hidden="true" /></button>
       </div>
     </div>
   );
@@ -659,7 +579,7 @@ function EmptyState({ title, description, actionLabel, onAction }: { title: stri
 }
 
 function BackButton({ onClick, children }: { onClick: () => void; children: React.ReactNode }) {
-  return <button type="button" onClick={onClick} className="w-fit text-[12px] font-semibold text-[var(--text-secondary)] hover:text-[var(--text-primary)]">← {children}</button>;
+  return <button type="button" onClick={onClick} className="inline-flex w-fit items-center gap-1.5 text-[12px] font-semibold text-[var(--text-secondary)] hover:text-[var(--text-primary)]"><ArrowLeft size={14} strokeWidth={2.5} aria-hidden="true" /> {children}</button>;
 }
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {

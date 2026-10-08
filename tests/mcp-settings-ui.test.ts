@@ -121,7 +121,9 @@ describe("MCP-backed Apps settings information architecture", () => {
 
     expect(container.textContent).toContain("Apps");
     expect(container.textContent).toContain("GitHub");
-    expect(container.textContent).toContain("1 capabilities enabled");
+    expect(container.textContent).toContain("Connected");
+    expect(container.textContent).not.toContain("capabilities enabled");
+    expect(container.textContent).not.toContain("search repositories");
     expect(container.textContent).not.toContain("/usr/bin/node");
     expect(container.textContent).not.toContain("inputSchema");
   });
@@ -139,7 +141,7 @@ describe("MCP-backed Apps settings information architecture", () => {
     expect(container.textContent).toContain("Custom MCP");
   });
 
-  it("shows capabilities inside an app instead of a global tool page", async () => {
+  it("shows GitHub resources instead of raw capabilities or runners", async () => {
     const container = await render(React.createElement(AppDetails, {
       ...baseProps,
       data: data(),
@@ -148,10 +150,26 @@ describe("MCP-backed Apps settings information architecture", () => {
       selectedToolKey: null,
     }));
 
-    expect(container.textContent).toContain("Capabilities");
-    expect(container.textContent).toContain("Search repositories");
-    expect(container.textContent).toContain("Always asks before running");
+    expect(container.textContent).toContain("Quick access");
+    expect(container.textContent).toContain("Repositories");
+    expect(container.textContent).toContain("Markdown editor");
+    expect(container.textContent).not.toContain("Capabilities");
+    expect(container.textContent).not.toContain("Always asks before running");
+    expect(container.querySelector('input[type="checkbox"]')).toBeNull();
+    expect(container.textContent).not.toContain("Advanced input");
     expect(container.textContent).not.toContain("search_repositories");
+  });
+
+  it("manages grouped GitHub permissions without enabling unknown discovered tools", async () => {
+    const actionsForTest = actions();
+    const server = { ...githubServer, tools: [...githubServer.tools, { name: "untrusted_new_action", inputSchema: {} }] };
+    const container = await render(React.createElement(AppDetails, { ...baseProps, actions: actionsForTest, data: data(), server, onBack: vi.fn() }));
+    const manage = Array.from(container.querySelectorAll("button")).find((button) => button.textContent === "Manage")!;
+    await act(async () => { manage.click(); });
+    const checkbox = container.querySelector('input[type="checkbox"]') as HTMLInputElement;
+    await act(async () => { checkbox.click(); });
+    expect(actionsForTest.saveServer).toHaveBeenCalledWith(expect.objectContaining({ enabledTools: [], trusted: true, transport: githubServer.config.transport }));
+    expect(container.textContent).not.toContain("untrusted_new_action");
   });
 
   it("keeps raw commands in Advanced app settings", async () => {

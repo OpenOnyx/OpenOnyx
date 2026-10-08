@@ -129,9 +129,9 @@ export function registerMcpIpcHandlers(
       buttons: ["Cancel", "Allow once"],
       defaultId: 0,
       cancelId: 0,
-      title: "Run app tool?",
+      title: "Use external app?",
       message: `OpenOnyx wants to use ${serverName}`,
-      detail: `TOOL\n${toolTitle}\n\nINPUT\n\n${formatArgumentsForConfirmation(toolArguments)}\n\n${serverName} will receive the information shown above.`,
+      detail: `REQUEST\n${toolTitle}\n\nINPUT\n\n${formatArgumentsForConfirmation(toolArguments)}\n\n${serverName} will receive the information shown above.`,
     };
     const result = owner
       ? await dialog.showMessageBox(owner, messageOptions)

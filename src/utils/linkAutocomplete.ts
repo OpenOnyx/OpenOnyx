@@ -10,6 +10,7 @@ import {
   CompletionResult,
   autocompletion,
   Completion,
+  type CompletionSource,
 } from "@codemirror/autocomplete";
 import { EditorView } from "@codemirror/view";
 import { filterWikiLinkNotes } from "./wikiLinks";
@@ -177,9 +178,9 @@ function tagCompletion(context: CompletionContext): CompletionResult | null {
 }
 
 // Create the autocomplete extension
-export function linkAutocomplete() {
+export function linkAutocomplete(extraSources: CompletionSource[] = []) {
   return autocompletion({
-    override: [wikiLinkCompletion],
+    override: [wikiLinkCompletion, ...extraSources],
     activateOnTyping: true,
     maxRenderedOptions: 30,
     defaultKeymap: true,

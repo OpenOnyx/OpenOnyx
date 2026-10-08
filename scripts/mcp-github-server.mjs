@@ -31,7 +31,7 @@ const tools = [
         state: { type: "string", enum: ["open", "closed", "all"], description: "Issue state filter." },
         limit: { type: "integer", description: "Maximum results to return. Default 10, max 25." },
       },
-      required: ["repository", "query"],
+      required: ["query"],
     },
   },
   {
@@ -142,6 +142,7 @@ function getToken() {
 async function githubFetch(path, options = {}) {
   const response = await fetch(`${GITHUB_API}${path}`, {
     ...options,
+    signal: AbortSignal.timeout(25_000),
     headers: {
       ...headers(),
       ...options.headers,
@@ -154,6 +155,17 @@ async function githubFetch(path, options = {}) {
     throw new Error(message);
   }
   return data;
+}
+
+function structured(text, items) {
+  // Preserve the text response for existing clients while returning resource data.
+  return { ...asText(text), structuredContent: { items: items.map((item) => ({
+    html_url: item.html_url, full_name: item.full_name, title: item.title,
+    description: item.description, body: item.body?.slice(0, 12000),
+    state: item.state, number: item.number, comments: item.comments,
+    labels: item.labels?.map((label) => ({ name: label.name })),
+    updated_at: item.updated_at, discussion: item.discussion,
+  })) } };
 }
 
 function formatRepository(repository) {
@@ -171,17 +183,17 @@ async function callTool(name, args = {}) {
     const query = encodeURIComponent(requireString(args.query, "query"));
     const limit = limitValue(args.limit, 5, 20);
     const data = await githubFetch(`/search/repositories?q=${query}&per_page=${limit}`);
-    return asText(data.items.length ? data.items.map(formatRepository).join("\n\n") : "No repositories found.");
+    return structured(data.items.length ? data.items.map(formatRepository).join("\n\n") : "No repositories found.", data.items);
   }
 
   if (name === "search_issues") {
-    const repository = requireRepository(args.repository);
+    const repository = args.repository ? requireRepository(args.repository) : "";
     const query = requireString(args.query, "query");
     const state = stateValue(args.state, "open");
     const limit = limitValue(args.limit, 10, 25);
-    const search = encodeURIComponent(`repo:${repository} ${query} state:${state}`);
+    const search = encodeURIComponent(`${repository ? `repo:${repository} ` : ""}${query}${state === "all" ? "" : ` state:${state}`}`);
     const data = await githubFetch(`/search/issues?q=${search}&per_page=${limit}`);
-    return asText(data.items.length ? data.items.map(formatIssue).join("\n\n") : "No issues or pull requests found.");
+    return structured(data.items.length ? data.items.map(formatIssue).join("\n\n") : "No issues or pull requests found.", data.items);
   }
 
   if (name === "get_issue") {
@@ -189,8 +201,12 @@ async function callTool(name, args = {}) {
     const number = Number(args.number);
     if (!Number.isInteger(number) || number < 1) throw new Error("number must be a positive integer");
     const issue = await githubFetch(`/repos/${repository}/issues/${number}`);
+    if (issue.comments > 0) {
+      const comments = await githubFetch(`/repos/${repository}/issues/${number}/comments?per_page=10`);
+      issue.discussion = comments.map((comment) => ({ author: comment.user?.login || "GitHub user", body: (comment.body || "").slice(0, 2000) }));
+    }
     const body = issue.body ? `\n\n${issue.body.slice(0, 2000)}` : "";
-    return asText(`${formatIssue(issue)}${body}`);
+    return structured(`${formatIssue(issue)}${body}`, [issue]);
   }
 
   if (name === "list_pull_requests") {
@@ -198,9 +214,9 @@ async function callTool(name, args = {}) {
     const state = stateValue(args.state, "open");
     const limit = limitValue(args.limit, 10, 25);
     const pulls = await githubFetch(`/repos/${repository}/pulls?state=${state}&per_page=${limit}`);
-    return asText(pulls.length
+    return structured(pulls.length
       ? pulls.map((pull) => `PR #${pull.number} ${pull.title}\nState: ${pull.state}\nURL: ${pull.html_url}`).join("\n\n")
-      : "No pull requests found.");
+      : "No pull requests found.", pulls);
   }
 
   if (name === "create_issue") {
@@ -214,7 +230,7 @@ async function callTool(name, args = {}) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ title, body, labels }),
     });
-    return asText(`Issue #${issue.number} created\n${issue.html_url}`);
+    return structured(`Issue #${issue.number} created\n${issue.html_url}`, [issue]);
   }
 
   throw new Error(`Unknown tool: ${name}`);

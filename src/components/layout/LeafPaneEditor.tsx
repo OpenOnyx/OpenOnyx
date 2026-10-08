@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
+import { PdfDocumentView } from "../documents/PdfDocumentView";
 import { Editor } from "../editor/Editor";
 import { EditorHeader } from "../editor/EditorHeader";
 import { Tab, ViewMode, Theme, PaneLeaf } from "../../types";
@@ -72,7 +73,15 @@ interface LeafPaneEditorProps {
   onFocusLeaf?: (leafId: string) => void;
 }
 
-export function LeafPaneEditor({
+export function LeafPaneEditor(props: LeafPaneEditorProps) {
+  if (props.activeTab.path.toLowerCase().endsWith('.pdf')) {
+    return <PdfDocumentView key={props.activeTab.path} path={props.activeTab.path} title={props.activeTab.name}
+      onFocus={() => props.onFocusLeaf?.(props.leaf.id)} />;
+  }
+  return <MarkdownLeafPaneEditor {...props} />;
+}
+
+function MarkdownLeafPaneEditor({
   leaf,
   activeTab,
   theme,

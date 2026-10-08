@@ -1,3 +1,5 @@
+import type { DriveAccount, DriveFile, DriveStatus } from "./googleDriveTypes.js";
+import type { CachedDrivePreview } from "./googleDriveFileCache.js";
 /**
  * Preload Script - Bridge between Main and Renderer
  * 
@@ -191,6 +193,25 @@ const electronAPI = {
 
   networkRequest: (params: any): Promise<any> =>
     ipcRenderer.invoke('network:request', params),
+
+  // Native provider surface: no credentials or unrestricted HTTP client.
+  googleDrive: {
+    cachedPdf: (accountId: string, fileId: string): Promise<Uint8Array | null> => ipcRenderer.invoke('drive:cachedPdf', accountId, fileId),
+    previewPdf: (accountId: string, fileId: string): Promise<Uint8Array> => ipcRenderer.invoke('drive:previewPdf', accountId, fileId),
+    cachedPreviewFile: (accountId: string, fileId: string): Promise<CachedDrivePreview | null> => ipcRenderer.invoke('drive:cachedPreviewFile', accountId, fileId),
+    previewFile: (accountId: string, fileId: string): Promise<CachedDrivePreview> => ipcRenderer.invoke('drive:previewFile', accountId, fileId),
+    status: (): Promise<DriveStatus> => ipcRenderer.invoke('drive:status'),
+    onStatusChanged: (callback: (status: DriveStatus) => void): (() => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, status: DriveStatus) => callback(status);
+      ipcRenderer.on('drive:statusChanged', listener);
+      return () => { ipcRenderer.removeListener('drive:statusChanged', listener); };
+    },
+    connect: (): Promise<DriveAccount> => ipcRenderer.invoke('drive:connect'),
+    cancelConnect: (): Promise<void> => ipcRenderer.invoke('drive:cancelConnect'),
+    disconnect: (accountId: string): Promise<void> => ipcRenderer.invoke('drive:disconnect', accountId),
+    search: (accountId: string, query: string, kind: string): Promise<DriveFile[]> => ipcRenderer.invoke('drive:search', accountId, query, kind),
+    getResource: (accountId: string, fileId: string): Promise<DriveFile> => ipcRenderer.invoke('drive:getResource', accountId, fileId),
+  },
 
   // ── User-configured MCP servers ───────────────────
   mcp: {

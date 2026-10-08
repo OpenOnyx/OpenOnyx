@@ -10,6 +10,12 @@
  * - Link autocomplete when typing [[
  */
 
+import { AppResourcePicker } from "../apps/AppResourcePicker";
+import { connectedResourceApps, type ConnectedResourceApp } from "../../utils/resourceBrowserRegistry";
+import { GithubIssueAction } from "../apps/GithubIssueAction";
+import { appResourceExtension, resourceSlashCompletion } from "../../editor/appResourceExtension";
+import { parseExternalResource, serializeExternalResource } from "../../utils/appResources";
+import type { ExternalResource } from "../../types/appResources";
 import React, { useEffect, useRef, useCallback, useState, useMemo } from "react";
 import { createPortal } from "react-dom";
 import { X, Lightbulb, BookOpen, Pen, RefreshCw, Sparkles, ZoomIn, ZoomOut, RotateCcw, MessageSquare } from "lucide-react";
@@ -3879,6 +3885,54 @@ export function Editor({
   // content while the user is actively typing.
   const lastLocalEditTsRef = useRef<number>(0);
   const handleContextMenuRef = useRef<((e: React.MouseEvent | MouseEvent) => void) | null>(null);
+  const resourceAppsRef = useRef<ConnectedResourceApp[]>([]);
+  const githubCreateAvailableRef = useRef(false);
+  const [resourceInsert, setResourceInsert] = useState<{ view: EditorView; from: number; to: number; text: string; path: string; providerId: string; serverId?: string } | null>(null);
+  const [githubIssueSelection, setGithubIssueSelection] = useState<string | null>(null);
+
+  useEffect(() => {
+    let disposed = false;
+    const refreshApps = () => {
+      void connectedResourceApps().then((apps) => {
+        if (disposed) return;
+        resourceAppsRef.current = apps;
+        githubCreateAvailableRef.current = apps.some((app) => app.canCreateIssues);
+      }).catch(() => { resourceAppsRef.current = []; githubCreateAvailableRef.current = false; });
+    };
+    refreshApps();
+    window.addEventListener("focus", refreshApps);
+    window.addEventListener("openonyx:apps-changed", refreshApps);
+    return () => { disposed = true; window.removeEventListener("focus", refreshApps); window.removeEventListener("openonyx:apps-changed", refreshApps); };
+  }, []);
+
+  const insertAppResource = useCallback((resource: ExternalResource) => {
+    if (!resourceInsert) return;
+    const { view, from, to, text, path } = resourceInsert;
+    if (viewRef.current !== view || activePathRef.current !== path || !view.dom.isConnected || view.state.doc.sliceString(from, to) !== text) {
+      setResourceInsert(null);
+      return;
+    }
+    const insert = `${from > 0 && view.state.doc.sliceString(from - 1, from) !== "\n" ? "\n" : ""}${serializeExternalResource(resource)}\n\n`;
+    view.dispatch({ changes: { from, to, insert }, selection: { anchor: from + insert.length } });
+    setResourceInsert(null);
+    view.focus();
+  }, [resourceInsert]);
+
+  useEffect(() => {
+    const insert = (event: Event) => {
+      const detail = (event as CustomEvent).detail;
+      const resource = parseExternalResource(detail?.resource);
+      const view = viewRef.current;
+      if (!resource || !view || !activePathRef.current || activePathRef.current !== (window as any).__oo_active_file || !view.dom.isConnected || detail.inserted) return;
+      const range = view.state.selection.main;
+      const text = `\n${serializeExternalResource(resource)}\n\n`;
+      view.dispatch({ changes: { from: range.from, to: range.to, insert: text }, selection: { anchor: range.from + text.length } });
+      detail.inserted = true;
+    };
+    window.addEventListener("openonyx:resource-insert", insert);
+    return () => window.removeEventListener("openonyx:resource-insert", insert);
+  }, []);
+
   const [internalShowInsight, setInternalShowInsight] = useState(false);
   const isInsightVisible = showInsight !== undefined ? showInsight : internalShowInsight;
   const toggleInsight = (val: boolean) => {
@@ -5359,7 +5413,10 @@ export function Editor({
         markdown(),
         editorSettingsCompartmentRef.current.of(getEditorSettingsExtensions(settings)),
         syntaxHighlighting(markdownHighlightStyle),
-        linkAutocomplete(),
+        linkAutocomplete([resourceSlashCompletion((app, view, from, to) => {
+          setResourceInsert({ view, from, to, text: view.state.doc.sliceString(from, to), path: activePathRef.current || "", providerId: app.id, serverId: app.serverId });
+        }, () => resourceAppsRef.current)]),
+        appResourceExtension(() => activePathRef.current || ""),
         linkAutocompleteTheme,
         editorBehaviorCompartmentRef.current.of(getEditorBehaviorExtensions(settings)),
         wikiLinkPlugin(onLinkClick),
@@ -6870,6 +6927,12 @@ export function Editor({
     };
 
     const menu = new Menu();
+    const githubSelection = cmView && contextSurface === "editor" ? cmView.state.sliceDoc(cmView.state.selection.main.from, cmView.state.selection.main.to) : window.getSelection()?.toString() || "";
+    if (githubCreateAvailableRef.current && githubSelection.trim()) {
+      menu.addItem((item: any) => item.setTitle("GitHub → Create issue").setIcon("github").onClick(() => setGithubIssueSelection(githubSelection)));
+      menu.addSeparator();
+    }
+
 
     // Prominently add "Add Comment" at the top of the context menu
     menu.addItem((item: any) =>
@@ -7316,6 +7379,8 @@ export function Editor({
 
   return (
     <>
+      {resourceInsert && <AppResourcePicker providerId={resourceInsert.providerId} serverId={resourceInsert.serverId} onClose={() => setResourceInsert(null)} onSelect={insertAppResource} />}
+      {githubIssueSelection !== null && <GithubIssueAction selection={githubIssueSelection} onClose={() => setGithubIssueSelection(null)} />}
       {!disableInlineAI && pendingInlineEdit && createPortal(
         <div className={inlineAiDecisionFooterClass}>
           <button className={inlineAiDecisionButtonClass} onClick={discardPendingInlineEdit}>
@@ -7595,6 +7660,7 @@ export function Editor({
 
                 <MarkdownPreview
                   content={content}
+                  documentId={activePath}
                   onLinkClick={onLinkClick}
                   onCheckboxToggle={handleCheckboxToggle}
                   onEmbed={onGetNoteContent}
