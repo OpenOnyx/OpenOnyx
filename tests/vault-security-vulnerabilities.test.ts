@@ -475,5 +475,58 @@ describe("vault security vulnerabilities unit suite", () => {
       const openPathHandler = handlers.get("desktop:openPath")!;
       await expect(openPathHandler({}, relativeTraversal)).rejects.toThrow("Path is outside the active vault");
     });
+
+    it("blocks data file operations when .openonyx is a symlink pointing outside the vault", async () => {
+      const { vaultDir, fsManager } = makeVault();
+      const outsideDataDir = path.join(os.tmpdir(), `oo-outside-data-${Date.now()}`);
+      fs.mkdirSync(outsideDataDir, { recursive: true });
+      fs.writeFileSync(path.join(outsideDataDir, "secret.json"), '{"secret":"external"}');
+      tmpDirs.push(outsideDataDir);
+
+      const symlinkDataDir = path.join(vaultDir, ".openonyx");
+      try {
+        fs.symlinkSync(outsideDataDir, symlinkDataDir, "dir");
+      } catch {
+        // Skip on platforms where directory symlink creation is restricted without privilege
+        return;
+      }
+
+      // writeDataFile must throw traversal error and not write into outside dir
+      await expect(fsManager.writeDataFile("pwned.json", '{"pwned":true}')).rejects.toThrow("Path traversal detected");
+      expect(fs.existsSync(path.join(outsideDataDir, "pwned.json"))).toBe(false);
+
+      // readDataFile must return null and not read outside file
+      const secret = await fsManager.readDataFile("secret.json");
+      expect(secret).toBeNull();
+
+      // listData and listDataDir must return empty array
+      const files = await fsManager.listData();
+      expect(files).toEqual([]);
+
+      const filesSub = await fsManager.listDataDir("");
+      expect(filesSub).toEqual([]);
+
+      // deleteDataFile must not delete the outside file
+      await fsManager.deleteDataFile("secret.json");
+      expect(fs.existsSync(path.join(outsideDataDir, "secret.json"))).toBe(true);
+    });
+
+    it("blocks data file operations when .openonyx is a dangling symlink pointing outside the vault", async () => {
+      const { vaultDir, fsManager } = makeVault();
+      const outsideDataDir = path.join(os.tmpdir(), `oo-dangling-data-dir-${Date.now()}`);
+      tmpDirs.push(outsideDataDir);
+
+      const symlinkDataDir = path.join(vaultDir, ".openonyx");
+      try {
+        fs.symlinkSync(outsideDataDir, symlinkDataDir, "dir");
+      } catch {
+        return;
+      }
+
+      await expect(fsManager.writeDataFile("test.json", '{"test":true}')).rejects.toThrow("Path traversal detected");
+      expect(await fsManager.readDataFile("test.json")).toBeNull();
+      expect(await fsManager.listData()).toEqual([]);
+      expect(fs.existsSync(outsideDataDir)).toBe(false);
+    });
   });
 });

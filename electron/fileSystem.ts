@@ -47,9 +47,16 @@ export class FileSystemManager {
 
     // Auto-migrate legacy .openobsidian vault data folder to .openonyx if present
     try {
-      const oldDataDir = path.join(this.vaultPath, '.openobsidian');
-      const newDataDir = path.join(this.vaultPath, '.openonyx');
-      if (fs.existsSync(oldDataDir) && !fs.existsSync(newDataDir)) {
+      const oldDataDir = resolveInsideRoot(this.vaultPath, '.openobsidian');
+      const newDataDir = resolveInsideRoot(this.vaultPath, '.openonyx');
+      const realOld = getRealPath(oldDataDir);
+      const realNew = getRealPath(newDataDir);
+      if (
+        isInsideRoot(this.vaultPath, realOld) &&
+        isInsideRoot(this.vaultPath, realNew) &&
+        fs.existsSync(oldDataDir) &&
+        !fs.existsSync(newDataDir)
+      ) {
         fs.renameSync(oldDataDir, newDataDir);
         console.log('[FileSystemManager] Successfully migrated vault data directory from .openobsidian to .openonyx');
       }
@@ -553,6 +560,10 @@ export class FileSystemManager {
   private ensureDataDir(subDir?: string): string {
     if (!this.vaultPath) throw new Error('No vault path set');
     const baseDataDir = resolveInsideRoot(this.vaultPath, '.openonyx');
+    const realBaseDataDir = getRealPath(baseDataDir);
+    if (!isInsideRoot(this.vaultPath, realBaseDataDir)) {
+      throw new Error('Path traversal detected');
+    }
     if (!fs.existsSync(baseDataDir)) {
       fs.mkdirSync(baseDataDir, { recursive: true });
     }
@@ -561,7 +572,11 @@ export class FileSystemManager {
     }
     const dataDir = resolveInsideRoot(baseDataDir, subDir);
     const realParent = getRealPath(path.dirname(dataDir));
-    if (!isInsideRoot(baseDataDir, realParent)) {
+    if (!isInsideRoot(this.vaultPath, realParent) || !isInsideRoot(baseDataDir, realParent)) {
+      throw new Error('Path traversal detected');
+    }
+    const realDataDir = getRealPath(dataDir);
+    if (!isInsideRoot(this.vaultPath, realDataDir) || !isInsideRoot(baseDataDir, realDataDir)) {
       throw new Error('Path traversal detected');
     }
     if (!fs.existsSync(dataDir)) {
@@ -575,10 +590,12 @@ export class FileSystemManager {
     try {
       if (!this.vaultPath) return null;
       const baseDataDir = resolveInsideRoot(this.vaultPath, '.openonyx');
+      const realBaseDataDir = getRealPath(baseDataDir);
+      if (!isInsideRoot(this.vaultPath, realBaseDataDir)) return null;
       const filePath = resolveInsideRoot(baseDataDir, relativePath);
       if (!fs.existsSync(filePath)) return null;
       const realTarget = getRealPath(filePath);
-      if (!isInsideRoot(baseDataDir, realTarget)) return null;
+      if (!isInsideRoot(this.vaultPath, realTarget) || !isInsideRoot(baseDataDir, realTarget)) return null;
       return await fs.promises.readFile(filePath, 'utf-8');
     } catch {
       return null;
@@ -588,14 +605,18 @@ export class FileSystemManager {
   /** Write a JSON file to .openonyx/ */
   async writeDataFile(relativePath: string, content: string): Promise<void> {
     const baseDataDir = this.ensureDataDir();
+    const realBaseDataDir = getRealPath(baseDataDir);
+    if (!isInsideRoot(this.vaultPath!, realBaseDataDir)) {
+      throw new Error('Path traversal detected');
+    }
     const filePath = resolveInsideRoot(baseDataDir, relativePath);
     const fileDir = path.dirname(filePath);
     const realParent = getRealPath(fileDir);
-    if (!isInsideRoot(baseDataDir, realParent)) {
+    if (!isInsideRoot(this.vaultPath!, realParent) || !isInsideRoot(baseDataDir, realParent)) {
       throw new Error('Path traversal detected');
     }
     const realTarget = getRealPath(filePath);
-    if (!isInsideRoot(baseDataDir, realTarget)) {
+    if (!isInsideRoot(this.vaultPath!, realTarget) || !isInsideRoot(baseDataDir, realTarget)) {
       throw new Error('Path traversal detected');
     }
     if (!fs.existsSync(fileDir)) {
@@ -609,6 +630,8 @@ export class FileSystemManager {
     try {
       if (!this.vaultPath) return;
       const baseDataDir = resolveInsideRoot(this.vaultPath, '.openonyx');
+      const realBaseDataDir = getRealPath(baseDataDir);
+      if (!isInsideRoot(this.vaultPath, realBaseDataDir)) return;
       const filePath = resolveInsideRoot(baseDataDir, relativePath);
       let exists = fs.existsSync(filePath);
       let isSymlink = false;
@@ -621,7 +644,7 @@ export class FileSystemManager {
       }
       if (exists || isSymlink) {
         const realTarget = getRealPath(filePath);
-        if (!isInsideRoot(baseDataDir, realTarget)) return;
+        if (!isInsideRoot(this.vaultPath, realTarget) || !isInsideRoot(baseDataDir, realTarget)) return;
         await fs.promises.unlink(filePath);
       }
     } catch { /* silent */ }
@@ -632,12 +655,14 @@ export class FileSystemManager {
     try {
       if (!this.vaultPath) return [];
       const baseDataDir = resolveInsideRoot(this.vaultPath, '.openonyx');
+      const realBaseDataDir = getRealPath(baseDataDir);
+      if (!isInsideRoot(this.vaultPath, realBaseDataDir)) return [];
       const dir = subDir && subDir.trim()
         ? resolveInsideRoot(baseDataDir, subDir)
         : baseDataDir;
       if (!fs.existsSync(dir)) return [];
       const realDir = getRealPath(dir);
-      if (!isInsideRoot(baseDataDir, realDir)) return [];
+      if (!isInsideRoot(this.vaultPath, realDir) || !isInsideRoot(baseDataDir, realDir)) return [];
       const stats = await fs.promises.stat(dir);
       if (!stats.isDirectory()) return [];
       const files = await fs.promises.readdir(dir);
