@@ -13,7 +13,7 @@ import { fileURLToPath, pathToFileURL } from 'url';
 import { FileSystemManager } from './fileSystem.js';
 import { SearchEngine } from './search.js';
 import { registerIpcHandlers } from './ipc.js';
-import { isInsideRoot } from './pathSafety.js';
+import { getRealPath, isInsideRoot, isSafeVaultProtocolPath, resolveInsideRoot } from './pathSafety.js';
 import { approveVaultPath } from './vaultAccess.js';
 
 // Register vault:// protocol as privileged before app is ready
@@ -269,17 +269,51 @@ function configureChromiumRuntime(): void {
 // Chromium switches must be registered before app.whenReady().
 configureChromiumRuntime();
 
-function findFileInVault(dir: string, fileName: string): string | null {
+export function findFileInVault(
+  dir: string,
+  fileName: string,
+  vaultPath?: string,
+  visitedRealDirs: Set<string> = new Set()
+): string | null {
   try {
+    const root = vaultPath || dir;
+    const realDir = getRealPath(dir);
+    if (!isInsideRoot(root, realDir) || visitedRealDirs.has(realDir)) {
+      return null;
+    }
+    visitedRealDirs.add(realDir);
+
     const entries = fs.readdirSync(dir, { withFileTypes: true });
     for (const entry of entries) {
       if (entry.name.startsWith('.') || entry.name === 'node_modules') continue;
       const fullPath = path.join(dir, entry.name);
-      if (entry.isDirectory()) {
-        const found = findFileInVault(fullPath, fileName);
+      if (!isInsideRoot(root, fullPath)) continue;
+
+      let isDirectory = false;
+      try {
+        const stats = fs.lstatSync(fullPath);
+        if (stats.isSymbolicLink()) {
+          const realTarget = getRealPath(fullPath);
+          if (!isInsideRoot(root, realTarget)) {
+            continue;
+          }
+          const targetStats = fs.statSync(fullPath);
+          isDirectory = targetStats.isDirectory();
+        } else {
+          isDirectory = stats.isDirectory();
+        }
+      } catch {
+        continue;
+      }
+
+      if (isDirectory) {
+        const found = findFileInVault(fullPath, fileName, root, visitedRealDirs);
         if (found) return found;
       } else if (entry.name.toLowerCase() === fileName.toLowerCase()) {
-        return fullPath;
+        const realTarget = getRealPath(fullPath);
+        if (isInsideRoot(root, realTarget)) {
+          return fullPath;
+        }
       }
     }
   } catch { /* ignore */ }
@@ -500,30 +534,42 @@ app.whenReady().then(() => {
   protocol.handle('vault', async (request) => {
     try {
       const url = new URL(request.url);
-      let relativePath = decodeURIComponent(url.pathname);
-      if (relativePath.startsWith('/')) relativePath = relativePath.slice(1);
+      const rawPath = (url.host && url.host !== 'local' ? url.host : '') + url.pathname;
+      const relativePath = decodeURIComponent(rawPath).replace(/^\/+/, '');
 
       const vaultPath = fsManager?.getVaultPath();
       if (!vaultPath) {
         return new Response('Vault path not set', { status: 404 });
       }
 
-      let targetPath = path.resolve(vaultPath, relativePath);
-      if (!isInsideRoot(vaultPath, targetPath)) {
+      if (!isSafeVaultProtocolPath(vaultPath, relativePath)) {
         return new Response('Path traversal detected', { status: 403 });
       }
+
+      let targetPath: string;
+      try {
+        targetPath = resolveInsideRoot(vaultPath, relativePath);
+      } catch {
+        return new Response('Path traversal detected', { status: 403 });
+      }
+
       if (!fs.existsSync(targetPath)) {
         // Fallback: search for file by basename in vault
         const fileName = path.basename(relativePath);
-        const found = findFileInVault(vaultPath, fileName);
-        if (found && fs.existsSync(found)) {
+        const found = findFileInVault(vaultPath, fileName, vaultPath);
+        if (found && fs.existsSync(found) && isInsideRoot(vaultPath, found)) {
           targetPath = found;
         } else {
           return new Response('File not found', { status: 404 });
         }
       }
 
-      return net.fetch(pathToFileURL(targetPath).toString());
+      const realTarget = getRealPath(targetPath);
+      if (!isInsideRoot(vaultPath, realTarget)) {
+        return new Response('Path traversal detected', { status: 403 });
+      }
+
+      return net.fetch(pathToFileURL(realTarget).toString());
     } catch (err) {
       console.error('[Vault Protocol Error]', err);
       return new Response('Internal error', { status: 500 });

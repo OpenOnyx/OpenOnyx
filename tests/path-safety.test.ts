@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   isInsideRoot,
   isSafeVaultProtocolPath,
+  isWindowsDrivePath,
   resolveInsideRoot,
   sanitizeAttachmentFileName,
 } from "../electron/pathSafety";
@@ -20,8 +21,15 @@ describe("path safety", () => {
     expect(isInsideRoot(root, path.resolve(root, "..", "outside.md"))).toBe(false);
   });
 
+  it("handles normalized real paths and does not reject on superficial prefix differences", () => {
+    // Both point inside the vault root
+    expect(isInsideRoot(root, path.join(root, "sub", "..", "notes", "doc.md"))).toBe(true);
+  });
+
   it("throws on relative traversal", () => {
     expect(() => resolveInsideRoot(root, "../../etc/passwd")).toThrow("Path traversal detected");
+    expect(() => resolveInsideRoot(root, "../outside.md")).toThrow("Path traversal detected");
+    expect(() => resolveInsideRoot(root, "sub/../../link.md")).toThrow("Path traversal detected");
     expect(resolveInsideRoot(root, "attachments/pic.png")).toBe(
       path.join(root, "attachments", "pic.png"),
     );
@@ -30,6 +38,14 @@ describe("path safety", () => {
   it("blocks vault:// paths that walk out of the vault", () => {
     expect(isSafeVaultProtocolPath(root, "attachments/a.png")).toBe(true);
     expect(isSafeVaultProtocolPath(root, "../../etc/passwd")).toBe(false);
+    expect(isSafeVaultProtocolPath(root, "C:note.md")).toBe(true);
+  });
+
+  it("identifies Windows drive paths only when followed by a slash or backslash", () => {
+    expect(isWindowsDrivePath("C:/Windows")).toBe(true);
+    expect(isWindowsDrivePath("D:\\folder\\file.txt")).toBe(true);
+    expect(isWindowsDrivePath("C:note.md")).toBe(false);
+    expect(isWindowsDrivePath("regular-file.txt")).toBe(false);
   });
 
   it("keeps attachment names inside the attachments folder", () => {
