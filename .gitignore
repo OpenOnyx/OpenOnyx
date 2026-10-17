@@ -46,3 +46,9 @@ supabase/.temp/
 # Vault-local state and native credential files
 .openonyx/
 google-drive-credentials.enc
+
+# Local recordings and media
+*.mp4
+*.webm
+*.mkv
+*.srt
