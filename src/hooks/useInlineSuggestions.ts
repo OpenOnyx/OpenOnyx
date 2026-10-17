@@ -5,6 +5,7 @@ import { type EnrichedSuggestion } from "../utils/suggestion-enrichment";
 import { getAPI } from "../utils/api";
 import {
   loadStore,
+  getEmbeddingGeneration,
   findSimilar,
   applyHistoryWeighting,
   loadSuggestionHistory,
@@ -26,6 +27,9 @@ import {
   extractConceptTokens,
   getTransitionLikelihood,
 } from "../utils/firstThought";
+
+import { createSuggestionRefresh, SuggestionContentCache } from "../utils/suggestion-refresh";
+import { countEmbeddingMetric, recordEmbeddingMetric } from "../utils/embedding-performance";
 
 const api = getAPI();
 const GRAPH_TAB_PATH = "__graph__.view";
@@ -68,7 +72,30 @@ export function useInlineSuggestions({
   const [generatingInsightPaths, setGeneratingInsightPaths] = useState<Set<string>>(new Set());
   const [showInlineInsightByTab, setShowInlineInsightByTab] = useState<Record<string, boolean>>({});
 
+  const refreshVersions = useRef(new Map<string, number>());
+  const contentCache = useRef(new SuggestionContentCache());
+  const activePathRef = useRef<string | undefined>(undefined);
+  activePathRef.current = tabs.find((tab) => tab.id === activeTabId)?.path;
+  useEffect(() => {
+    refreshVersions.current.clear(); contentCache.current.clear();
+    setInlineSuggestionsByPath({}); setNextStepSuggestionsByPath({});
+    return () => { refreshVersions.current.clear(); contentCache.current.clear(); };
+  }, [vaultPath]);
+  const readSuggestionContent = async (path: string, generation: number): Promise<string> => {
+    const cached = contentCache.current.get(path);
+    if (cached !== undefined) return cached;
+    const text = (await api.readFile(path)) || "";
+    if (generation === getEmbeddingGeneration()) contentCache.current.set(path, text);
+    return text;
+  };
+
   const refreshInlineSuggestions = useCallback(async (notePath: string) => {
+    const generation = getEmbeddingGeneration();
+    const version = (refreshVersions.current.get(notePath) || 0) + 1;
+    refreshVersions.current.set(notePath, version);
+    const current = () => generation === getEmbeddingGeneration() && refreshVersions.current.get(notePath) === version;
+    countEmbeddingMetric("suggestionRefreshes");
+    const refreshStart = performance.now();
     try {
       const store = loadStore();
       if (store.entries.size === 0) {
@@ -86,16 +113,18 @@ export function useInlineSuggestions({
 
       // Load target note contents for enrichment
       let sourceContent = "";
-      try { sourceContent = await api.readFile(notePath); } catch { /* empty */ }
+      try { sourceContent = await readSuggestionContent(notePath, generation); } catch { /* empty */ }
 
       const noteContents = new Map<string, string>();
       for (const s of basic) {
         try {
-          const content = await api.readFile(s.path);
+          const content = await readSuggestionContent(s.path, generation);
+          if (!current()) return;
           noteContents.set(s.path, content);
         } catch { /* skip */ }
       }
 
+      if (!current()) return;
       const history = loadSuggestionHistory();
       const accepted = history
         .filter(
@@ -247,11 +276,14 @@ export function useInlineSuggestions({
         )
         .slice(0, 4);
 
-      setInlineSuggestions(enriched);
-      setNextStepSuggestions(nextSteps);
-      setInlineSuggestionsByPath((prev) => ({ ...prev, [notePath]: enriched }));
-      setNextStepSuggestionsByPath((prev) => ({ ...prev, [notePath]: nextSteps }));
-    } catch { /* silent */ }
+      if (!current()) return;
+      if (activePathRef.current === notePath) {
+        setInlineSuggestions(enriched);
+        setNextStepSuggestions(nextSteps);
+      }
+      setInlineSuggestionsByPath((prev) => Object.fromEntries([...Object.entries(prev).filter(([path]) => path !== notePath).slice(-47), [notePath, enriched]]));
+      setNextStepSuggestionsByPath((prev) => Object.fromEntries([...Object.entries(prev).filter(([path]) => path !== notePath).slice(-47), [notePath, nextSteps]]));
+    } catch { /* silent */ } finally { recordEmbeddingMetric("suggestionRefreshMs", performance.now() - refreshStart); }
   }, [collectAllActiveTabPaths]);
 
   const refreshInlineAnnotation = useCallback((notePath: string) => {
@@ -296,30 +328,29 @@ export function useInlineSuggestions({
   }, [paneTree, tabs, refreshInlineSuggestions, inlineSuggestionsByPath, collectAllActiveTabPaths]);
 
   useEffect(() => {
+    const refresh = createSuggestionRefresh(() => {
+      const paths = new Set(collectAllActiveTabPaths(paneTree).filter(isHostEditableMarkdownPath));
+      if (activePathRef.current && isHostEditableMarkdownPath(activePathRef.current)) paths.add(activePathRef.current);
+      for (const path of paths) void refreshInlineSuggestions(path);
+    });
     const onEmbeddingUpdated = (event: Event) => {
-      const updatedPath = (event as CustomEvent<{ path?: string }>).detail?.path;
-      const pathsToRefresh = new Set(
-        collectAllActiveTabPaths(paneTree).filter((path) =>
-          isHostEditableMarkdownPath(path),
-        ),
-      );
-
-      const activePath = tabs.find((tab) => tab.id === activeTabId)?.path;
-      if (activePath && isHostEditableMarkdownPath(activePath)) {
-        pathsToRefresh.add(activePath);
-      }
-      if (updatedPath && isHostEditableMarkdownPath(updatedPath)) {
-        pathsToRefresh.add(updatedPath);
-      }
-
-      pathsToRefresh.forEach((path: string) => {
-        void refreshInlineSuggestions(path);
-      });
+      const detail = (event as CustomEvent<{ path?: string; paths?: string[] }>).detail;
+      for (const path of detail?.paths || (detail?.path ? [detail.path] : [])) contentCache.current.delete(path);
+      refresh.schedule();
     };
-
-    window.addEventListener("openonyx:embedding-updated", onEmbeddingUpdated as EventListener);
+    const onContentChanged = (event: Event) => {
+      const detail = (event as CustomEvent<{ path?: string; content?: string }>).detail;
+      if (detail?.path) {
+        if (typeof detail.content === "string") contentCache.current.set(detail.path, detail.content);
+        else contentCache.current.delete(detail.path);
+      }
+    };
+    window.addEventListener("openonyx:embedding-updated", onEmbeddingUpdated);
+    window.addEventListener("openonyx:file-written", onContentChanged);
     return () => {
-      window.removeEventListener("openonyx:embedding-updated", onEmbeddingUpdated as EventListener);
+      refresh.cancel();
+      window.removeEventListener("openonyx:embedding-updated", onEmbeddingUpdated);
+      window.removeEventListener("openonyx:file-written", onContentChanged);
     };
   }, [activeTabId, paneTree, refreshInlineSuggestions, tabs, collectAllActiveTabPaths]);
 

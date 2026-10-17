@@ -1,3 +1,4 @@
+import { cancelNoteJobs } from "../utils/background-queue";
 import { useCallback } from "react";
 import { Tab, PaneNode, FileEntry } from "../types";
 import { getAPI } from "../utils/api";
@@ -117,9 +118,11 @@ export function useFileOperations({
           await (api as any).trashFile(filePath);
           if (isDir) {
             const store = loadStore();
+            cancelNoteJobs(filePath, true);
             removeEmbeddingsByPrefix(store, filePath);
           } else if (filePath.toLowerCase().endsWith(".md")) {
             const store = loadStore();
+            cancelNoteJobs(filePath);
             removeEmbedding(store, filePath);
           }
         } else if (!isDir && settings.deletedFilesMode === "app-trash") {
@@ -129,17 +132,20 @@ export function useFileOperations({
           await api.deleteFile(filePath);
           if (filePath.toLowerCase().endsWith(".md")) {
             const store = loadStore();
+            cancelNoteJobs(filePath);
             removeEmbedding(store, filePath);
           }
         } else {
           if (isDir) {
             await api.deleteDirectory(filePath);
             const store = loadStore();
+            cancelNoteJobs(filePath, true);
             removeEmbeddingsByPrefix(store, filePath);
           } else {
             await api.deleteFile(filePath);
             if (filePath.toLowerCase().endsWith(".md")) {
               const store = loadStore();
+              cancelNoteJobs(filePath);
               removeEmbedding(store, filePath);
             }
           }

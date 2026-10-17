@@ -37,6 +37,7 @@ export interface Space {
 // ── Vector Store Types ───────────────────────────────────────────────────────
 
 export interface SpaceChunk {
+  vectorType?: string;
   id: string;
   spaceId: string;
   /** Vault-relative note path (e.g. "projects/ideas.md") */

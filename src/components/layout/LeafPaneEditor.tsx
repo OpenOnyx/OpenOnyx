@@ -1,3 +1,4 @@
+import { markEmbeddingTyping } from "../../utils/embeddings";
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { PdfDocumentView } from "../documents/PdfDocumentView";
 import { Editor } from "../editor/Editor";
@@ -535,6 +536,8 @@ function MarkdownLeafPaneEditor({
       contentCacheRef.current.set(sourcePath, newContent);
       onContentChangeGlobal(sourcePath, newContent);
     }, 250);
+
+    markEmbeddingTyping();
 
     // Presence: mark as typing
     const isCollabSpace = !!collaborationEngine.activeSpaceId && !collaborationEngine.collabPaused && !collabFailSafe;

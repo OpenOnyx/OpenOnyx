@@ -56,7 +56,7 @@ const TemplateModal = React.lazy(() => import("./components/modals/TemplateModal
 const SpacesPage = React.lazy(() => import("./components/spaces/SpacesPage").then((m) => ({ default: m.SpacesPage })));
 const DatabaseView = React.lazy(() => import("./components/settings/DatabaseView").then((m) => ({ default: m.DatabaseView })));
 import {
-  embedNote,
+  markEmbeddingTyping,
   loadStore,
   removeEmbedding,
   renameEmbeddingPath,
@@ -75,7 +75,8 @@ import {
   type EmbeddingStore,
 } from "./utils/embeddings";
 import { getAnnotation, getCachedAnnotation, generateFirstThoughtExpansion } from "./utils/ai-core";
-import { initializeVault, setQueueStatusCallback, resetQueueState, type QueueStatus } from "./utils/background-queue";
+import { startEmbeddingResponsivenessMonitor } from "./utils/embedding-performance";
+import { initializeVault, enqueueJob, startProcessing, cancelNoteJobs, setQueueStatusCallback, resetQueueState, type QueueStatus } from "./utils/background-queue";
 import { type LinkType } from "./components/ai/SuggestionBanner";
 import { enrichSuggestions, type EnrichedSuggestion } from "./utils/suggestion-enrichment";
 import { resetSynthesisCache } from "./utils/synthesis";
@@ -2196,6 +2197,7 @@ export default function App() {
   }, [collectAllMdMetadata, tabs, activeTabId, recentFiles]);
 
   const initializeRef = useRef(false);
+  useEffect(startEmbeddingResponsivenessMonitor, []);
 
   // ── Sync global window property for plugin compatibility ─────
   useEffect(() => {
@@ -2516,50 +2518,13 @@ export default function App() {
     if (path.startsWith(".trash/") || path.startsWith(".openonyx/")) return;
     if (!areEmbeddingsAvailable()) return;
 
-    const noteLabel = path.split("/").pop()?.replace(/\.md$/i, "") || path;
-    setQueueStatus({
-      isRunning: true,
-      processed: 0,
-      total: 1,
-      progress: 5,
-      message: `Indexing ${noteLabel}…`,
+    enqueueJob({
+      id: `embed-${path}`, type: "embed", path,
+      content: typeof content === "string" ? content : "",
+      priority: currentContentPathRef.current === path ? 0 : 2,
+      enqueuedAt: Date.now(),
     });
-    try {
-      const source = typeof content === "string" ? content : (await api.readFile(path)) || "";
-      const store = loadStore();
-      const changed = await embedNote(store, path, source);
-      if (changed) {
-        window.dispatchEvent(
-          new CustomEvent("openonyx:embedding-updated", {
-            detail: { path },
-          }),
-        );
-      }
-      const completedMessage = `Indexed ${noteLabel}`;
-      setQueueStatus({
-        isRunning: false,
-        processed: 1,
-        total: 1,
-        progress: 100,
-        message: completedMessage,
-      });
-      window.setTimeout(() => {
-        setQueueStatus((current) => current?.message === completedMessage ? null : current);
-      }, 3000);
-    } catch (err) {
-      console.warn("[Auto-index] Failed:", err);
-      const failedMessage = `Indexing failed for ${noteLabel}`;
-      setQueueStatus({
-        isRunning: false,
-        processed: 0,
-        total: 1,
-        progress: 0,
-        message: failedMessage,
-      });
-      window.setTimeout(() => {
-        setQueueStatus((current) => current?.message === failedMessage ? null : current);
-      }, 3000);
-    }
+    void startProcessing(api);
   }, []);
 
   useEffect(() => {
@@ -2588,16 +2553,13 @@ export default function App() {
       for (const change of meaningfulChanges) {
         if (!change.isDirectory && change.type !== "delete") {
           void indexMarkdownFileNow(change.path);
-        } else if (change.type === "delete" && change.path.toLowerCase().endsWith(".md")) {
+        } else if (change.type === "delete") {
+          cancelNoteJobs(change.path, change.isDirectory);
           void (async () => {
             try {
               const store = loadStore();
-              await removeEmbedding(store, change.path);
-              window.dispatchEvent(
-                new CustomEvent("openonyx:embedding-updated", {
-                  detail: { path: change.path },
-                }),
-              );
+              if (change.isDirectory) removeEmbeddingsByPrefix(store, change.path);
+              else removeEmbedding(store, change.path);
             } catch (err) {
               console.warn("[Auto-index] Failed to remove deleted file embedding:", err);
             }
@@ -2905,6 +2867,7 @@ export default function App() {
   }, [activeTabId, loadBacklinks, rememberRenameRedirect, setStarredNotes, setTabs, tabs]);
 
   const updateEmbeddingsAfterRename = useCallback((oldPath: string, newPath: string, isDirectory: boolean) => {
+    cancelNoteJobs(oldPath, isDirectory);
     const store = loadStore();
     if (isDirectory) {
       renameEmbeddingsByPrefix(store, oldPath, newPath);
@@ -3304,8 +3267,7 @@ export default function App() {
     setShownFirstThoughtExpansionDraftKey(null);
     setDismissedFirstThoughtExpansionDraftKey(null);
 
-    const store = loadStore();
-    void embedNote(store, candidatePath, content);
+    // createFile emits the authoritative indexing event.
     void getAnnotation(candidatePath, content)
       .then((annotation) => {
         if (annotation) {
@@ -3530,8 +3492,7 @@ export default function App() {
         detail: { path: tab.path, content: saveContent },
       }),
     );
-    // Auto-embed in background
-    void indexMarkdownFileNow(tab.path, saveContent);
+    // The API file-written event owns save-triggered indexing.
 
     setTabs((prev) =>
       prev.map((t) => (t.id === activeTabId ? { ...t, isModified: false } : t)),
@@ -3572,6 +3533,7 @@ export default function App() {
       }
 
       if (!markModified) return;
+      markEmbeddingTyping();
 
       // Mark tab as modified
       setTabs((prev) => {
@@ -3595,6 +3557,7 @@ export default function App() {
   // Auto-save with debounce
   const handleContentChange = useCallback(
     (content: string) => {
+      markEmbeddingTyping();
       currentContentRef.current = content;
       const activeTab = tabs.find((t) => t.id === activeTabId);
       currentContentPathRef.current = activeTab?.path || null;
@@ -3632,8 +3595,7 @@ export default function App() {
               detail: { path: tab.path, content },
             }),
           );
-          // Auto-embed on auto-save (background)
-          void indexMarkdownFileNow(tab.path, content);
+          // The API file-written event owns save-triggered indexing.
 
           setTabs((prev) =>
             prev.map((t) =>
@@ -4034,8 +3996,10 @@ export default function App() {
       // Remove embeddings
       const store = loadStore();
       if (isDirectory) {
+        cancelNoteJobs(path, true);
         removeEmbeddingsByPrefix(store, path);
       } else if (path.toLowerCase().endsWith(".md")) {
+        cancelNoteJobs(path);
         removeEmbedding(store, path);
       }
 

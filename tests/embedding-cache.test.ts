@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { env } from '@xenova/transformers';
 import {
   chunkTextForEmbedding,
+  configureTransformersEnv,
   EMBEDDING_SCHEMA_VERSION,
   EMBEDDING_UPDATED_EVENT,
   embedNote,
@@ -30,6 +31,7 @@ beforeEach(() => {
 
 describe('embedding cache metadata refresh', () => {
   it('uses the disk-cached remote model configuration with WASM runtime path', () => {
+    configureTransformersEnv(env);
     expect(env.allowLocalModels).toBe(false);
     expect(env.allowRemoteModels).toBe(true);
     expect(env.useBrowserCache).toBe(false);

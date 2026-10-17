@@ -14,7 +14,12 @@
 
 import { readData, writeData, listData, deleteData, createDebouncedWriter } from "./disk-store";
 
-type FeatureExtractionPipeline = any;
+import { embeddingScheduler, StaleEmbeddingError, EmbeddingCapacityError, type EmbeddingPriority } from "./embedding-scheduler";
+import { embeddingWorkerClient } from "./embedding-worker-client";
+import { CHUNK_CACHE_ID } from "./embedding-worker-contract";
+import { countEmbeddingMetric, recordEmbeddingMetric, timeEmbeddingOperation } from "./embedding-performance";
+
+export const getEmbeddingGeneration = () => embeddingScheduler.generation;
 
 export function resolveTransformersWasmPath(
   transformersVersion: string,
@@ -76,106 +81,6 @@ export function configureTransformersEnv(env: any) {
   }
 }
 
-let _transformers: typeof import("@xenova/transformers") | null = null;
-
-if (process.env.NODE_ENV === "test") {
-  const mod = await import("@xenova/transformers");
-  configureTransformersEnv(mod.env);
-  _transformers = mod;
-}
-
-async function getTransformers() {
-  if (_transformers) return _transformers;
-  const mod = await import("@xenova/transformers");
-  configureTransformersEnv(mod.env);
-  _transformers = mod;
-  return mod;
-}
-
-// Fetch interceptor to cache Transformers.js model files locally in Electron
-if (
-  typeof window !== "undefined" &&
-  (window as any).electronAPI &&
-  typeof process !== "undefined" &&
-  process.env.NODE_ENV !== "test"
-) {
-  const originalFetch = window.fetch;
-
-  window.fetch = async function (input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
-    const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : (input as Request).url;
-    const subpath = getRemoteEmbeddingModelSubpath(url);
-
-    if (subpath) {
-      const localPath = `.openonyx/models/Xenova/all-MiniLM-L6-v2/${subpath}`;
-      try {
-        const exists = await (window as any).electronAPI.fileExists(localPath);
-        if (exists) {
-          if (subpath.endsWith(".json")) {
-            const content = await (window as any).electronAPI.readFile(localPath);
-            if (content !== null) {
-              try {
-                JSON.parse(content);
-                return new Response(content, {
-                  status: 200,
-                  headers: { "Content-Type": "application/json" }
-                });
-              } catch {
-                console.warn(`[Embeddings Cache] Ignoring invalid cached JSON file ${localPath}`);
-              }
-            }
-          } else if (subpath.endsWith(".onnx")) {
-            const content = await (window as any).electronAPI.readBinary(localPath);
-            if (content && content.length > 0) {
-              return new Response(content, {
-                status: 200,
-                headers: { "Content-Type": "application/octet-stream" }
-              });
-            }
-          }
-        }
-      } catch (err) {
-        console.warn(`[Embeddings Cache] Failed to read local cached file ${localPath}:`, err);
-      }
-
-      if (typeof navigator !== "undefined" && !navigator.onLine) {
-        return new Response("Offline and model file not cached", {
-          status: 503,
-          statusText: "Service Unavailable"
-        });
-      }
-
-      try {
-        const response = await originalFetch(input, init);
-        if (response.ok) {
-          const clone = response.clone();
-          if (subpath.endsWith(".json")) {
-            clone.text().then(text => {
-              JSON.parse(text);
-              (window as any).electronAPI.writeFile(localPath, text).catch((err: any) => {
-                console.warn(`[Embeddings Cache] Failed to cache JSON file ${localPath}:`, err);
-              });
-            }).catch((err: any) => {
-              console.warn(`[Embeddings Cache] Skipped invalid JSON response for ${localPath}:`, err);
-            });
-          } else if (subpath.endsWith(".onnx")) {
-            clone.arrayBuffer().then(buffer => {
-              (window as any).electronAPI.writeBinary(localPath, new Uint8Array(buffer)).catch((err: any) => {
-                console.warn(`[Embeddings Cache] Failed to cache binary file ${localPath}:`, err);
-              });
-            });
-          }
-        }
-        return response;
-      } catch (err) {
-        console.error(`[Embeddings Cache] Fetch failed for ${url}:`, err);
-        throw err;
-      }
-    }
-
-    return originalFetch(input, init);
-  };
-}
-
 // ── Model singleton ──────────────────────────────────────────────────────────
 
 const MODEL_ID = "Xenova/all-MiniLM-L6-v2";
@@ -186,10 +91,10 @@ export const EMBEDDING_UPDATED_EVENT = "openonyx:embedding-updated";
 const EMBEDDING_CHUNK_OVERLAP = 120;
 const MAX_STORED_SEGMENT_VECTORS = 8;
 
-let _pipeline: FeatureExtractionPipeline | null = null;
-let _loadingPromise: Promise<FeatureExtractionPipeline> | null = null;
+let _modelReady = false;
 let _loadProgress = 0;
 let _disabledReason: string | null = null;
+let retryAfter = 0;
 
 type ProgressCallback = (progress: number, status: string) => void;
 let _onProgress: ProgressCallback | null = null;
@@ -206,12 +111,14 @@ export function getEmbeddingDisabledReason(): string | null {
   return _disabledReason;
 }
 
+export const getEmbeddingVectorType = () => _disabledReason ? "lexical-v1" : CHUNK_CACHE_ID;
+
 export function isLexicalFallbackActive(): boolean {
   return _disabledReason !== null;
 }
 
 export function isSemanticEmbeddingAvailable(): boolean {
-  return _pipeline !== null;
+  return _modelReady;
 }
 
 let _embeddingsAvailable = typeof navigator !== "undefined" ? navigator.onLine : true;
@@ -241,9 +148,10 @@ export async function isModelCached(): Promise<boolean> {
 
 export async function updateAvailability(): Promise<void> {
   const online = typeof navigator !== "undefined" ? navigator.onLine : true;
+  const generation = getEmbeddingGeneration();
   if (!online) {
     const cached = await isModelCached();
-    _embeddingsAvailable = cached;
+    if (generation === getEmbeddingGeneration()) _embeddingsAvailable = _modelReady || cached;
   } else {
     _embeddingsAvailable = true;
   }
@@ -257,7 +165,7 @@ if (typeof window !== "undefined") {
   });
 
   window.addEventListener("offline", async () => {
-    _embeddingsAvailable = await isModelCached();
+    await updateAvailability();
   });
 }
 
@@ -265,44 +173,17 @@ export function areEmbeddingsAvailable(): boolean {
   return _embeddingsAvailable;
 }
 
-async function getEmbedder(): Promise<FeatureExtractionPipeline> {
-  if (_pipeline) return _pipeline;
-  if (_loadingPromise) return _loadingPromise;
-
-  _loadingPromise = (async () => {
-    try {
-      _loadProgress = 10;
-      _onProgress?.(10, "Loading analysis engine...");
-      
-      // Explicitly catch pipeline errors
-      const { pipeline } = await getTransformers();
-      const p = await pipeline("feature-extraction", MODEL_ID).catch(err => {
-        console.warn("[Embeddings] Pipeline creation failed; using local fallback analysis for this session:", err);
-        throw err;
-      });
-
-      if (!p) throw new Error("Pipeline creation returned null");
-
-      _loadProgress = 100;
-      _disabledReason = null;
-      _onProgress?.(100, "Model ready");
-      _pipeline = p as FeatureExtractionPipeline;
-      _loadingPromise = null;
-      return _pipeline;
-    } catch (err) {
-      _loadingPromise = null;
-      _loadProgress = 0;
-      _disabledReason = err instanceof Error ? err.message : "Analysis engine failed to load";
-      _onProgress?.(100, "Using keyword search (semantic model not loaded)");
-      throw err;
-    }
-  })();
-
-  return _loadingPromise;
-}
+embeddingWorkerClient.onState = (state) => {
+  _modelReady = state === "ready";
+  _loadProgress = _modelReady ? 100 : state === 'downloading' ? 20 : 10;
+  if (_modelReady) _disabledReason = null;
+  const status = _modelReady ? 'Model ready' : state === 'downloading' ? 'Downloading local analysis model...' : 'Loading analysis engine...';
+  _onProgress?.(_loadProgress, status);
+  if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('openonyx:embedding-model-state', { detail: state }));
+};
 
 export function isModelLoaded(): boolean {
-  return _pipeline !== null;
+  return _modelReady;
 }
 
 // ── Markdown stripping ───────────────────────────────────────────────────────
@@ -334,7 +215,17 @@ export function chunkTextForEmbedding(
   maxChars = EMBEDDING_CHUNK_SIZE,
   overlapChars = EMBEDDING_CHUNK_OVERLAP,
 ): string[] {
+  const start = performance.now();
   const clean = stripMarkdown(typeof text === "string" ? text : "");
+  recordEmbeddingMetric("markdownPreprocessingMs", performance.now() - start);
+  const chunkStart = performance.now();
+  const chunks = splitCleanTextForEmbedding(clean, maxChars, overlapChars);
+  recordEmbeddingMetric("chunkGenerationMs", performance.now() - chunkStart);
+  countEmbeddingMetric("chunksPrepared", chunks.length);
+  return chunks;
+}
+
+function splitCleanTextForEmbedding(clean: string, maxChars = EMBEDDING_CHUNK_SIZE, overlapChars = EMBEDDING_CHUNK_OVERLAP): string[] {
   if (clean.length < 5) return [];
   if (clean.length <= maxChars) return [clean];
 
@@ -437,9 +328,20 @@ function hasVectorSignal(vector: number[] | undefined): boolean {
   return Array.isArray(vector) && vector.some((value) => Math.abs(value) > 1e-8);
 }
 
+const notificationPaths = new Set<string>();
+let notificationPending = false;
 function notifyEmbeddingUpdated(path: string): void {
   if (typeof window === "undefined") return;
-  window.dispatchEvent(new CustomEvent(EMBEDDING_UPDATED_EVENT, { detail: { path } }));
+  notificationPaths.add(path);
+  if (notificationPending) return;
+  notificationPending = true;
+  const generation = getEmbeddingGeneration();
+  queueMicrotask(() => {
+    notificationPending = false;
+    const paths = [...notificationPaths]; notificationPaths.clear();
+    if (generation !== getEmbeddingGeneration() || !paths.length) return;
+    window.dispatchEvent(new CustomEvent(EMBEDDING_UPDATED_EVENT, { detail: paths.length === 1 ? { path: paths[0] } : { paths } }));
+  });
 }
 
 function normalizeVector(vector: number[]): number[] {
@@ -469,75 +371,190 @@ function coalesceSegmentVectors(vectors: number[][]): number[][] {
   });
 }
 
-async function embedCleanChunk(clean: string): Promise<number[]> {
-  if (clean.length < 5) {
-    return new Array(EMBEDDING_DIM).fill(0);
-  }
+const yieldToRenderer = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
+const chunkCache = new Map<string, number[]>();
+const MAX_CHUNK_CACHE = 2048;
+const MAX_WORKER_BATCH_CHUNKS = 4;
+const MAX_PENDING_CHUNK_REQUESTS = 256;
+export const markEmbeddingTyping = () => embeddingScheduler.typing();
 
-  if (_disabledReason) {
-    return lexicalEmbedText(clean);
-  }
+function cacheChunk(key: string, vector: number[]): void {
+  chunkCache.delete(key);
+  chunkCache.set(key, vector);
+  if (chunkCache.size > MAX_CHUNK_CACHE) chunkCache.delete(chunkCache.keys().next().value!);
+}
 
+interface PendingChunkRequest {
+  key: string;
+  text: string;
+  priority: EmbeddingPriority;
+  generation: number;
+  isCurrent: () => boolean;
+  created: number;
+  running: boolean;
+  promise: Promise<number[]>;
+  resolve: (vector: number[]) => void;
+  reject: (reason: unknown) => void;
+}
+
+// Each individual chunk has one in-flight promise. A short collection window
+// lets independent notes share a bounded worker request without changing their
+// note-level aggregation or cache identity.
+const pendingChunkRequests = new Map<string, PendingChunkRequest>();
+let chunkBatchFlushQueued = false;
+let chunkBatchTimer: ReturnType<typeof setTimeout> | null = null;
+let chunkBatchSequence = 0;
+
+function resetChunkBatcher(): void {
+  if (chunkBatchTimer) clearTimeout(chunkBatchTimer);
+  chunkBatchTimer = null;
+  chunkBatchFlushQueued = false;
+  for (const request of pendingChunkRequests.values()) request.reject(new StaleEmbeddingError());
+  pendingChunkRequests.clear();
+}
+
+function scheduleChunkBatchFlush(priority: EmbeddingPriority): void {
+  if (chunkBatchFlushQueued && priority === 0 && chunkBatchTimer) {
+    clearTimeout(chunkBatchTimer);
+    chunkBatchTimer = null;
+    chunkBatchFlushQueued = false;
+  }
+  if (chunkBatchFlushQueued) return;
+  chunkBatchFlushQueued = true;
+  const flush = () => {
+    chunkBatchTimer = null;
+    chunkBatchFlushQueued = false;
+    void flushChunkBatch();
+  };
+  // Queries do not wait for a collection timer. Background work waits one
+  // turn so a queue batch can contribute chunks from several notes.
+  if (priority === 0) queueMicrotask(flush);
+  else chunkBatchTimer = setTimeout(flush, 8);
+}
+
+async function flushChunkBatch(): Promise<void> {
+  const candidates = [...pendingChunkRequests.values()]
+    .filter((request) => !request.running)
+    .sort((a, b) => a.priority - b.priority || a.created - b.created);
+  for (const request of candidates) {
+    if (request.generation === getEmbeddingGeneration() && request.isCurrent()) continue;
+    pendingChunkRequests.delete(request.key);
+    request.reject(new StaleEmbeddingError());
+  }
+  const batch = candidates.filter((request) => pendingChunkRequests.get(request.key) === request && !request.running)
+    .slice(0, MAX_WORKER_BATCH_CHUNKS);
+  if (!batch.length) return;
+  for (const request of batch) request.running = true;
+  const priority = batch.reduce<EmbeddingPriority>((best, request) => Math.min(best, request.priority) as EmbeddingPriority, 2);
+  const generation = batch[0].generation;
+  countEmbeddingMetric('workerChunkBatches');
+  recordEmbeddingMetric('workerChunkBatchSize', batch.length);
   try {
-    const embedder = await getEmbedder();
-    const output = await embedder(clean, { pooling: "mean", normalize: true });
-    if (!output?.data) {
-      return lexicalEmbedText(clean);
+    const data = await embeddingScheduler.schedule(
+      `chunk-batch:${generation}:${++chunkBatchSequence}`,
+      priority,
+      () => embeddingWorkerClient.infer(
+        batch.map((request) => request.text), generation,
+        resolveTransformersWasmPath('2.17.2', typeof window !== 'undefined' ? window.location.href : undefined, false),
+      ),
+    );
+    if (generation !== getEmbeddingGeneration()) throw new StaleEmbeddingError();
+    batch.forEach((request, index) => {
+      if (pendingChunkRequests.get(request.key) !== request) return;
+      pendingChunkRequests.delete(request.key);
+      if (!request.isCurrent()) { request.reject(new StaleEmbeddingError()); return; }
+      const vector = Array.from(data.subarray(index * EMBEDDING_DIM, (index + 1) * EMBEDDING_DIM));
+      cacheChunk(request.key, vector);
+      request.resolve(vector);
+    });
+  } catch (error) {
+    for (const request of batch) {
+      if (pendingChunkRequests.get(request.key) === request) pendingChunkRequests.delete(request.key);
+      request.reject(error);
     }
-    return Array.from(output.data as Float32Array).slice(0, EMBEDDING_DIM);
-  } catch {
-    return lexicalEmbedText(clean);
+  } finally {
+    if (pendingChunkRequests.size) scheduleChunkBatchFlush(2);
   }
 }
 
-const yieldToRenderer = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
-
-/** Embed several note chunks per model call, yielding between batches so the
- * renderer remains responsive while a large vault is being indexed. */
-async function embedCleanChunks(cleanChunks: string[]): Promise<number[][]> {
-  if (cleanChunks.length === 0) return [];
-  if (_disabledReason) return cleanChunks.map((chunk) => lexicalEmbedText(chunk));
-
-  const vectors: number[][] = [];
-  const batchSize = 8;
-  for (let start = 0; start < cleanChunks.length; start += batchSize) {
-    const batch = cleanChunks.slice(start, start + batchSize);
-    try {
-      const embedder = await getEmbedder();
-      const output = await embedder(batch, { pooling: "mean", normalize: true });
-      const data = output?.data ? Array.from(output.data as Float32Array) : [];
-      if (data.length !== batch.length * EMBEDDING_DIM) throw new Error("Unexpected embedding batch shape");
-      for (let index = 0; index < batch.length; index++) {
-        vectors.push(data.slice(index * EMBEDDING_DIM, (index + 1) * EMBEDDING_DIM));
-      }
-    } catch {
-      // Keep a partial model failure useful instead of discarding the whole
-      // note. Individual fallback calls preserve the existing lexical path.
-      for (const chunk of batch) vectors.push(await embedCleanChunk(chunk));
-    }
-    await yieldToRenderer();
+function requestSemanticChunk(chunk: string, priority: EmbeddingPriority, generation: number, isCurrent: () => boolean): Promise<number[]> {
+  const key = `${CHUNK_CACHE_ID}:${chunk}`;
+  const cached = chunkCache.get(key);
+  if (cached) { countEmbeddingMetric('chunkCacheHits'); return Promise.resolve(cached); }
+  const existing = pendingChunkRequests.get(key);
+  if (existing) {
+    existing.priority = Math.min(existing.priority, priority) as EmbeddingPriority;
+    countEmbeddingMetric('duplicatesAvoided');
+    scheduleChunkBatchFlush(priority);
+    return existing.promise;
   }
+  if (pendingChunkRequests.size >= MAX_PENDING_CHUNK_REQUESTS) return Promise.reject(new EmbeddingCapacityError());
+  let resolve!: (vector: number[]) => void;
+  let reject!: (reason: unknown) => void;
+  const promise = new Promise<number[]>((yes, no) => { resolve = yes; reject = no; });
+  const request: PendingChunkRequest = { key, text: chunk, priority, generation, isCurrent, created: performance.now(), running: false, promise, resolve, reject };
+  pendingChunkRequests.set(key, request);
+  scheduleChunkBatchFlush(priority);
+  return promise;
+}
+
+async function embedCleanChunks(cleanChunks: string[], priority: EmbeddingPriority = 0, generation = getEmbeddingGeneration(), isCurrent: () => boolean = () => true): Promise<number[][]> {
+  if (_disabledReason && _disabledReason !== "website-lexical" && Date.now() >= retryAfter && areEmbeddingsAvailable()) _disabledReason = null;
+  if (generation !== getEmbeddingGeneration() || !isCurrent()) throw new StaleEmbeddingError();
+  const kind = _disabledReason ? 'lexical-v1' : CHUNK_CACHE_ID;
+  const missing = [...new Set(cleanChunks.filter((chunk) => !chunkCache.has(`${kind}:${chunk}`)))];
+  countEmbeddingMetric('chunkCacheHits', cleanChunks.length - missing.length);
+  if (missing.length) {
+    if (_disabledReason) {
+      for (const chunk of missing) cacheChunk(`${kind}:${chunk}`, lexicalEmbedText(chunk));
+    } else {
+      try {
+        await Promise.all(missing.map((chunk) => requestSemanticChunk(chunk, priority, generation, isCurrent)));
+      } catch (error) {
+        if (error instanceof StaleEmbeddingError || error instanceof EmbeddingCapacityError) throw error;
+        if (!_disabledReason) {
+          console.warn('[Embeddings] Worker unavailable; using keyword fallback', error);
+          _disabledReason = error instanceof Error ? error.message : 'Embedding worker unavailable';
+          _modelReady = false;
+          retryAfter = Date.now() + 30000;
+          embeddingWorkerClient.dispose();
+        }
+        _onProgress?.(100, 'Using keyword search (semantic model not loaded)');
+        for (const chunk of missing) cacheChunk(`lexical-v1:${chunk}`, lexicalEmbedText(chunk));
+      }
+    }
+  }
+  if (generation !== getEmbeddingGeneration() || !isCurrent()) throw new StaleEmbeddingError();
+  const finalKind = _disabledReason ? 'lexical-v1' : CHUNK_CACHE_ID;
+  const vectors = cleanChunks.map((chunk) => chunkCache.get(`${finalKind}:${chunk}`) || lexicalEmbedText(chunk));
+  if (_disabledReason) await yieldToRenderer();
   return vectors;
 }
 
 async function embedTextWithSegments(
   text: string | null | undefined,
+  priority: EmbeddingPriority = 0,
+  generation = getEmbeddingGeneration(),
+  isCurrent: () => boolean = () => true,
+  preparedChunks?: string[],
 ): Promise<{ vector: number[]; segmentVectors: number[][] }> {
-  const chunks = chunkTextForEmbedding(text);
+  const chunks = preparedChunks || chunkTextForEmbedding(text);
   if (chunks.length === 0) {
     return { vector: new Array(EMBEDDING_DIM).fill(0), segmentVectors: [] };
   }
 
-  const chunkVectors = await embedCleanChunks(chunks);
+  let chunkVectors = await embedCleanChunks(chunks, priority, generation, isCurrent);
+  // A partial backend failure must never mix semantic and lexical spaces.
+  if (_disabledReason) chunkVectors = chunks.map(lexicalEmbedText);
 
-  return {
-    vector: averageVectors(chunkVectors),
-    segmentVectors: coalesceSegmentVectors(chunkVectors),
-  };
+  const aggregateStart = performance.now();
+  const aggregate = { vector: averageVectors(chunkVectors), segmentVectors: coalesceSegmentVectors(chunkVectors) };
+  recordEmbeddingMetric("chunkAggregationMs", performance.now() - aggregateStart);
+  return aggregate;
 }
 
-export async function embedText(text: string | null | undefined): Promise<number[]> {
-  return (await embedTextWithSegments(text)).vector;
+export async function embedText(text: string | null | undefined, priority: EmbeddingPriority = 0): Promise<number[]> {
+  return (await embedTextWithSegments(text, priority)).vector;
 }
 
 // ── Cosine similarity ────────────────────────────────────────────────────────
@@ -557,6 +574,7 @@ export interface StoredEmbedding {
   vector: number[];
   segmentVectors?: number[][];
   schemaVersion?: number;
+  vectorType?: string;
   updatedAt: number;
   modifiedAt?: number;
   size?: number;
@@ -589,25 +607,41 @@ async function ensureLoaded(): Promise<void> {
 
   _loadPromise = (async () => {
     _isLoading = true;
+    const generation = getEmbeddingGeneration();
     try {
       // Load individual embedding files. Older or interrupted writes may have
       // entry files without a fresh index, so the files are the source of truth.
       const files = await listData("embeddings");
+      const walk = async (prefix: string): Promise<string[]> => {
+        const names = await listData(`embeddings/${prefix}`);
+        const result: string[] = [];
+        for (const name of names) {
+          if (name.endsWith(".json")) result.push(`${prefix}/${name}`);
+          else result.push(...await walk(`${prefix}/${name}`));
+        }
+        return result;
+      };
+      if (files.includes("v3")) files.push(...await walk("v3"));
+      // Load legacy first, modern entries last. Never delete legacy caches.
+      files.sort((a, b) => Number(a.startsWith("v3/")) - Number(b.startsWith("v3/")));
       for (const file of files) {
         if (file === "_index.json") continue;
         if (!file.endsWith(".json")) continue;
         try {
           const entry = await readData<StoredEmbedding>(`embeddings/${file}`);
-          if (entry && entry.path && entry.vector) {
-            _memoryStore.entries.set(entry.path, entry);
+          if (generation !== getEmbeddingGeneration()) return;
+          if (entry && typeof entry.path === "string" && Array.isArray(entry.vector) && entry.vector.every(Number.isFinite)) {
+            if (!_memoryStore.entries.has(entry.path) || (file.startsWith("v3/") && !entryFiles.get(entry.path)?.startsWith("v3/"))) _memoryStore.entries.set(entry.path, entry);
+            entryFiles.set(entry.path, file);
           }
         } catch { /* skip corrupt files */ }
       }
     } catch (err) {
       console.warn("[Embeddings] Failed to load from disk:", err);
       // Try fallback from localStorage (migration)
-      tryMigrateFromLocalStorage();
+      await tryMigrateFromLocalStorage();
     }
+    if (generation !== getEmbeddingGeneration()) return;
     _isLoaded = true;
     _isLoading = false;
   })();
@@ -618,7 +652,7 @@ async function ensureLoaded(): Promise<void> {
 /**
  * Migrate existing localStorage embeddings to disk (one-time).
  */
-function tryMigrateFromLocalStorage(): void {
+async function tryMigrateFromLocalStorage(): Promise<void> {
   try {
     const raw = localStorage.getItem("openonyx-embeddings-v2");
     if (!raw) return;
@@ -627,9 +661,8 @@ function tryMigrateFromLocalStorage(): void {
       _memoryStore.entries.set(e.path, e);
     }
     // Persist to disk
-    persistAllToDisk();
-    // Remove from localStorage after migration
-    localStorage.removeItem("openonyx-embeddings-v2");
+    await persistAllToDisk();
+    // Retain the legacy backup; failed/switch-interrupted migration must never lose data.
     console.log(`[Embeddings] Migrated ${data.entries.length} entries from localStorage to disk`);
   } catch { /* silent */ }
 }
@@ -638,9 +671,11 @@ function tryMigrateFromLocalStorage(): void {
  * Write all embeddings to disk (used during migration or bulk operations).
  */
 async function persistAllToDisk(): Promise<void> {
+  const generation = getEmbeddingGeneration();
   const index: EmbeddingIndex = {};
   for (const [path, entry] of _memoryStore.entries) {
-    const safeName = path.replace(/[/\\]/g, "_").replace(/\.md$/, "") + ".json";
+    if (generation !== getEmbeddingGeneration()) throw new StaleEmbeddingError();
+    const safeName = embeddingFileName(path);
     index[path] = { hash: entry.hash, updatedAt: entry.updatedAt };
     await writeData(`embeddings/${safeName}`, entry);
   }
@@ -650,16 +685,31 @@ async function persistAllToDisk(): Promise<void> {
 /**
  * Persist a single embedding entry to disk.
  */
-function persistEntry(entry: StoredEmbedding): void {
-  const safeName = entry.path.replace(/[/\\]/g, "_").replace(/\.md$/, "") + ".json";
-  _debouncedWrite(`embeddings/${safeName}`, entry);
+let indexTimer: ReturnType<typeof setTimeout> | null = null;
+const entryFiles = new Map<string, string>();
 
-  // Also update index (debounced)
-  const index: EmbeddingIndex = {};
-  for (const [p, e] of _memoryStore.entries) {
-    index[p] = { hash: e.hash, updatedAt: e.updatedAt };
-  }
-  _debouncedWrite("embeddings/_index.json", index);
+// UTF-8 hexadecimal is injective; hash-only names could still collide. Long
+// paths use nested 120-character components to respect filesystem limits.
+export function embeddingFileName(path: string): string {
+  const hex = Array.from(new TextEncoder().encode(path), (byte) => byte.toString(16).padStart(2, "0")).join("");
+  return `v3/${hex.match(/.{1,120}/g)?.join("/") || "empty"}.json`;
+}
+
+function scheduleIndexWrite(): void {
+  if (indexTimer) return;
+  indexTimer = setTimeout(() => {
+    indexTimer = null;
+    const index: EmbeddingIndex = {};
+    for (const [path, entry] of _memoryStore.entries) index[path] = { hash: entry.hash, updatedAt: entry.updatedAt };
+    _debouncedWrite("embeddings/_index.json", index);
+  }, 1000);
+}
+
+function persistEntry(entry: StoredEmbedding): void {
+  const safeName = embeddingFileName(entry.path);
+  entryFiles.set(entry.path, safeName);
+  _debouncedWrite(`embeddings/${safeName}`, entry);
+  scheduleIndexWrite();
 }
 
 // ── Public API ───────────────────────────────────────────────────────────────
@@ -689,15 +739,30 @@ export function saveStore(_store: EmbeddingStore): void {
 }
 
 export function resetEmbeddingsStore(): void {
+  embeddingScheduler.invalidate();
+  embeddingWorkerClient.invalidate();
+  resetChunkBatcher();
+  chunkCache.clear();
+  entryFiles.clear();
+  noteRequests.clear();
+  noteRevisions.clear();
+  _debouncedWrite.cancel();
+  if (indexTimer) clearTimeout(indexTimer);
+  indexTimer = null;
   _memoryStore = { entries: new Map() };
   _isLoaded = false;
   _isLoading = false;
   _loadPromise = null;
   _disabledReason = null;
+  _modelReady = embeddingWorkerClient.ready;
+  void updateAvailability();
 }
+
+if (typeof window !== "undefined") window.addEventListener("openonyx:vault-changing", resetEmbeddingsStore);
 
 /** Seed the in-memory store with the app's lexical fallback — no model download. */
 export function seedLexicalEmbeddings(files: Record<string, string>): number {
+  resetEmbeddingsStore();
   _disabledReason = "website-lexical";
   _isLoaded = true;
   _isLoading = false;
@@ -726,41 +791,100 @@ export function seedLexicalEmbeddings(files: Record<string, string>): number {
 /**
  * Embed a note if its content has changed.
  */
-export async function embedNote(
+interface PersistedChunkCache { identity: string; chunks: Array<{ text: string; vector: number[] }> }
+
+/** Retain unchanged chunk anchors after insertions; fill uncovered regions with
+ * the existing overlapping splitter. New/legacy notes keep original boundaries. */
+export function reuseEmbeddingChunkBoundaries(source: string, previous: string[]): string[] {
+  const clean = stripMarkdown(source);
+  if (!previous.length || clean.length < 5) return chunkTextForEmbedding(source);
+  const anchors: Array<{ start: number; text: string }> = [];
+  let cursor = 0;
+  for (const text of previous) {
+    const start = clean.indexOf(text, cursor);
+    if (start < 0) continue;
+    anchors.push({ start, text });
+    cursor = Math.max(start + 1, start + text.length - EMBEDDING_CHUNK_OVERLAP - 1);
+  }
+  if (!anchors.length) return chunkTextForEmbedding(source);
+  const chunks: string[] = [];
+  let covered = 0;
+  for (const anchor of anchors) {
+    if (anchor.start > covered) {
+      chunks.push(...splitCleanTextForEmbedding(clean.slice(Math.max(0, covered - EMBEDDING_CHUNK_OVERLAP), Math.min(clean.length, anchor.start + EMBEDDING_CHUNK_OVERLAP))));
+    }
+    chunks.push(anchor.text);
+    covered = Math.max(covered, anchor.start + anchor.text.length);
+  }
+  if (covered < clean.length) chunks.push(...splitCleanTextForEmbedding(clean.slice(Math.max(0, covered - EMBEDDING_CHUNK_OVERLAP))));
+  return chunks;
+}
+
+const noteRequests = new Map<string, { source: string; promise: Promise<boolean> }>();
+const noteRevisions = new Map<string, number>();
+
+export function invalidateEmbeddingPath(path: string): void {
+  noteRevisions.set(path, (noteRevisions.get(path) || 0) + 1);
+  noteRequests.delete(path);
+}
+
+/** Same path/content shares a promise; only the latest revision may persist. */
+export function embedNote(
   store: EmbeddingStore,
   path: string,
   content: string | null | undefined,
   modifiedAt?: number,
   size?: number,
+  priority: EmbeddingPriority = 1,
 ): Promise<boolean> {
   const source = typeof content === "string" ? content : "";
-  const hash = simpleHash(source);
-  const existing = store.entries.get(path);
-
-  if (existing && existing.hash === hash && existing.schemaVersion === EMBEDDING_SCHEMA_VERSION) {
-    const cleanLength = stripMarkdown(source).length;
-    if (cleanLength < 5 || hasVectorSignal(existing.vector)) return false;
-  }
-
-  const { vector, segmentVectors } = await embedTextWithSegments(source);
-  const entry: StoredEmbedding = {
-    path,
-    hash,
-    vector,
-    segmentVectors,
-    schemaVersion: EMBEDDING_SCHEMA_VERSION,
-    updatedAt: Date.now(),
-    modifiedAt: modifiedAt ?? Date.now(),
-    size: size ?? source.length,
-  };
-  store.entries.set(path, entry);
-  _memoryStore.entries.set(path, entry);
-
-  // Persist to disk (debounced)
-  persistEntry(entry);
-  notifyEmbeddingUpdated(path);
-
-  return true;
+  const pending = noteRequests.get(path);
+  if (pending?.source === source) { countEmbeddingMetric('duplicatesAvoided'); return pending.promise; }
+  const generation = getEmbeddingGeneration();
+  const revision = (noteRevisions.get(path) || 0) + 1;
+  noteRevisions.set(path, revision);
+  const current = () => generation === getEmbeddingGeneration() && noteRevisions.get(path) === revision;
+  const promise = (async () => {
+    const hash = simpleHash(source);
+    const existing = store.entries.get(path);
+    if (existing && existing.hash === hash && existing.schemaVersion === EMBEDDING_SCHEMA_VERSION && (existing.vectorType !== "lexical-v1" || _disabledReason)) {
+      if (stripMarkdown(source).length < 5 || hasVectorSignal(existing.vector)) return false;
+    }
+    const started = performance.now();
+    const cachePath = `embedding-chunks/${embeddingFileName(path)}`;
+    const saved = await timeEmbeddingOperation("chunkCacheReadMs", () => readData<PersistedChunkCache>(cachePath));
+    if (!current()) return false;
+    const identity = _disabledReason ? "lexical-v1" : CHUNK_CACHE_ID;
+    const compatible = saved?.identity === identity && Array.isArray(saved.chunks) && saved.chunks.every((chunk) => typeof chunk.text === "string" && chunk.text.length >= 5 && Array.isArray(chunk.vector) && chunk.vector.length === EMBEDDING_DIM && chunk.vector.every(Number.isFinite));
+    if (compatible) for (const chunk of saved!.chunks) cacheChunk(`${identity}:${chunk.text}`, chunk.vector);
+    const chunks = reuseEmbeddingChunkBoundaries(source, compatible ? saved!.chunks.map((chunk) => chunk.text) : []);
+    const { vector, segmentVectors } = await embedTextWithSegments(source, priority, generation, current, chunks);
+    if (!current()) return false;
+    const entry: StoredEmbedding = {
+      path, hash, vector, segmentVectors, schemaVersion: EMBEDDING_SCHEMA_VERSION,
+      vectorType: _disabledReason ? "lexical-v1" : CHUNK_CACHE_ID,
+      updatedAt: Date.now(), modifiedAt, size,
+    };
+    store.entries.set(path, entry);
+    _memoryStore.entries.set(path, entry);
+    persistEntry(entry);
+    const finalIdentity = _disabledReason ? "lexical-v1" : CHUNK_CACHE_ID;
+    // Auxiliary cache is bounded per note, loaded only for an edited note, and
+    // never required to read existing v2 embeddings.
+    _debouncedWrite(cachePath, {
+      identity: finalIdentity,
+      chunks: chunks.slice(0, 64).filter((text) => chunkCache.has(`${finalIdentity}:${text}`)).map((text) => ({ text, vector: chunkCache.get(`${finalIdentity}:${text}`)! })),
+    } satisfies PersistedChunkCache);
+    notifyEmbeddingUpdated(path);
+    countEmbeddingMetric('notesIndexed');
+    recordEmbeddingMetric('noteIndexMs', performance.now() - started);
+    return true;
+  })().catch((error) => { if (error instanceof StaleEmbeddingError) return false; throw error; });
+  noteRequests.set(path, { source, promise });
+  void promise.finally(() => {
+    if (noteRequests.get(path)?.promise === promise) noteRequests.delete(path);
+  }).catch(() => {});
+  return promise;
 }
 
 /**
@@ -780,6 +904,7 @@ export function refreshEmbeddingMetadataIfUnchanged(
     !existing
     || existing.hash !== simpleHash(content)
     || existing.schemaVersion !== EMBEDDING_SCHEMA_VERSION
+    || (existing.vectorType === "lexical-v1" && !_disabledReason)
   ) return false;
 
   const nextModifiedAt = modifiedAt ?? existing.modifiedAt;
@@ -804,18 +929,17 @@ export function refreshEmbeddingMetadataIfUnchanged(
  * Remove an embedding (when note is deleted).
  */
 export function removeEmbedding(store: EmbeddingStore, path: string): void {
+  invalidateEmbeddingPath(path);
+  _debouncedWrite.cancel(`embedding-chunks/${embeddingFileName(path)}`);
   store.entries.delete(path);
   _memoryStore.entries.delete(path);
 
-  const safeName = path.replace(/[/\\]/g, "_").replace(/\.md$/, "") + ".json";
+  const safeName = entryFiles.get(path) || embeddingFileName(path);
+  _debouncedWrite.cancel(`embeddings/${safeName}`);
   deleteData(`embeddings/${safeName}`);
+  entryFiles.delete(path);
 
-  // Update index
-  const index: EmbeddingIndex = {};
-  for (const [p, e] of _memoryStore.entries) {
-    index[p] = { hash: e.hash, updatedAt: e.updatedAt };
-  }
-  _debouncedWrite("embeddings/_index.json", index);
+  scheduleIndexWrite();
   notifyEmbeddingUpdated(path);
 }
 
@@ -828,12 +952,17 @@ export function renameEmbeddingPath(
   newPath: string,
 ): boolean {
   if (oldPath === newPath) return false;
+  invalidateEmbeddingPath(oldPath);
+  invalidateEmbeddingPath(newPath);
+  _debouncedWrite.cancel(`embedding-chunks/${embeddingFileName(oldPath)}`);
 
   const existing = store.entries.get(oldPath);
   if (!existing) return false;
 
-  const oldSafeName = oldPath.replace(/[/\\]/g, "_").replace(/\.md$/, "") + ".json";
+  const oldSafeName = entryFiles.get(oldPath) || embeddingFileName(oldPath);
+  _debouncedWrite.cancel(`embeddings/${oldSafeName}`);
   deleteData(`embeddings/${oldSafeName}`);
+  entryFiles.delete(oldPath);
 
   const updated: StoredEmbedding = {
     ...existing,
@@ -933,36 +1062,7 @@ export interface SimilarNote {
   similarity: number;
 }
 
-export function findSimilar(
-  store: EmbeddingStore,
-  notePath: string,
-  threshold = 0.35,
-  maxResults = 20,
-): SimilarNote[] {
-  const entry = store.entries.get(notePath);
-  if (!entry || entry.vector.length === 0) return [];
-
-  const activeTitle = notePath.split("/").pop()?.replace(/\.md$/, "").toLowerCase().trim();
-  const seenTitles = new Set<string>();
-  if (activeTitle) seenTitles.add(activeTitle);
-
-  const results: SimilarNote[] = [];
-  for (const [path, other] of store.entries) {
-    if (path === notePath) continue;
-    const title = path.split("/").pop()?.replace(/\.md$/, "").toLowerCase().trim() || "";
-    if (!title || seenTitles.has(title)) continue;
-
-    if (other.vector.length !== entry.vector.length) continue;
-    const sim = cosineSimilarity(entry.vector, other.vector);
-    if (sim >= threshold) {
-      seenTitles.add(title);
-      results.push({ path, similarity: sim });
-    }
-  }
-
-  results.sort((a, b) => b.similarity - a.similarity);
-  return results.slice(0, maxResults);
-}
+export { findSimilar } from "./embedding-vector-math";
 
 export async function searchByQuery(
   store: EmbeddingStore,
@@ -973,10 +1073,17 @@ export async function searchByQuery(
   // model (and potentially logging a backend warning) on a brand-new vault.
   if (store.entries.size === 0) return [];
 
-  const queryVec = await embedText(query);
+  const started = performance.now();
+  const generation = getEmbeddingGeneration();
+  const queryVec = await embedText(query, 0);
   const results: SimilarNote[] = [];
 
+  let compared = 0;
+  let lastYield = performance.now();
   for (const [path, entry] of store.entries) {
+    if (++compared % 64 === 0 && performance.now() - lastYield >= 4) { await yieldToRenderer(); lastYield = performance.now(); }
+    if (generation !== getEmbeddingGeneration()) throw new StaleEmbeddingError();
+    if (entry.vectorType && entry.vectorType !== (_disabledReason ? "lexical-v1" : CHUNK_CACHE_ID)) continue;
     if (entry.vector.length !== queryVec.length) continue;
     const vectors = entry.segmentVectors?.length ? entry.segmentVectors : [entry.vector];
     const sim = Math.max(
@@ -991,6 +1098,7 @@ export async function searchByQuery(
   }
 
   results.sort((a, b) => b.similarity - a.similarity);
+  recordEmbeddingMetric("semanticQueryMs", performance.now() - started);
   return results.slice(0, maxResults);
 }
 

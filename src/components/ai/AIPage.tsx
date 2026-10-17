@@ -1,3 +1,5 @@
+import { SemanticAnalysisClient, insightSnapshot, type InsightResult } from "../../utils/semantic-analysis";
+import { createSuggestionRefresh } from "../../utils/suggestion-refresh";
 /**
  * AIPage — Semantic Intelligence Panel
  *
@@ -421,17 +423,14 @@ export function AIPage({
   // Disk loading and background indexing mutate the shared store outside
   // React. Mirror each completed update so counts and intelligence refresh.
   useEffect(() => {
-    let refreshTimer: ReturnType<typeof setTimeout> | null = null;
-    const scheduleRefresh = () => {
-      if (refreshTimer) clearTimeout(refreshTimer);
-      refreshTimer = setTimeout(refreshEmbeddingStore, 120);
-    };
+    const refresh = createSuggestionRefresh(refreshEmbeddingStore, 500, 1500);
+    const scheduleRefresh = () => refresh.schedule();
 
     void loadStoreAsync().then(refreshEmbeddingStore);
     window.addEventListener(EMBEDDING_UPDATED_EVENT, scheduleRefresh);
     window.addEventListener("oo:embeddings-updated", scheduleRefresh);
     return () => {
-      if (refreshTimer) clearTimeout(refreshTimer);
+      refresh.cancel();
       window.removeEventListener(EMBEDDING_UPDATED_EVENT, scheduleRefresh);
       window.removeEventListener("oo:embeddings-updated", scheduleRefresh);
     };
@@ -466,6 +465,7 @@ export function AIPage({
       return;
     }
 
+    let cancelled = false;
     (async () => {
       try {
         const currentStore = loadStore();
@@ -501,9 +501,10 @@ export function AIPage({
           )
           .slice(0, 20);
 
-        setSuggestions(uniqueSuggestions);
+        if (!cancelled) setSuggestions(uniqueSuggestions);
       } catch { /* silent */ }
     })();
+    return () => { cancelled = true; };
   }, [activeNotePath, indexedCount, suggestionThreshold, api, store]);
 
   const handleAcceptSuggestion = useCallback(
@@ -609,20 +610,14 @@ export function AIPage({
     }
 
     let isSubscribed = true;
+    const analysis = new SemanticAnalysisClient();
     setIsCalculatingInsights(true);
 
     const timer = setTimeout(async () => {
       try {
         const currentStore = loadStore();
-        const analysisLimit = getInsightAnalysisLimit(currentStore.entries.size);
-        const c = detectClusters(currentStore, 0.55, 3, analysisLimit);
-        if (!isSubscribed) return;
-        setClusters(c);
-
-        const candidatePaths = [...new Set([
-          ...selectInsightAnalysisPaths(currentStore, analysisLimit),
-          ...c.flatMap((cluster) => cluster.members),
-        ])];
+        const snapshot = insightSnapshot(currentStore);
+        const candidatePaths = snapshot.entries.map(([path]) => path);
         const contents = new Map<string, string>();
         await mapWithConcurrency(
           candidatePaths,
@@ -636,15 +631,13 @@ export function AIPage({
         );
         if (!isSubscribed) return;
         const signalLimit = Math.min(16, Math.max(8, Math.ceil(Math.log2(indexedCount + 1))));
-        const ml = detectMissingLinks(currentStore, contents, 0.4, signalLimit, analysisLimit);
-        setMissingLinks(ml);
-        const rawInsights = detectUnwrittenInsights(
-          currentStore,
-          contents,
-          0.48,
-          analysisLimit,
-          signalLimit,
-        );
+        const result = await analysis.run<InsightResult>({
+          type: "insights", ...snapshot, contents: [...contents], signalLimit,
+        });
+        if (!isSubscribed) return;
+        setClusters(result.clusters);
+        setMissingLinks(result.missingLinks);
+        const rawInsights = result.insights;
         const filtered = rawInsights
           .filter((ui) => ui.confidence >= 0.4)
           .filter((ui) => {
@@ -661,6 +654,7 @@ export function AIPage({
 
     return () => {
       isSubscribed = false;
+      analysis.dispose();
       clearTimeout(timer);
     };
   }, [activeTab, indexedCount, api, dismissedInsights, store]);

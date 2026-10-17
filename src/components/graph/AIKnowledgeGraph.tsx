@@ -1,3 +1,4 @@
+import { SemanticAnalysisClient } from "../../utils/semantic-analysis";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { HexColorPicker } from "react-colorful";
 import {
@@ -548,6 +549,7 @@ export function AIKnowledgeGraph({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const rendererRef = useRef<GraphRenderer | null>(null);
   const workerRef = useRef<Worker | null>(null);
+  const analysisClientRef = useRef(new SemanticAnalysisClient());
   const similarityCacheRef = useRef<Map<string, SimilarityPair[]>>(new Map());
   const hasRenderedGraphRef = useRef(false);
   const initialCenteredRef = useRef(false);
@@ -859,18 +861,11 @@ export function AIKnowledgeGraph({
 
         let pairwiseSimilarities = similarityCacheRef.current.get(cacheKey);
         if (!pairwiseSimilarities) {
-          const pairs: SimilarityPair[] = [];
-          for (let i = 0; i < allEntries.length; i++) {
-            for (let j = i + 1; j < allEntries.length; j++) {
-              const sim = cosineSimilarity(allEntries[i].vector, allEntries[j].vector);
-              pairs.push({
-                source: allEntries[i].path,
-                target: allEntries[j].path,
-                similarity: sim,
-              });
-            }
-          }
-          pairs.sort((a, b) => b.similarity - a.similarity);
+          const pairs = await analysisClientRef.current.run<SimilarityPair[]>({
+            type: "pairs", entries: allEntries.map((entry) => [entry.path, new Float64Array(entry.vector)]),
+          });
+          if (cancelled) return;
+          similarityCacheRef.current.clear();
           pairwiseSimilarities = pairs;
           similarityCacheRef.current.set(cacheKey, pairs);
         }
@@ -1112,6 +1107,7 @@ export function AIKnowledgeGraph({
 
     return () => {
       cancelled = true;
+      analysisClientRef.current.dispose();
     };
   }, [
     vaultPath,

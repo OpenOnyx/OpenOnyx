@@ -14,7 +14,7 @@
  * Runs async — never blocks UI.
  */
 
-import { embedText, simpleHash } from "./embeddings";
+import { embedText, simpleHash, getEmbeddingGeneration, getEmbeddingVectorType } from "./embeddings";
 import { loadVectorIndex, saveVectorIndex, updateSpace, pushSpaceNotes, pushSpaceChunks, getSpace } from "./spaces-store";
 import { getAPI } from "./api";
 import { authManager } from "../lib/auth";
@@ -211,8 +211,11 @@ export async function buildVectorIndex(
   onProgress?: (processed: number, total: number) => void,
   customNotes?: VaultNote[],
 ): Promise<SpaceVectorIndex> {
+  const generation = getEmbeddingGeneration();
+  const assertCurrent = () => { if (generation !== getEmbeddingGeneration()) throw new Error("Spaces indexing cancelled by vault switch"); };
   // 1. Collect all vault notes
   const vaultNotes = customNotes || await collectVaultNotes(fileTree);
+  assertCurrent();
   const totalNotes = vaultNotes.length;
 
   // 1.5. Push raw notes to Supabase immediately if this is a cloud space owned by the user
@@ -221,6 +224,7 @@ export async function buildVectorIndex(
   const isOwner = spaceData && spaceData.ownerId === currentUserId;
   const shouldPushToCloud = spaceData && spaceData.visibility !== "local" && isOwner && !customNotes;
 
+  assertCurrent();
   if (shouldPushToCloud) {
     const notesForCloud = vaultNotes.map((n) => ({
       path: n.path,
@@ -263,7 +267,7 @@ export async function buildVectorIndex(
     const currentHash = simpleHash(note.content);
     const existingChunks = existingChunksByPath.get(note.path);
 
-    if (existingChunks && existingChunks.length > 0 && existingChunks[0].noteHash === currentHash) {
+    if (existingChunks && existingChunks.length > 0 && existingChunks[0].noteHash === currentHash && (!existingChunks[0].vectorType || existingChunks[0].vectorType === getEmbeddingVectorType())) {
       // Cache hit! Reuse chunks instantly
       const startIndex = allChunks.length;
       existingChunks.forEach((c, idx) => {
@@ -282,7 +286,7 @@ export async function buildVectorIndex(
   onProgress?.(processed, totalNotes);
 
   // Second Pass: Process cache misses in concurrent batches
-  const CONCURRENCY = 16;
+  const CONCURRENCY = 1;
   for (let i = 0; i < cacheMisses.length; i += CONCURRENCY) {
     const batch = cacheMisses.slice(i, i + CONCURRENCY);
 
@@ -292,13 +296,20 @@ export async function buildVectorIndex(
         const textChunks = chunkText(note.content);
         if (textChunks.length === 0) return [];
 
-        const vectors = await Promise.all(textChunks.map((chunk) => embedText(chunk.text)));
+        const vectors: number[][] = [];
+        const vectorTypes: string[] = [];
+        for (const chunk of textChunks) {
+          assertCurrent();
+          vectors.push(await embedText(chunk.text, 2));
+          vectorTypes.push(getEmbeddingVectorType());
+        }
         return textChunks.map((chunk, idx) => ({
           spaceId,
           notePath: note.path,
           noteTitle: note.title,
           chunkText: chunk.text,
           vector: vectors[idx],
+          vectorType: vectorTypes[idx],
           startOffset: chunk.startOffset,
           endOffset: chunk.endOffset,
           noteHash: hash,
@@ -330,6 +341,7 @@ export async function buildVectorIndex(
     updatedAt: new Date().toISOString(),
   };
 
+  assertCurrent();
   await saveVectorIndex(index);
 
   // 4. Push notes to Supabase if this space is cloud-synced and owned by the user
@@ -350,6 +362,7 @@ export async function buildVectorIndex(
   }
 
   // 5. Update space noteCount
+  assertCurrent();
   await updateSpace(spaceId, { noteCount: totalNotes });
 
   return index;

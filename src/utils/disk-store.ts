@@ -9,6 +9,7 @@
  */
 
 import { getAPI } from "./api";
+import { timeEmbeddingOperation } from "./embedding-performance";
 
 const api = getAPI();
 
@@ -30,9 +31,9 @@ export async function readData<T>(relativePath: string): Promise<T | null> {
 /**
  * Write a JSON file to .openonyx/<relativePath>
  */
-export async function writeData<T>(relativePath: string, data: T): Promise<void> {
+export async function writeData<T>(relativePath: string, data: T, expectedVault: string | undefined = (window as any).__oo_vault_path): Promise<void> {
   try {
-    await api.dataWrite(relativePath, JSON.stringify(data));
+    await timeEmbeddingOperation("cacheWriteMs", () => api.dataWrite(relativePath, JSON.stringify(data), expectedVault));
   } catch (err) {
     console.warn(`[DiskStore] Failed to write ${relativePath}:`, err);
   }
@@ -43,7 +44,7 @@ export async function writeData<T>(relativePath: string, data: T): Promise<void>
  */
 export async function deleteData(relativePath: string): Promise<void> {
   try {
-    await api.dataDelete(relativePath);
+    await api.dataDelete(relativePath, (window as any).__oo_vault_path);
   } catch { /* silent */ }
 }
 
@@ -72,19 +73,43 @@ export async function readDataOr<T>(relativePath: string, fallback: T): Promise<
  * Debounced writer — batches writes to reduce I/O.
  * Returns a function that writes after a delay, coalescing multiple calls.
  */
-export function createDebouncedWriter(delayMs = 500): (path: string, data: any) => void {
-  const timers = new Map<string, ReturnType<typeof setTimeout>>();
+export interface DebouncedWriter {
+  (path: string, data: any): void;
+  cancel(path?: string): void;
+  flush(): Promise<void>;
+}
 
-  return (path: string, data: any) => {
+export function createDebouncedWriter(delayMs = 500): DebouncedWriter {
+  const timers = new Map<string, ReturnType<typeof setTimeout>>();
+  const pending = new Map<string, { data: any; vault?: string }>();
+
+  const writer = (path: string, data: any) => {
     const existing = timers.get(path);
     if (existing) clearTimeout(existing);
 
+    const vault = (window as any).__oo_vault_path as string | undefined;
+    pending.set(path, { data, vault });
     timers.set(
       path,
       setTimeout(() => {
-        writeData(path, data);
+        writeData(path, data, vault);
+        pending.delete(path);
         timers.delete(path);
       }, delayMs),
     );
   };
+  writer.cancel = (path?: string) => {
+    if (path !== undefined) {
+      clearTimeout(timers.get(path)); timers.delete(path); pending.delete(path);
+    } else {
+      for (const timer of timers.values()) clearTimeout(timer);
+      timers.clear(); pending.clear();
+    }
+  };
+  writer.flush = async () => {
+    const writes = [...pending];
+    writer.cancel();
+    for (const [path, value] of writes) await writeData(path, value.data, value.vault);
+  };
+  return writer;
 }

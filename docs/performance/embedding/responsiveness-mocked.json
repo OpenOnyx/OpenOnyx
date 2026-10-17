@@ -1,0 +1,14 @@
+{
+  "kind": "mocked CPU; Node event loop; NOT Electron/ONNX/UI measurements",
+  "workMs": 200,
+  "before": {
+    "durationMs": 200.137164,
+    "heartbeatTicks": 2,
+    "maxDelayMs": 195.301298
+  },
+  "after": {
+    "durationMs": 201.60954800000002,
+    "heartbeatTicks": 41,
+    "maxDelayMs": 1.3510159999999587
+  }
+}

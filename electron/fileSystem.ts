@@ -10,6 +10,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
 import { resolveInsideRoot, sanitizeAttachmentFileName } from './pathSafety.js';
+import type { VaultFileMetadata } from './filesystemContract.js';
 
 export interface FileEntry {
   name: string;
@@ -29,6 +30,27 @@ export interface NoteLink {
 
 export class FileSystemManager {
   private vaultPath: string | null = null;
+  private dataWrites = new Map<string, Promise<void>>();
+
+  private atomicWrite(absolutePath: string, content: string | Uint8Array): Promise<void> {
+    // Serialize per destination so an older write cannot replace a newer one.
+    const prior = this.dataWrites.get(absolutePath) || Promise.resolve();
+    const write = prior.catch(() => {}).then(async () => {
+      await fs.promises.mkdir(path.dirname(absolutePath), { recursive: true });
+      const temporary = `${absolutePath}.${crypto.randomUUID()}.tmp`;
+      try {
+        await fs.promises.writeFile(temporary, content);
+        await fs.promises.rename(temporary, absolutePath);
+      } finally { await fs.promises.unlink(temporary).catch(() => {}); }
+    });
+    this.dataWrites.set(absolutePath, write);
+    void write.finally(() => { if (this.dataWrites.get(absolutePath) === write) this.dataWrites.delete(absolutePath); }).catch(() => {});
+    return write;
+  }
+
+  writeBinaryAtomic(filePath: string, content: Uint8Array): Promise<void> {
+    return this.atomicWrite(this.resolvePath(filePath), content);
+  }
 
   /** Set the active vault directory */
   setVaultPath(vaultPath: string): boolean {
@@ -138,6 +160,26 @@ export class FileSystemManager {
   async readBinary(filePath: string): Promise<Uint8Array> {
     const absolutePath = this.resolvePath(filePath);
     return new Uint8Array(await fs.promises.readFile(absolutePath));
+  }
+
+  async fileMetadata(filePath: string): Promise<VaultFileMetadata | null> {
+    if (typeof filePath !== 'string' || !filePath.trim() || filePath.includes('\0')) throw new Error('Invalid file path');
+    // Validate before the missing-file catch, so traversal/access errors are
+    // never reported as a deleted note. Pin this operation to the current root.
+    const absolutePath = this.resolvePath(filePath);
+    const vaultPath = this.vaultPath!;
+    try {
+      const realVault = await fs.promises.realpath(vaultPath);
+      const realFile = await fs.promises.realpath(absolutePath);
+      resolveInsideRoot(realVault, realFile);
+      const stat = await fs.promises.stat(realFile);
+      if (!stat.isFile()) return null;
+      return { modifiedAt: stat.mtimeMs, size: stat.size };
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code === 'ENOENT' || code === 'ENOTDIR') return null;
+      throw error;
+    }
   }
 
   /** Write file content (auto-creates directories) */
@@ -484,7 +526,7 @@ export class FileSystemManager {
     if (!fs.existsSync(fileDir)) {
       fs.mkdirSync(fileDir, { recursive: true });
     }
-    await fs.promises.writeFile(filePath, content, 'utf-8');
+    await this.atomicWrite(filePath, content);
   }
 
   /** Delete a file from .openonyx/ */
@@ -493,9 +535,11 @@ export class FileSystemManager {
       const dir = this.ensureDataDir();
       const filePath = path.join(dir, relativePath);
       if (filePath !== dir && !filePath.startsWith(dir + path.sep)) return;
-      if (fs.existsSync(filePath)) {
-        await fs.promises.unlink(filePath);
-      }
+      const prior = this.dataWrites.get(filePath) || Promise.resolve();
+      const deletion = prior.catch(() => {}).then(async () => { await fs.promises.unlink(filePath).catch(() => {}); });
+      this.dataWrites.set(filePath, deletion);
+      try { await deletion; }
+      finally { if (this.dataWrites.get(filePath) === deletion) this.dataWrites.delete(filePath); }
     } catch { /* silent */ }
   }
 

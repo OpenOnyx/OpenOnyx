@@ -14,15 +14,17 @@
 
 import {
   areEmbeddingsAvailable,
+  invalidateEmbeddingPath,
   EMBEDDING_SCHEMA_VERSION,
   loadStoreAsync,
   embedNote,
   refreshEmbeddingMetadataIfUnchanged,
   pruneMissingEmbeddings,
-  type EmbeddingStore,
 } from "./embeddings";
+import { recordEmbeddingMetric, countEmbeddingMetric, timeEmbeddingOperation } from "./embedding-performance";
 import { getAnnotation } from "./ai-core";
 import { readData, writeData } from "./disk-store";
+import { requestFileMetadata, MissingIpcCapabilityError } from "./filesystem-ipc";
 
 // ── Job types ────────────────────────────────────────────────────────────────
 
@@ -56,11 +58,21 @@ interface PersistedQueue {
 // ── Queue state ──────────────────────────────────────────────────────────────
 
 let _queue: BackgroundJob[] = [];
+const queuedJobs = new Map<string, BackgroundJob>();
+const activeJobs = new Map<string, BackgroundJob>();
+const cancelledJobs = new WeakSet<BackgroundJob>();
+let queueGeneration = 0;
+let initialization: Promise<{ enqueued: number; alreadyIndexed: number }> | null = null;
+let initializationKey = "";
+let vaultIndexStarted: number | null = null;
+const jobKey = (job: BackgroundJob) => `${job.type}:${job.path}`;
 let _isProcessing = false;
 let _processedCount = 0;
 let _totalCount = 0;
 let _onStatusChange: ((status: QueueStatus) => void) | null = null;
 let _queueLoaded = false;
+let infrastructureError: MissingIpcCapabilityError | null = null;
+let metadataPreflight: { api: any; generation: number; promise: Promise<boolean> } | null = null;
 
 export interface QueueStatus {
   isRunning: boolean;
@@ -81,7 +93,7 @@ function reportStatus(message?: string, immediate = false): void {
   const now = Date.now();
   const isFinalOrImportant = immediate || !_isProcessing || message !== undefined || _processedCount >= _totalCount;
 
-  if (isFinalOrImportant || now - _lastReportTime >= 250) {
+  if (isFinalOrImportant || now - _lastReportTime >= 500) {
     if (_reportTimeout) {
       clearTimeout(_reportTimeout);
       _reportTimeout = null;
@@ -99,7 +111,7 @@ function reportStatus(message?: string, immediate = false): void {
     _reportTimeout = setTimeout(() => {
       _reportTimeout = null;
       reportStatus(message);
-    }, 250 - (now - _lastReportTime));
+    }, 500 - (now - _lastReportTime));
   }
 }
 
@@ -139,7 +151,9 @@ async function loadPersistedQueue(): Promise<void> {
   if (_queueLoaded) return;
   _queueLoaded = true;
 
+  const generation = queueGeneration;
   const state = await readData<PersistedQueue>("queue.json");
+  if (generation !== queueGeneration) return;
   if (!state || !state.jobs || state.jobs.length === 0) return;
 
   // Only restore if the queue was saved recently (< 24h)
@@ -154,7 +168,7 @@ async function loadPersistedQueue(): Promise<void> {
 
   // Jobs need content to be loaded — defer to processing
   for (const job of state.jobs) {
-    _queue.push({
+    enqueueJob({
       id: job.id,
       type: job.type as "embed" | "annotate",
       path: job.path,
@@ -171,17 +185,35 @@ async function loadPersistedQueue(): Promise<void> {
 // ── Queue operations ─────────────────────────────────────────────────────────
 
 export function enqueueJob(job: BackgroundJob): void {
-  const existing = _queue.findIndex((j) => j.path === job.path && j.type === job.type);
-  if (existing >= 0) {
-    if (job.priority < _queue[existing].priority) {
-      _queue[existing].priority = job.priority;
-      _queue[existing].content = job.content;
-    }
+  const key = jobKey(job);
+  const active = activeJobs.get(key);
+  if (active && job.content && active.content === job.content) { countEmbeddingMetric('duplicateIndexEventsAvoided'); return; }
+  if (active && job.type === "embed") invalidateEmbeddingPath(job.path);
+  const existing = queuedJobs.get(key);
+  if (existing) {
+    existing.content = job.content;
+    existing.modifiedAt = job.modifiedAt;
+    existing.size = job.size;
+    existing.priority = Math.min(existing.priority, job.priority);
+    existing.enqueuedAt = job.enqueuedAt;
+    countEmbeddingMetric('duplicateIndexEventsAvoided');
     return;
   }
+  // Queue holds vault metadata; retain at most 128 full source snapshots.
+  if (_queue.length >= 128 && job.priority >= 2) job.content = "";
   _queue.push(job);
+  queuedJobs.set(key, job);
   _totalCount = _processedCount + _queue.length;
-  sortQueue();
+}
+
+export function cancelNoteJobs(path: string, directory = false): void {
+  const matches = (job: BackgroundJob) => job.path === path || (directory && job.path.startsWith(`${path.replace(/\/$/, "")}/`));
+  for (const job of [..._queue, ...activeJobs.values()]) {
+    if (!matches(job)) continue;
+    cancelledJobs.add(job); invalidateEmbeddingPath(job.path); queuedJobs.delete(jobKey(job));
+  }
+  _queue = _queue.filter((job) => !matches(job));
+  _totalCount = _processedCount + _queue.length + activeJobs.size;
 }
 
 export function enqueueJobs(jobs: BackgroundJob[]): void {
@@ -198,53 +230,119 @@ function sortQueue(): void {
 
 // ── Batch processor ──────────────────────────────────────────────────────────
 
-const BATCH_SIZE = 3;
-const BATCH_DELAY_MS = 100;
+// This bounds filesystem preparation. The embedding worker independently caps
+// actual ONNX calls at four chunks, so loading six notes here cannot create
+// competing model executions.
+const BATCH_SIZE = 6;
 
-async function processBatch(api: any): Promise<boolean> {
+async function pauseForInfrastructure(error: MissingIpcCapabilityError, runGeneration: number): Promise<void> {
+  if (runGeneration !== queueGeneration) return;
+  if (!infrastructureError) console.error("[Queue] Indexing paused: native IPC capability unavailable", error);
+  infrastructureError = error;
+  _isProcessing = false;
+  reportStatus("Indexing paused: fully restart OpenOnyx to update its native API", true);
+  await persistQueue();
+}
+
+function checkMetadataInfrastructure(api: any, runGeneration: number): Promise<boolean> {
+  if (infrastructureError) return Promise.resolve(false);
+  if (metadataPreflight && metadataPreflight.api === api && metadataPreflight.generation === runGeneration) return metadataPreflight.promise;
+  const promise = (async () => {
+    try {
+      // Probe the real handler before consuming jobs or pruning embeddings.
+      await requestFileMetadata(api, ".", typeof window !== "undefined" ? (window as any).__oo_vault_path : undefined);
+      return runGeneration === queueGeneration;
+    } catch (error) {
+      if (runGeneration !== queueGeneration) return false;
+      if (!(error instanceof MissingIpcCapabilityError)) throw error;
+      await pauseForInfrastructure(error, runGeneration);
+      return false;
+    }
+  })();
+  metadataPreflight = { api, generation: runGeneration, promise };
+  void promise.finally(() => { if (metadataPreflight?.promise === promise) metadataPreflight = null; }).catch(() => {});
+  return promise;
+}
+
+/** Explicit retry after the native capability is repaired; no automatic spin. */
+export async function resumeProcessing(api?: any): Promise<void> {
+  const generation = queueGeneration;
+  try {
+    await requestFileMetadata(api, ".", typeof window !== "undefined" ? (window as any).__oo_vault_path : undefined);
+  } catch (error) {
+    if (error instanceof MissingIpcCapabilityError) { await pauseForInfrastructure(error, generation); return; }
+    throw error;
+  }
+  if (generation !== queueGeneration) return;
+  infrastructureError = null;
+  await startProcessing(api);
+}
+
+async function processBatch(api: any, runGeneration: number): Promise<boolean> {
+  if (runGeneration !== queueGeneration) return false;
   if (!areEmbeddingsAvailable()) {
     _queue = [];
+    queuedJobs.clear(); activeJobs.clear();
     _isProcessing = false;
     reportStatus("Local analysis fallback ready");
     await persistQueue();
     return false;
   }
 
+  sortQueue();
   const batch = _queue.splice(0, BATCH_SIZE);
+  for (const job of batch) { queuedJobs.delete(jobKey(job)); activeJobs.set(jobKey(job), job); }
   if (batch.length === 0) return true;
 
   const store = await loadStoreAsync();
-
-  for (const job of batch) {
+  const outcomes = await Promise.all(batch.map(async (job) => {
+    if (cancelledJobs.has(job) || runGeneration !== queueGeneration) return { job, cancelled: true };
     try {
-      // Load content on demand if empty (from persisted queue)
+      // Load content on demand. This is intentionally parallel only within the
+      // small preparation batch; ONNX remains serialized by the scheduler.
       let content = job.content;
       if (!content && api?.readFile) {
-        try {
-          content = await api.readFile(job.path);
-        } catch {
-          _processedCount++;
-          reportStatus();
-          continue;
-        }
+        try { content = await timeEmbeddingOperation('noteReadMs', () => api.readFile(job.path)); }
+        catch { return { job, skipped: true }; }
       }
-
-      if (typeof content !== "string") {
-        _processedCount++;
-        reportStatus();
-        continue;
-      }
-
-      if (job.type === "embed") {
-        await embedNote(store, job.path, content, job.modifiedAt, job.size);
-      } else if (job.type === "annotate") {
+      if (runGeneration !== queueGeneration || cancelledJobs.has(job)) return { job, cancelled: true };
+      job.content = content;
+      if (typeof content !== 'string') return { job, skipped: true };
+      if (job.type === 'embed') {
+        // Vault scans already supplied a stat result. Reuse it for startup;
+        // watcher/save jobs without one still use the validated native IPC.
+        const metadata = job.modifiedAt !== undefined && job.size !== undefined
+          ? (countEmbeddingMetric('metadataReuse'), { modifiedAt: job.modifiedAt, size: job.size })
+          : await timeEmbeddingOperation('metadataReadMs', () => requestFileMetadata(api, job.path, typeof window !== 'undefined' ? (window as any).__oo_vault_path : undefined));
+        if (runGeneration !== queueGeneration || cancelledJobs.has(job)) return { job, cancelled: true };
+        if (metadata === null) return { job, skipped: true };
+        await embedNote(store, job.path, content, metadata.modifiedAt, metadata.size, job.priority === 0 ? 1 : 2);
+      } else {
         await getAnnotation(job.path, content);
       }
-    } catch (err) {
-      console.warn(`[Queue] Failed ${job.type} for ${job.path}:`, err);
+      return { job, completed: true };
+    } catch (error) {
+      return { job, error };
     }
+  }));
+
+  if (runGeneration !== queueGeneration) return false;
+  const infrastructure = outcomes.find((outcome) => outcome.error instanceof MissingIpcCapabilityError)?.error as MissingIpcCapabilityError | undefined;
+  for (const outcome of outcomes) {
+    const { job } = outcome;
+    if (activeJobs.get(jobKey(job)) === job) activeJobs.delete(jobKey(job));
+    if (outcome.cancelled) continue;
+    if (outcome.error instanceof MissingIpcCapabilityError) {
+      if (!cancelledJobs.has(job) && !queuedJobs.has(jobKey(job))) enqueueJob(job);
+      continue;
+    }
+    if (outcome.error) console.warn(`[Queue] Failed ${job.type} for ${job.path}:`, outcome.error);
     _processedCount++;
     reportStatus();
+  }
+  if (infrastructure) {
+    await pauseForInfrastructure(infrastructure, runGeneration);
+    return false;
   }
 
   // Persist queue state periodically
@@ -257,17 +355,30 @@ async function processBatch(api: any): Promise<boolean> {
 
 export async function startProcessing(api?: any): Promise<void> {
   if (_isProcessing) return;
-  if (_queue.length === 0) return;
+  if (_queue.length === 0 || infrastructureError) return;
+  const generation = queueGeneration;
+  if (_queue.some((job) => job.type === "embed") && !await checkMetadataInfrastructure(api, generation)) return;
+  // Concurrent starts may have awaited the same preflight.
+  if (_isProcessing || generation !== queueGeneration) return;
 
   _isProcessing = true;
+  const runGeneration = queueGeneration;
+  const started = performance.now();
   reportStatus("Analyzing your notes...");
 
   while (_queue.length > 0) {
-    const canContinue = await processBatch(api);
+    const canContinue = await processBatch(api, runGeneration);
     if (!canContinue) return;
-    await new Promise((resolve) => setTimeout(resolve, BATCH_DELAY_MS));
+    // Yield after each bounded preparation batch. A fixed 100 ms sleep used to
+    // cost seconds on a large vault even while the machine was otherwise idle.
+    await timeEmbeddingOperation('backgroundYieldMs', () => new Promise<void>((resolve) => setTimeout(resolve, 0)));
   }
 
+  if (runGeneration !== queueGeneration) return;
+  recordEmbeddingMetric("indexProcessingMs", performance.now() - started);
+  recordEmbeddingMetric("vaultIndexMs", performance.now() - (vaultIndexStarted ?? started));
+  vaultIndexStarted = null;
+  recordEmbeddingMetric("notesPerSecond", _processedCount / Math.max(1, performance.now() - started) * 1000);
   _isProcessing = false;
   _processedCount = 0;
   _totalCount = 0;
@@ -284,6 +395,8 @@ export async function startProcessing(api?: any): Promise<void> {
 }
 
 export function cancelProcessing(): void {
+  queueGeneration++;
+  queuedJobs.clear(); activeJobs.clear();
   _queue = [];
   _isProcessing = false;
   _processedCount = 0;
@@ -293,12 +406,34 @@ export function cancelProcessing(): void {
 }
 
 export function resetQueueState(): void {
+  queueGeneration++;
+  queuedJobs.clear(); activeJobs.clear();
+  initialization = null; initializationKey = ""; vaultIndexStarted = null;
+  if (_reportTimeout) clearTimeout(_reportTimeout);
+  _reportTimeout = null;
   _queue = [];
   _isProcessing = false;
   _processedCount = 0;
   _totalCount = 0;
   _queueLoaded = false;
+  infrastructureError = null;
+  metadataPreflight = null;
   reportStatus("");
+}
+
+if (typeof window !== "undefined") window.addEventListener("openonyx:vault-changing", resetQueueState);
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('openonyx:embedding-model-state', ((event: CustomEvent<'loading' | 'downloading' | 'ready'>) => {
+    if (!_isProcessing) return;
+    if (event.detail === 'downloading') {
+      reportStatus('Downloading local analysis model...', true);
+    } else if (event.detail === 'loading') {
+      reportStatus('Loading local analysis engine...', true);
+    } else {
+      reportStatus(undefined, true);
+    }
+  }) as EventListener);
 }
 
 export function getQueueLength(): number {
@@ -321,7 +456,7 @@ export interface VaultNoteMetadata {
  * Scan all notes in the vault and enqueue embedding jobs for any that
  * are missing from the embedding store. Supports queue resumption from disk.
  */
-export async function initializeVault(
+async function initializeVaultInternal(
   allNotes: VaultNoteMetadata[],
   activeNotePath?: string | null,
   recentPaths: string[] = [],
@@ -335,13 +470,27 @@ export async function initializeVault(
     return { enqueued: 0, alreadyIndexed: allNotes.length };
   }
 
+  const runGeneration = queueGeneration;
   // Load any persisted queue state first
   await loadPersistedQueue();
+  if (runGeneration !== queueGeneration) return { enqueued: 0, alreadyIndexed: 0 };
+  if (!await checkMetadataInfrastructure(api, runGeneration)) {
+    if (runGeneration !== queueGeneration) return { enqueued: 0, alreadyIndexed: 0 };
+    const recent = new Set(recentPaths);
+    for (const note of allNotes) enqueueJob({
+      id: `embed-${note.path}`, type: "embed", path: note.path, content: "",
+      priority: note.path === activeNotePath ? 0 : recent.has(note.path) ? 1 : 2,
+      enqueuedAt: Date.now(), modifiedAt: note.modifiedAt, size: note.size,
+    });
+    await persistQueue();
+    return { enqueued: allNotes.length, alreadyIndexed: 0 };
+  }
 
   // CRITICAL: await disk-loaded embeddings so we can skip notes that
   // already have cached embeddings. Without this, the in-memory Map is
   // empty and every note looks "new", causing full re-analysis.
   const store = await loadStoreAsync();
+  if (runGeneration !== queueGeneration) return { enqueued: 0, alreadyIndexed: 0 };
 
   // Prune any stored embeddings for notes that have been deleted from the vault
   const validNotePaths = new Set(allNotes.map((n) => n.path));
@@ -352,13 +501,15 @@ export async function initializeVault(
   const recentSet = new Set(recentPaths);
   const now = Date.now();
 
-  _processedCount = 0;
+  if (!_isProcessing) _processedCount = 0;
 
   for (const note of allNotes) {
+    if (runGeneration !== queueGeneration) return { enqueued: 0, alreadyIndexed: 0 };
     const existing = store.entries.get(note.path);
     const hasStoredSignal = existing?.vector?.some((value) => Math.abs(value) > 1e-8);
     const isUnchanged = existing &&
                         existing.schemaVersion === EMBEDDING_SCHEMA_VERSION &&
+                        existing.vectorType !== "lexical-v1" &&
                         existing.modifiedAt === note.modifiedAt &&
                         existing.size === note.size &&
                         (hasStoredSignal || note.size < 5);
@@ -370,6 +521,7 @@ export async function initializeVault(
     if (existing && api?.readFile) {
       try {
         const content = await api.readFile(note.path);
+        if (runGeneration !== queueGeneration) return { enqueued: 0, alreadyIndexed: 0 };
         if (
           typeof content === "string" &&
           refreshEmbeddingMetadataIfUnchanged(store, note.path, content, note.modifiedAt, note.size)
@@ -399,13 +551,34 @@ export async function initializeVault(
     enqueued++;
   }
 
-  _totalCount = enqueued;
+  _totalCount = _processedCount + _queue.length + activeJobs.size;
 
-  if (enqueued > 0) {
+  if (_queue.length > 0) {
     // Persist queue before starting
     await persistQueue();
-    startProcessing(api);
+    if (runGeneration === queueGeneration) void startProcessing(api);
   }
 
   return { enqueued, alreadyIndexed };
+}
+
+/** Coalesce duplicate scans; delay startup inference until the editor can paint. */
+export function initializeVault(
+  allNotes: VaultNoteMetadata[], activeNotePath?: string | null, recentPaths: string[] = [], api?: any,
+): Promise<{ enqueued: number; alreadyIndexed: number }> {
+  const key = JSON.stringify(allNotes);
+  if (initialization && initializationKey === key) return initialization;
+  const generation = queueGeneration;
+  if (vaultIndexStarted === null) vaultIndexStarted = performance.now();
+  const prior = initialization;
+  initializationKey = key;
+  const promise = (async () => {
+    if (prior) await prior;
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    if (generation !== queueGeneration) return { enqueued: 0, alreadyIndexed: 0 };
+    return initializeVaultInternal(allNotes, activeNotePath, recentPaths, api);
+  })();
+  initialization = promise;
+  void promise.finally(() => { if (initialization === promise) initialization = null; }).catch(() => {});
+  return promise;
 }

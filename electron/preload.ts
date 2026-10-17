@@ -8,6 +8,7 @@ import type { CachedDrivePreview } from "./googleDriveFileCache.js";
  */
 
 import { contextBridge, ipcRenderer } from 'electron';
+import { FILE_METADATA_CHANNEL, type VaultFileMetadata } from './filesystemContract.js';
 import type { McpEnabledTool, McpServerConfig, McpServerSnapshot, McpToolActivity } from './mcpTypes.js';
 
 /** Type-safe API exposed to the renderer */
@@ -85,6 +86,8 @@ const electronAPI = {
 
   fileExists: (filePath: string): Promise<boolean> =>
     ipcRenderer.invoke('fs:fileExists', filePath),
+  fileMetadata: (filePath: string, expectedVault?: string): Promise<VaultFileMetadata | null> =>
+    ipcRenderer.invoke(FILE_METADATA_CHANNEL, filePath, expectedVault),
 
   getFileTree: (): Promise<any> =>
     ipcRenderer.invoke('fs:getFileTree'),
@@ -169,11 +172,16 @@ const electronAPI = {
   dataRead: (relativePath: string): Promise<string | null> =>
     ipcRenderer.invoke('data:read', relativePath),
 
-  dataWrite: (relativePath: string, content: string): Promise<void> =>
-    ipcRenderer.invoke('data:write', relativePath, content),
+  dataWrite: (relativePath: string, content: string, expectedVault?: string): Promise<void> =>
+    ipcRenderer.invoke('data:write', relativePath, content, expectedVault),
 
-  dataDelete: (relativePath: string): Promise<void> =>
-    ipcRenderer.invoke('data:delete', relativePath),
+  embeddingCacheRead: (subpath: string, expectedVault: string): Promise<Uint8Array | null> =>
+    ipcRenderer.invoke('embedding:cacheRead', subpath, expectedVault),
+  embeddingCacheWrite: (subpath: string, content: Uint8Array, expectedVault: string): Promise<void> =>
+    ipcRenderer.invoke('embedding:cacheWrite', subpath, content, expectedVault),
+
+  dataDelete: (relativePath: string, expectedVault?: string): Promise<void> =>
+    ipcRenderer.invoke('data:delete', relativePath, expectedVault),
 
   dataList: (subDir: string): Promise<string[]> =>
     ipcRenderer.invoke('data:list', subDir),

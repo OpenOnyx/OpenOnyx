@@ -11,6 +11,7 @@ import * as nodeFs from 'fs';
 import { tmpdir } from 'os';
 import * as nodePath from 'path';
 import { FileSystemManager } from './fileSystem.js';
+import { FILE_METADATA_CHANNEL } from './filesystemContract.js';
 import { SearchEngine } from './search.js';
 import { allowedExternalUrl } from './externalUrl.js';
 import { fetchPublicHttp } from './outboundUrl.js';
@@ -400,6 +401,11 @@ export function registerIpcHandlers(
   ipcMain.handle('fs:fileExists', async (_event, filePath: string) => {
     return fsManager.fileExists(filePath);
   });
+  ipcMain.handle(FILE_METADATA_CHANNEL, async (_event, filePath: string, expectedVault?: string) => {
+    if (expectedVault !== undefined && typeof expectedVault !== 'string') throw new Error('Invalid expected vault path');
+    if (expectedVault !== undefined && expectedVault !== fsManager.getVaultPath()) throw new Error('Vault changed before metadata read');
+    return fsManager.fileMetadata(filePath);
+  });
 
   ipcMain.handle('fs:getFileTree', async () => {
     return fsManager.getFileTree();
@@ -473,11 +479,27 @@ export function registerIpcHandlers(
     return fsManager.readDataFile(relativePath);
   });
 
-  ipcMain.handle('data:write', async (_event, relativePath: string, content: string) => {
+  ipcMain.handle('data:write', async (_event, relativePath: string, content: string, expectedVault?: string) => {
+    if (expectedVault !== undefined && expectedVault !== fsManager.getVaultPath()) throw new Error('Vault changed before data write');
     await fsManager.writeDataFile(relativePath, content);
   });
 
-  ipcMain.handle('data:delete', async (_event, relativePath: string) => {
+  const embeddingModelPath = (subpath: string, expectedVault: string) => {
+    if (expectedVault !== fsManager.getVaultPath()) throw new Error('Vault changed before model cache operation');
+    if (!/^(?:[a-zA-Z0-9_-]+\/)*[a-zA-Z0-9_.-]+\.(json|onnx)$/.test(subpath) || subpath.includes('..')) throw new Error('Invalid model cache path');
+    return `.openonyx/models/Xenova/all-MiniLM-L6-v2/${subpath}`;
+  };
+  ipcMain.handle('embedding:cacheRead', async (_event, subpath: string, expectedVault: string) => {
+    const filePath = embeddingModelPath(subpath, expectedVault);
+    try { return await fsManager.readBinary(filePath); }
+    catch { return null; }
+  });
+  ipcMain.handle('embedding:cacheWrite', async (_event, subpath: string, content: Uint8Array, expectedVault: string) => {
+    await fsManager.writeBinaryAtomic(embeddingModelPath(subpath, expectedVault), content);
+  });
+
+  ipcMain.handle('data:delete', async (_event, relativePath: string, expectedVault?: string) => {
+    if (expectedVault !== undefined && expectedVault !== fsManager.getVaultPath()) throw new Error('Vault changed before data deletion');
     await fsManager.deleteDataFile(relativePath);
   });
 

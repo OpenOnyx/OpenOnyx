@@ -539,6 +539,12 @@ export function createMockAPI(): ElectronAPI {
     },
 
     // .openonyx Data Storage (localStorage fallback in browser mode)
+    embeddingCacheRead: async () => null,
+    embeddingCacheWrite: async () => {},
+    fileMetadata: async (filePath: string) => {
+      const content = mockFiles[filePath];
+      return content === undefined ? null : { modifiedAt: Date.now(), size: new TextEncoder().encode(content).byteLength };
+    },
     dataRead: async (relativePath: string) => {
       if (typeof localStorage === "undefined" || !localStorage) return null;
       let content = localStorage.getItem(`openonyx-data:${relativePath}`);

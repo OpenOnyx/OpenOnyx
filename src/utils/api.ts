@@ -7,6 +7,7 @@
  */
 
 import { createMockAPI } from "./mockAPI";
+import { requestFileMetadata } from "./filesystem-ipc";
 
 type API = typeof window.electronAPI;
 
@@ -27,6 +28,15 @@ function dispatchFileChange(type: string, detail: FileChangeDetail): void {
 function observeFileChanges(api: API): API {
   return {
     ...api,
+    fileMetadata: (filePath, expectedVault) => requestFileMetadata(api, filePath, expectedVault),
+    async setVaultPath(vaultPath: string): Promise<boolean> {
+      // Invalidate before IPC changes the main-process root. A React effect
+      // runs too late to protect jobs while the native vault switch is pending.
+      if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('openonyx:vault-changing'));
+      const success = await api.setVaultPath(vaultPath);
+      if (success && typeof window !== 'undefined') (window as any).__oo_vault_path = vaultPath || undefined;
+      return success;
+    },
     async createFile(filePath: string, content?: string): Promise<void> {
       const existed = await api.fileExists(filePath).catch(() => false);
       await api.createFile(filePath, content);

@@ -1,6 +1,7 @@
 const { spawn, spawnSync } = require('node:child_process');
 const fs = require('node:fs');
 const path = require('node:path');
+const { ensureElectronBuildFresh, watchElectronSources } = require('./electron-build-state.cjs');
 
 const { loadNativeAppEnv, nativeAppArgs } = require('./native-app-env.cjs');
 const env = loadNativeAppEnv({ ...process.env }, process.cwd());
@@ -9,6 +10,13 @@ delete env.ELECTRON_RUN_AS_NODE;
 env.NODE_ENV = env.NODE_ENV || 'development';
 
 env.VITE_DEV_SERVER_URL = env.VITE_DEV_SERVER_URL || 'http://localhost:5173';
+
+try {
+  ensureElectronBuildFresh(process.cwd());
+} catch (error) {
+  console.error('[dev] Cannot start Electron with stale native code:', error);
+  process.exit(1);
+}
 
 const electronMainPath = path.join(process.cwd(), 'dist-electron', 'main.js');
 const electronMainMjsPath = path.join(process.cwd(), 'dist-electron', 'main.mjs');
@@ -188,11 +196,20 @@ const electronProcess = spawn(electronBinary, nativeAppArgs(process.platform, en
   env,
 });
 
+let warnedAboutNativeChanges = false;
+const stopWatchingSources = watchElectronSources(process.cwd(), () => {
+  if (warnedAboutNativeChanges) return;
+  warnedAboutNativeChanges = true;
+  console.warn('[dev] Electron main/preload sources changed. Renderer hot reload does not update IPC handlers. Fully restart "npm run dev" to load the new native code.');
+});
+
 electronProcess.on('error', (error) => {
+  stopWatchingSources();
   console.error('Failed to launch Electron:', error);
   process.exit(1);
 });
 
 electronProcess.on('exit', (code) => {
+  stopWatchingSources();
   process.exit(code ?? 0);
 });

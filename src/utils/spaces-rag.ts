@@ -12,7 +12,7 @@
  * the creator's perspective, and refuses generic answers.
  */
 
-import { embedText, isModelLoaded, isLexicalFallbackActive } from "./embeddings";
+import { embedText, isModelLoaded, isLexicalFallbackActive, getEmbeddingVectorType } from "./embeddings";
 import { loadVectorIndex } from "./spaces-store";
 import { loadAIConfig, getBaseUrl, getProviderHeaders, parseProviderError } from "./ai-settings";
 import { supabase, isSupabaseConfigured } from "../lib/supabase";
@@ -820,7 +820,7 @@ export async function retrieveChunks(
     const queryTerms = queryVector ? [] : tokenizeQuery(query);
     for (const chunk of index.chunks) {
       const sim = queryVector
-        ? (chunk.vector.length === queryVector.length ? cosineSimilarity(queryVector, chunk.vector) : 0)
+        ? (chunk.vector.length === queryVector.length && (!chunk.vectorType || chunk.vectorType === getEmbeddingVectorType()) ? cosineSimilarity(queryVector, chunk.vector) : 0)
         : lexicalSimilarity(queryTerms, chunk);
       const effectiveMinSimilarity = queryVector ? minSimilarity : 0;
       if (sim > effectiveMinSimilarity) {
